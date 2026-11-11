@@ -1,0 +1,29 @@
+openapi: 3.1.0
+info:
+  title: Nobody Inc daemon API
+  version: 0.0.1
+servers:
+  - url: http://127.0.0.1:7420
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness probe
+      responses:
+        "200":
+          description: Daemon is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string

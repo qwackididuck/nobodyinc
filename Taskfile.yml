@@ -1,0 +1,50 @@
+version: "3"
+
+vars:
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the daemon binary into bin/
+    cmds:
+      - go build -ldflags "-X main.version={{.VERSION}}" -o bin/nobodyd ./cmd/nobodyd
+
+  test:
+    desc: Run Go tests
+    cmds:
+      - go test -race ./...
+
+  lint:
+    desc: Lint Go and web code
+    cmds:
+      - go vet ./...
+      - golangci-lint run
+      - pnpm --dir web exec next typegen
+      - pnpm --dir web exec tsc --noEmit
+      - pnpm --dir web lint
+
+  web:install:
+    desc: Install web dependencies
+    cmds:
+      - pnpm --dir web install
+
+  dev:daemon:
+    desc: Run the daemon
+    cmds:
+      - go run ./cmd/nobodyd
+
+  dev:web:
+    desc: Run the Next.js dev server
+    cmds:
+      - pnpm --dir web dev
+
+  check:
+    desc: Everything that must pass before a commit
+    cmds:
+      - task: lint
+      - task: test
