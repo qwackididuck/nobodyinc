@@ -122,6 +122,10 @@ func (s *Supervisor) applyPending(address string) error {
 		s.Statuses.Set(address, StatusStopped)
 		s.Logger.Info("agent stopped after a change", "agent", address, "in_org", inOrg)
 
+		if s.OnRetired != nil {
+			s.OnRetired(address)
+		}
+
 		return nil
 	}
 

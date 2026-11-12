@@ -10,7 +10,7 @@ import (
 func TestPickMember(t *testing.T) {
 	t.Parallel()
 
-	o := &org.Org{Teams: []org.Team{{ID: "dev", Agents: []org.Agent{{Name: "a"}, {Name: "b"}, {Name: "c"}}}}}
+	o := &org.Org{Teams: []org.Team{{ID: "dev", Agents: []org.Agent{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d", OnLeave: true}}}}}
 
 	tests := []struct {
 		name     string
@@ -22,6 +22,7 @@ func TestPickMember(t *testing.T) {
 		{"then any running member", map[string]runtime.Status{"a@dev": runtime.StatusExited, "b@dev": runtime.StatusWorking}, "", "b@dev"},
 		{"then anyone", map[string]runtime.Status{}, "", "a@dev"},
 		{"excluded member skipped", map[string]runtime.Status{"a@dev": runtime.StatusIdle}, "a@dev", "b@dev"},
+		{"member on leave skipped", map[string]runtime.Status{"d@dev": runtime.StatusIdle}, "", "a@dev"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

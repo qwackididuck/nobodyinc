@@ -67,8 +67,9 @@ func testOrg(t *testing.T) *org.Org {
 }
 
 // startDaemon runs a full daemon on a free local port with every agent
-// started, and waits until they are all idle.
-func startDaemon(t *testing.T, o *org.Org) *daemon.Daemon {
+// started, and waits until they are all idle. o is a fixed *org.Org, or an
+// *org.Live for scenarios that change the organization.
+func startDaemon(t *testing.T, o org.Source) *daemon.Daemon {
 	t.Helper()
 
 	var lc net.ListenConfig
@@ -108,7 +109,7 @@ func startDaemon(t *testing.T, o *org.Org) *daemon.Daemon {
 		t.Fatal(err)
 	}
 
-	for _, m := range o.Members() {
+	for _, m := range o.Current().Members() {
 		eventually(t, m.Address+" idle after onboarding", func() bool {
 			return d.Statuses.Get(m.Address) == runtime.StatusIdle
 		})

@@ -82,6 +82,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 			return pickMember(opts.Org.Current(), statuses, team, "")
 		},
 	}
+	staff := &staff{org: opts.Org, store: st, messages: messages, logger: opts.Logger}
 	forker := &runtime.Forker{
 		Org:           opts.Org,
 		Statuses:      statuses,
@@ -100,6 +101,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	//     from its hooks.
 	// An agent going idle also checks for mail that arrived as its turn ended.
 	messages.OnSent = func(m messaging.Message) {
+		staff.onSent(context.WithoutCancel(ctx), m)
+
 		if forker.ShouldAnswer(m) {
 			go forker.Answer(context.WithoutCancel(ctx), m)
 
@@ -124,6 +127,10 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
 	tickets.OnEvent = notifier.onEvent
+
+	// Agents on leave or dismissed hand their tickets and mail over (staff.go).
+	staff.tickets = tickets
+	supervisor.OnRetired = staff.onRetired
 
 	handler := server.New(server.Deps{
 		Version:   opts.Version,

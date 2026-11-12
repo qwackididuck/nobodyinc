@@ -45,6 +45,10 @@ type Supervisor struct {
 	NewCommand func(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, error)
 	// HasMail reports whether an agent has undelivered mail.
 	HasMail func(ctx context.Context, address string) (bool, error)
+	// OnRetired, when set, is called once an agent has stopped because it is
+	// on leave or no longer in the organization (apply.go), so that what it
+	// leaves behind (tickets, mail) can be handed over.
+	OnRetired func(address string)
 
 	mu     sync.Mutex
 	agents map[string]*agentProcess

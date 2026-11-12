@@ -8,12 +8,13 @@ import (
 // pickMember chooses which member of a team gets something addressed to the
 // whole team (a message to "@team", a queued ticket): an idle member first,
 // then any running one, then anyone. exclude skips one address (e.g. the
-// agent that just released a ticket). It returns "" for an unknown team.
+// agent that just released a ticket). Members on leave are never picked. It
+// returns "" for an unknown team, or when everyone is on leave.
 func pickMember(o *org.Org, statuses *runtime.Statuses, team, exclude string) string {
 	var members []string
 
 	for _, m := range o.Members() {
-		if m.Team.ID == team && m.Address != exclude {
+		if m.Team.ID == team && m.Address != exclude && !m.Agent.OnLeave {
 			members = append(members, m.Address)
 		}
 	}

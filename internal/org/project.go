@@ -131,6 +131,16 @@ func WriteAgent(projectDir, team string, a Agent) error {
 	return atomicfile.Write(agentPath(projectDir, team, a.Name), data)
 }
 
+// RemoveAgent deletes an agent file, e.g. when the agent is dismissed. Its
+// history (messages, tickets, commits) is kept elsewhere.
+func RemoveAgent(projectDir, team, name string) error {
+	if err := os.Remove(agentPath(projectDir, team, name)); err != nil {
+		return fmt.Errorf("remove agent %s: %w", Address(name, team), err)
+	}
+
+	return nil
+}
+
 func agentPath(projectDir, team, name string) string {
 	return filepath.Join(ConfigDir(projectDir), teamsDir, team, name+agentExt)
 }
