@@ -51,8 +51,9 @@ func HasConfig(projectDir string) bool {
 }
 
 // LoadProject reads the organization of a project from its .nobody/
-// directory: org.yaml for teams and channels, then one file per agent in
-// teams/<team>/. It returns ErrNoConfig when org.yaml is missing.
+// directory: org.yaml for teams and channels, one file per agent in
+// teams/<team>/, and the MCP registry mcp.yaml. It returns ErrNoConfig when
+// org.yaml is missing.
 func LoadProject(projectDir string) (*Org, error) {
 	dir, err := filepath.Abs(projectDir)
 	if err != nil {
@@ -72,6 +73,10 @@ func LoadProject(projectDir string) (*Org, error) {
 	}
 
 	if err := checkTeamDirs(dir, o); err != nil {
+		return nil, err
+	}
+
+	if o.MCP, err = readMCPFile(dir); err != nil {
 		return nil, err
 	}
 

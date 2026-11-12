@@ -190,6 +190,12 @@ func (d Definition) Validate() error {
 		errs = append(errs, fmt.Errorf("permissions.profile %q: use one of %s", p, strings.Join(profiles, ", ")))
 	}
 
+	for _, tool := range d.Tools {
+		if strings.Contains(tool, ",") {
+			errs = append(errs, fmt.Errorf("tools: %q cannot contain a comma (use one entry per tool)", tool))
+		}
+	}
+
 	if d.Version < 0 {
 		errs = append(errs, fmt.Errorf("version %d: must be positive", d.Version))
 	}

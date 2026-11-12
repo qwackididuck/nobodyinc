@@ -37,6 +37,8 @@ func TestWriteThenLoadProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	want.MCP = map[string]MCPServer{} // no mcp.yaml: an empty registry
+
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
 	}
@@ -201,5 +203,77 @@ func writeFile(t *testing.T, path, content string) {
 
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoadProjectMCPRegistry(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		mcp     string
+		agent   string
+		wantErr string
+	}{
+		{
+			name:  "declared server",
+			mcp:   "servers:\n  gitlab:\n    type: stdio\n    command: gitlab-mcp\n    env: {GITLAB_TOKEN: \"${GITLAB_TOKEN}\"}\n",
+			agent: "---\nmcp: [gitlab]\n---\n",
+		},
+		{
+			name:    "undeclared server",
+			mcp:     "servers:\n  gitlab: {command: gitlab-mcp}\n",
+			agent:   "---\nmcp: [ragflow]\n---\n",
+			wantErr: `"ragflow" is not declared`,
+		},
+		{
+			name:    "no registry at all",
+			agent:   "---\nmcp: [gitlab]\n---\n",
+			wantErr: "declared: none",
+		},
+		{
+			name:    "reserved name",
+			mcp:     "servers:\n  nobody: {command: x}\n",
+			agent:   "---\n---\n",
+			wantErr: "reserved",
+		},
+		{
+			name:    "unknown top-level key",
+			mcp:     "server:\n  gitlab: {command: x}\n",
+			agent:   "---\n---\n",
+			wantErr: "server",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, ".nobody", "org.yaml"), "teams: [{id: dev}]\n")
+			writeFile(t, filepath.Join(dir, ".nobody", "teams", "dev", "dev1.md"), tt.agent)
+
+			if tt.mcp != "" {
+				writeFile(t, filepath.Join(dir, ".nobody", "mcp.yaml"), tt.mcp)
+			}
+
+			o, err := LoadProject(dir)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("error = %v, want one mentioning %q", err, tt.wantErr)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			env, _ := o.MCP["gitlab"]["env"].(map[string]any)
+			if o.MCP["gitlab"]["command"] != "gitlab-mcp" || env["GITLAB_TOKEN"] != "${GITLAB_TOKEN}" {
+				t.Fatalf("registry read as %v", o.MCP)
+			}
+		})
 	}
 }

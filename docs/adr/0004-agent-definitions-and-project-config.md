@@ -53,7 +53,7 @@ Each agent has a permission profile that sets Claude Code's `--permission-mode` 
 | Profile | Launch | Meaning |
 |---|---|---|
 | `default` | `--permission-mode default` | Every sensitive action goes to the approval queue. |
-| `allowlist` | `--permission-mode default` + preset allow rules (git, tests, edits in the worktree) | Routine work runs without asking; everything else goes to the approval queue. |
+| `allowlist` | `--permission-mode acceptEdits` + preset allow rules (git except push, usual test commands) | File edits in the working directory, git and tests run without asking; everything else goes to the approval queue. |
 | `auto` | `--permission-mode auto` | Claude Code's classifier decides. |
 
 The agent's own `allow` / `deny` rules are added on top, and the `.nobody/` deny rules always apply. A `yolo` profile (`--dangerously-skip-permissions`) is **postponed**: it will only exist together with Claude Code's sandbox, once a contract test proves that the sandbox keeps writes inside the worktree.
@@ -72,4 +72,4 @@ Editing an agent restarts it with `claude --resume <session>` and its new config
 - The daemon is started with the project directory (`nobodyd -project <dir>`), not with an organization file.
 - The organization can change while the daemon runs: every component reads it through a shared holder instead of keeping its own copy.
 - Adding a template needs no code change: drop a markdown file into `~/.nobody/catalog/`. Adding a built-in template is a file in `internal/catalog/builtin/` and a rebuild.
-- Three behaviours must be checked against the real CLI (`task contract`): that `--resume` honours a changed model, permission mode, allowed tools, MCP config and appended system prompt; that the `auto` permission mode is accepted; and whether skills from `~/.claude/skills` stay visible with `--setting-sources project,local` (if not, skills are copied into the worktree's `.claude/skills/`).
+- Behaviours checked against the real CLI (`task contract`, `test/contract/definition_test.go`): the three permission modes are accepted; deny rules on `.nobody/` win over `acceptEdits`; `${VARIABLE}` references in `--mcp-config` are expanded. Still to check: that `--resume` honours a changed model, permission mode, allowed tools, MCP config and appended system prompt; and whether skills from `~/.claude/skills` stay visible with `--setting-sources project,local` (if not, skills are copied into the worktree's `.claude/skills/`). Until then, `skills` is not applied.

@@ -37,6 +37,9 @@ type Org struct {
 	ProjectDir string    `yaml:"-"`
 	Teams      []Team    `yaml:"teams"`
 	Channels   []Channel `yaml:"channels,omitempty"`
+	// MCP is the project's MCP registry, read from .nobody/mcp.yaml: the
+	// servers agents may be given (see mcp.go).
+	MCP map[string]MCPServer `yaml:"-"`
 }
 
 // Team is a group of agents sharing a goal.
@@ -72,6 +75,7 @@ type Member struct {
 func (o *Org) Validate() error {
 	teams, errs := o.validateTeams()
 	errs = append(errs, o.validateChannels(teams)...)
+	errs = append(errs, o.validateMCP()...)
 
 	return errors.Join(errs...)
 }

@@ -52,7 +52,7 @@ A recruited agent has the same fields, plus the ones that only make sense in a t
 | `permissions.allow`, `permissions.deny` | Claude Code permission rules added to the profile. | generated `--settings` |
 | `tools` | Tools the agent may use without asking, added to the office tools. | `--allowedTools` |
 | `mcp` | Names of servers from `.nobody/mcp.yaml`. | `--mcp-config` + `--strict-mcp-config` |
-| `skills` | Skills made available to the agent. | (see ADR-0004, under contract test) |
+| `skills` | Skills made available to the agent. | not applied yet (ADR-0004) |
 | `from` | `<template>@<version>` it was recruited from. Information only: template updates are never applied. | — |
 | `on_leave` | `true` while the agent is on leave. | not started |
 | body | The agent's instructions. | appended to the system prompt, after the office protocol |
@@ -64,10 +64,10 @@ The agent's name is the file name, its team the directory name: `teams/dev/dev1.
 | Profile | Behaviour |
 |---|---|
 | `default` | Every sensitive action goes to the approval queue (`docs/approvals.md`). |
-| `allowlist` | git, running tests and editing files in the worktree run without asking; the rest goes to the approval queue. |
+| `allowlist` | Claude Code's `acceptEdits` mode (editing files in the working directory passes), plus git (except `push`) and the usual test commands (`go test`, `npm test`, `pnpm test`, `pytest`, `cargo test`...); the rest goes to the approval queue. |
 | `auto` | Claude Code's classifier decides. |
 
-Whatever the profile, agents can never edit `.nobody/`, and a delivery touching it is refused.
+Whatever the profile, agents get the deny rules `Edit(./.nobody/**)` and `Write(./.nobody/**)`, and a delivery touching `.nobody/` is refused. The exact launch flags are built in `internal/runtime/command.go` and `permissions.go`.
 
 ## `org.yaml`
 

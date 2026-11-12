@@ -101,6 +101,7 @@ func (f *Forker) ask(ctx context.Context, m org.Member, q messaging.Message) (st
 		"--resume", f.Statuses.Session(q.To), "--fork-session",
 		"--tools", "",
 		"--setting-sources", "project,local", // same isolation as agents (ADR-0003)
+		"--strict-mcp-config", // and no MCP server: the fork only answers from memory
 		"--output-format", "json",
 	}
 	if m.Agent.Model != "" {
