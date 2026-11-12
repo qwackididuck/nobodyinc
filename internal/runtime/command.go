@@ -29,6 +29,26 @@ var prompt = template.Must(template.New("prompt").Parse(promptTemplate))
 const onboardingPrompt = `You just joined Nobody Inc. If mail is attached to this message, act on it now. ` +
 	`Otherwise reply only "Ready." and end your turn; your mail will reach you automatically.`
 
+// resumePrompt opens the first turn of a resumed session: the agent keeps its
+// memory, but its definition (role, prompt, permissions, tools...) may have
+// changed.
+//
+// Claude Code keeps the system prompt a session started with and ignores a
+// new --append-system-prompt on --resume (checked by task contract), so the
+// current system prompt is handed over in this message instead (see
+// resumeMessage). Model, permission mode, tools and MCP servers do follow the
+// new flags.
+const resumePrompt = `Nobody Inc restarted your session with your current definition. ` +
+	`It replaces the system prompt you started with: from now on, follow the instructions below. ` +
+	`If mail is attached to this message, act on it now. ` +
+	`Otherwise reply only "Ready." and end your turn; your mail will reach you automatically.`
+
+// resumeMessage is the first prompt of a resumed session: resumePrompt, then
+// the agent's current system prompt.
+func resumeMessage(systemPrompt string) string {
+	return resumePrompt + "\n\n<current_definition>\n" + systemPrompt + "\n</current_definition>"
+}
+
 // officeTools are the office MCP tools every agent may use without being
 // asked for permission.
 var officeTools = func() string {
@@ -70,7 +90,12 @@ type Launch struct {
 //     other MCP configuration applies, see ADR-0003 and ADR-0004);
 //   - NOBODY_AGENT and NOBODY_DAEMON_URL tell nobody-hook who and where it is;
 //   - a short onboarding turn brings the agent to the idle state.
-func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member) (*exec.Cmd, error) {
+//
+// With a non-empty resume session ID, the agent continues that Claude Code
+// session (claude --resume): it keeps its memory and gets its current
+// definition, its system prompt being handed over in the first message
+// (see resumePrompt).
+func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, error) {
 	systemPrompt, err := SystemPrompt(o, m)
 	if err != nil {
 		return nil, err
@@ -101,7 +126,11 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member) (*exec.Cm
 		args = append(args, "--model", m.Agent.Model)
 	}
 
-	args = append(args, onboardingPrompt)
+	if resume != "" {
+		args = append(args, "--resume", resume, resumeMessage(systemPrompt))
+	} else {
+		args = append(args, onboardingPrompt)
+	}
 
 	claude := l.ClaudePath
 	if claude == "" {

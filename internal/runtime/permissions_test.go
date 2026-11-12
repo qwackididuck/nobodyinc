@@ -33,7 +33,7 @@ func launch(t *testing.T, o *org.Org, address string) launched {
 		WorkDir: func(string) string { return o.ProjectDir },
 	}
 
-	cmd, err := l.Command(context.Background(), o, m)
+	cmd, err := l.Command(context.Background(), o, m, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,7 +181,7 @@ func TestLaunchRefusesAnUndeclaredMCPServer(t *testing.T) {
 	}}}}
 	m, _ := o.Member("dev1@dev")
 
-	_, err := Launch{WorkDir: func(string) string { return "" }}.Command(context.Background(), o, m)
+	_, err := Launch{WorkDir: func(string) string { return "" }}.Command(context.Background(), o, m, "")
 	if err == nil || !strings.Contains(err.Error(), "ghost") {
 		t.Fatalf("error = %v, want one naming the undeclared server", err)
 	}
@@ -203,5 +203,38 @@ func decode(t *testing.T, s string, v any) {
 
 	if err := json.Unmarshal([]byte(s), v); err != nil {
 		t.Fatalf("decode %s: %v", s, err)
+	}
+}
+
+func TestLaunchResumesASession(t *testing.T) {
+	t.Parallel()
+
+	o := testOrg()
+	m, _ := o.Member("archi@specs")
+	l := Launch{WorkDir: func(string) string { return o.ProjectDir }}
+
+	fresh, err := l.Command(context.Background(), o, m, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if slices.Contains(fresh.Args, "--resume") || fresh.Args[len(fresh.Args)-1] != onboardingPrompt {
+		t.Fatalf("a fresh start must not resume and must onboard: %v", fresh.Args)
+	}
+
+	resumed, err := l.Command(context.Background(), o, m, "s-42")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := resumed.Args[len(resumed.Args)-1]
+	if argValue(t, resumed.Args, "--resume") != "s-42" || !strings.HasPrefix(first, resumePrompt) {
+		t.Fatalf("a resume must continue s-42 with the resume prompt: %v", resumed.Args)
+	}
+
+	// Claude Code ignores a new --append-system-prompt on resume: the current
+	// definition must travel in the first message.
+	if !strings.Contains(first, "Design things.") || !strings.Contains(first, argValue(t, resumed.Args, "--append-system-prompt")) {
+		t.Fatalf("the resume message does not carry the current system prompt:\n%s", first)
 	}
 }

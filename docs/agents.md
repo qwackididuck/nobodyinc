@@ -63,9 +63,9 @@ The agent's name is the file name, its team the directory name: `teams/dev/dev1.
 
 | Profile | Behaviour |
 |---|---|
-| `default` | Every sensitive action goes to the approval queue (`docs/approvals.md`). |
+| `default` | Claude Code's `manual` mode: every sensitive action goes to the approval queue (`docs/approvals.md`). |
 | `allowlist` | Claude Code's `acceptEdits` mode (editing files in the working directory passes), plus git (except `push`) and the usual test commands (`go test`, `npm test`, `pnpm test`, `pytest`, `cargo test`...); the rest goes to the approval queue. |
-| `auto` | Claude Code's classifier decides. |
+| `auto` | Claude Code's classifier decides. Not available with Haiku models (refused when the file is read). |
 
 Whatever the profile, agents get the deny rules `Edit(./.nobody/**)` and `Write(./.nobody/**)`, and a delivery touching `.nobody/` is refused. The exact launch flags are built in `internal/runtime/command.go` and `permissions.go`.
 

@@ -52,9 +52,9 @@ Each agent has a permission profile that sets Claude Code's `--permission-mode` 
 
 | Profile | Launch | Meaning |
 |---|---|---|
-| `default` | `--permission-mode default` | Every sensitive action goes to the approval queue. |
+| `default` | `--permission-mode manual` | Every sensitive action goes to the approval queue. |
 | `allowlist` | `--permission-mode acceptEdits` + preset allow rules (git except push, usual test commands) | File edits in the working directory, git and tests run without asking; everything else goes to the approval queue. |
-| `auto` | `--permission-mode auto` | Claude Code's classifier decides. |
+| `auto` | `--permission-mode auto` | Claude Code's classifier decides. Not available with Haiku (Claude Code silently falls back to `manual`), so this combination is refused. |
 
 The agent's own `allow` / `deny` rules are added on top, and the `.nobody/` deny rules always apply. A `yolo` profile (`--dangerously-skip-permissions`) is **postponed**: it will only exist together with Claude Code's sandbox, once a contract test proves that the sandbox keeps writes inside the worktree.
 
@@ -64,7 +64,9 @@ The project's MCP servers are declared in `<project>/.nobody/mcp.yaml`. Since th
 
 ### 7. Changes apply between turns
 
-Editing an agent restarts it with `claude --resume <session>` and its new configuration as soon as it is idle, never in the middle of a turn. The same applies to putting it on leave or dismissing it. An explicit "restart from scratch" option starts a fresh session instead.
+Editing an agent restarts it with `claude --resume <session>` and its new configuration as soon as it is idle, never in the middle of a turn. The same applies to putting it on leave or dismissing it. An explicit "restart from scratch" option starts a fresh session instead, and a "now" option does not wait for the end of the turn (for a stuck agent).
+
+Claude Code keeps the system prompt a session started with: on `--resume` it ignores a new `--append-system-prompt` (while the model, permission mode, tools and MCP servers do follow the new flags). The agent's current system prompt is therefore handed over in the first message of the resumed session, which states that it replaces the original one.
 
 ## Consequences
 
@@ -72,4 +74,4 @@ Editing an agent restarts it with `claude --resume <session>` and its new config
 - The daemon is started with the project directory (`nobodyd -project <dir>`), not with an organization file.
 - The organization can change while the daemon runs: every component reads it through a shared holder instead of keeping its own copy.
 - Adding a template needs no code change: drop a markdown file into `~/.nobody/catalog/`. Adding a built-in template is a file in `internal/catalog/builtin/` and a rebuild.
-- Behaviours checked against the real CLI (`task contract`, `test/contract/definition_test.go`): the three permission modes are accepted; deny rules on `.nobody/` win over `acceptEdits`; `${VARIABLE}` references in `--mcp-config` are expanded. Still to check: that `--resume` honours a changed model, permission mode, allowed tools, MCP config and appended system prompt; and whether skills from `~/.claude/skills` stay visible with `--setting-sources project,local` (if not, skills are copied into the worktree's `.claude/skills/`). Until then, `skills` is not applied.
+- Behaviours checked against the real CLI (`task contract`, `test/contract/definition_test.go`): the three permission modes are accepted (auto only on non-Haiku models); deny rules on `.nobody/` win over `acceptEdits`; `${VARIABLE}` references in `--mcp-config` are expanded; a resumed session keeps its memory, follows a changed model, permission mode and MCP config, and obeys a definition handed over in its first message. Still to check: whether skills from `~/.claude/skills` stay visible with `--setting-sources project,local` (if not, skills are copied into the worktree's `.claude/skills/`). Until then, `skills` is not applied.

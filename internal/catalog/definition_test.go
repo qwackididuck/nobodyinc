@@ -86,6 +86,11 @@ With tests.
 			wantErr: "temperature",
 		},
 		{
+			name:    "auto profile with haiku",
+			file:    "---\nmodel: haiku\npermissions: {profile: auto}\n---\n",
+			wantErr: "Haiku",
+		},
+		{
 			name:    "unknown profile",
 			file:    "---\npermissions: {profile: yolo}\n---\n",
 			wantErr: "permissions.profile",

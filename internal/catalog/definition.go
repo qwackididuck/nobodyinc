@@ -196,6 +196,12 @@ func (d Definition) Validate() error {
 		}
 	}
 
+	// Claude Code silently falls back to asking for everything when auto mode
+	// is unavailable for the model, which Haiku is (checked by task contract).
+	if d.Permissions.Profile == ProfileAuto && strings.Contains(strings.ToLower(d.Model), "haiku") {
+		errs = append(errs, errors.New("permissions.profile auto is not available with Haiku models: use sonnet or opus, or another profile"))
+	}
+
 	if d.Version < 0 {
 		errs = append(errs, fmt.Errorf("version %d: must be positive", d.Version))
 	}

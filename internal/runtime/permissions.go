@@ -7,8 +7,10 @@ import (
 )
 
 // Claude Code permission modes used by the profiles (docs/agents.md).
+// "manual" is the documented name of the mode Claude Code reports as
+// "default": every sensitive action asks for permission.
 const (
-	modeDefault     = "default"
+	modeDefault     = "manual"
 	modeAcceptEdits = "acceptEdits"
 	modeAuto        = "auto"
 )
@@ -36,7 +38,7 @@ var allowlistDeny = []string{"Bash(git push *)"}
 
 // permissionMode is the --permission-mode of a profile:
 //
-//   - default: every sensitive action goes to the approval queue;
+//   - default: manual, every sensitive action goes to the approval queue;
 //   - allowlist: acceptEdits (file edits in the working directory pass),
 //     plus the allowlistAllow rules;
 //   - auto: Claude Code's classifier decides.
