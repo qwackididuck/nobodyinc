@@ -37,6 +37,7 @@ export function TicketsView({ teams }: Props) {
             <th>ID</th>
             <th>Title</th>
             <th>Team</th>
+            <th>Feature</th>
             <th>Assignee</th>
             <th>Status</th>
           </tr>
@@ -54,6 +55,7 @@ export function TicketsView({ teams }: Props) {
                 {t.blocked_by && t.blocked_by.length > 0 && <span className={styles.muted}> (after {t.blocked_by.join(", ")})</span>}
               </td>
               <td>{t.team}</td>
+              <td>{t.feature || "—"}</td>
               <td>{t.assignee || "—"}</td>
               <td>{t.status}</td>
             </tr>

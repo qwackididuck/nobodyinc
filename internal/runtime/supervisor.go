@@ -52,8 +52,12 @@ type agentProcess struct {
 	cmd      *exec.Cmd
 	terminal *os.File
 	output   *Output
-	writeMu  sync.Mutex // keeps keystrokes from interleaving
+	writeMu  sync.Mutex    // keeps keystrokes from interleaving
+	exited   chan struct{} // closed once the process is gone
 }
+
+// stopTimeout bounds how long Stop waits for an agent's process to end.
+const stopTimeout = 10 * time.Second
 
 // StartAll starts every agent of the organization.
 func (s *Supervisor) StartAll(ctx context.Context) error {
@@ -97,7 +101,7 @@ func (s *Supervisor) Start(ctx context.Context, address string) error {
 		return fmt.Errorf("start agent %s: %w", address, err)
 	}
 
-	p := &agentProcess{cmd: cmd, terminal: terminal, output: NewOutput()}
+	p := &agentProcess{cmd: cmd, terminal: terminal, output: NewOutput(), exited: make(chan struct{})}
 	s.agents[address] = p
 	s.Statuses.Set(address, StatusStarting)
 	s.Logger.Info("agent started", "agent", address, "pid", cmd.Process.Pid)
@@ -117,6 +121,46 @@ func (s *Supervisor) StopAll() {
 			s.Logger.Warn("stop agent", "agent", address, "err", err)
 		}
 	}
+}
+
+// Stop ends an agent's process and waits until it is gone. Stopping an agent
+// that is not running does nothing.
+func (s *Supervisor) Stop(address string) error {
+	p, ok := s.process(address)
+	if !ok {
+		return nil
+	}
+
+	if err := p.cmd.Process.Kill(); err != nil {
+		return fmt.Errorf("stop agent %s: %w", address, err)
+	}
+
+	select {
+	case <-p.exited:
+		return nil
+	case <-time.After(stopTimeout):
+		return fmt.Errorf("agent %s did not stop within %s", address, stopTimeout)
+	}
+}
+
+// RestartAll stops every agent and starts it again, e.g. so that it works
+// in the worktree of a newly activated feature.
+func (s *Supervisor) RestartAll(ctx context.Context) error {
+	var errs []error
+
+	for _, m := range s.Org.Members() {
+		if err := s.Stop(m.Address); err != nil {
+			errs = append(errs, err)
+
+			continue
+		}
+
+		if err := s.Start(ctx, m.Address); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // Output returns the terminal output of a running agent.
@@ -200,6 +244,7 @@ func (s *Supervisor) watch(address string, p *agentProcess) {
 
 	s.Statuses.Set(address, StatusExited)
 	s.Logger.Info("agent exited", "agent", address, "err", err)
+	close(p.exited)
 }
 
 // typePrompt types a prompt into an agent's terminal and presses Enter.

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
+	"github.com/qwackididuck/nobodyinc/internal/org"
 )
 
 // Texts shown to the agent before its mail. They are written for the model:
@@ -42,7 +43,7 @@ func renderMail(intro string, messages []messaging.Message) string {
 			fmt.Fprintf(&b, "In reply to: %s\n", m.InReplyTo)
 		}
 
-		fmt.Fprintf(&b, "Act: %s%s\n", m.Act, replyHint(m.Act))
+		fmt.Fprintf(&b, "Act: %s%s\n", m.Act, replyHint(m))
 
 		if m.Ticket != "" {
 			fmt.Fprintf(&b, "Ticket: %s\n", m.Ticket)
@@ -56,10 +57,13 @@ func renderMail(intro string, messages []messaging.Message) string {
 	return b.String()
 }
 
-func replyHint(a messaging.Act) string {
-	if a.RequiresReply() {
+func replyHint(m messaging.Message) string {
+	switch {
+	case m.Act.RequiresReply():
 		return " (an answer is expected)"
+	case m.From == org.SystemAddress:
+		return " (a notice from the system: do not reply, but do what it asks)"
+	default:
+		return " (no answer needed: do not reply)"
 	}
-
-	return " (no answer needed: do not reply)"
 }

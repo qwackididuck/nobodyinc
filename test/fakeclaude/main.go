@@ -22,8 +22,9 @@
 //     made the original request;
 //   - when send_message fails, the error is escalated to the human;
 //   - a notice from nobody about a ticket in its team's queue makes it claim
-//     the ticket, attach a deliverable and close it; same for a ticket
-//     assigned to it (without the claim).
+//     the ticket, commit a <ticket>.md file in its worktree, attach a
+//     deliverable and close it; same for a ticket assigned to it (without the
+//     claim).
 //
 // Started with --fork-session (a fork answering an urgent question), it prints
 // a one-shot JSON answer like claude -p does: ESCALATE if the question
@@ -38,6 +39,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -334,8 +336,40 @@ func (a *agent) ask(request mail) {
 
 // finish attaches a deliverable to a ticket and closes it.
 func (a *agent) finish(ticket string) {
+	commitWork(ticket)
+
 	if a.call("deliverable_add", map[string]any{"id": ticket, "kind": "note", "summary": "done by " + os.Getenv("NOBODY_AGENT")}) {
 		a.call("ticket_update", map[string]any{"id": ticket, "status": "done"})
+	}
+}
+
+// workFilePerm is the permission of the files the fake writes.
+const workFilePerm = 0o600
+
+// ticketID is the shape of a ticket ID, checked before using it in a file name.
+var ticketID = regexp.MustCompile(`^T-\d+$`)
+
+// commitWork writes <ticket>.md in the current directory (the team's
+// worktree) and commits it, as a real agent commits its work before closing
+// a ticket. Outside a git repository (no active feature) it does nothing.
+func commitWork(ticket string) {
+	if !ticketID.MatchString(ticket) {
+		return
+	}
+
+	agent := os.Getenv("NOBODY_AGENT")
+
+	content := []byte(ticket + " done by " + agent + "\n")
+	if err := os.WriteFile(ticket+".md", content, workFilePerm); err != nil { //nolint:gosec // ticket checked as T-<n>
+		return
+	}
+
+	for _, args := range [][]string{{"add", ticket + ".md"}, {"commit", "-m", "feat: " + ticket + " done by " + agent}} {
+		if err := exec.CommandContext(context.Background(), "git", args...).Run(); err != nil { //nolint:gosec // fixed git subcommands
+			sayf("git %s: %v", args[0], err)
+
+			return
+		}
 	}
 }
 

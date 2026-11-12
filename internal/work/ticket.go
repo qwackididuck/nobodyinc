@@ -48,6 +48,7 @@ type Ticket struct {
 	Description        string    `json:"description,omitempty"`
 	AcceptanceCriteria string    `json:"acceptance_criteria,omitempty"`
 	Team               string    `json:"team"`
+	Feature            string    `json:"feature,omitempty"` // "F-3", the feature it belongs to
 	Assignee           string    `json:"assignee,omitempty"`
 	Status             Status    `json:"status"`
 	BlockedBy          []string  `json:"blocked_by,omitempty"`

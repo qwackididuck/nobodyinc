@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { type Agent, startAgent } from "@/lib/api";
 import styles from "./ControlRoom.module.css";
+import { FeaturePanel } from "./FeaturePanel";
 
 interface Props {
   agents: Agent[];
@@ -29,6 +30,7 @@ export function AgentList({ agents, selected, onSelect, onChange }: Props) {
 
   return (
     <nav className={styles.panel} aria-label="Agents">
+      <FeaturePanel />
       <h2 className={styles.panelTitle}>Teams</h2>
       {[...teams].map(([team, members]) => (
         <section key={team} className={styles.team}>

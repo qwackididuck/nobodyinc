@@ -285,7 +285,7 @@ func TestTicketQueueToDone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	details := waitForTicket(t, d, tk.ID, work.StatusDone)
+	details := waitForDone(t, d, tk.ID)
 	if details.Ticket.Assignee != "dev1@dev" || len(details.Deliverables) != 1 {
 		t.Fatalf("finished ticket = %+v, deliverables %+v", details.Ticket, details.Deliverables)
 	}
@@ -312,9 +312,9 @@ func TestBlockedTicketStartsWhenDependencyIsDone(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	specsDone := waitForTicket(t, d, specs.ID, work.StatusDone)
+	specsDone := waitForDone(t, d, specs.ID)
 
-	implDone := waitForTicket(t, d, impl.ID, work.StatusDone)
+	implDone := waitForDone(t, d, impl.ID)
 	if specsDone.Ticket.Assignee != "archi@specs" || implDone.Ticket.Assignee != "dev1@dev" {
 		t.Fatalf("assignees = %s, %s", specsDone.Ticket.Assignee, implDone.Ticket.Assignee)
 	}
@@ -338,12 +338,13 @@ func TestTeamAddress(t *testing.T) {
 	}
 }
 
-func waitForTicket(t *testing.T, d *daemon.Daemon, id string, status work.Status) work.Details {
+// waitForDone waits until a ticket is done.
+func waitForDone(t *testing.T, d *daemon.Daemon, id string) work.Details {
 	t.Helper()
 
 	var details work.Details
 
-	eventually(t, id+" "+string(status), func() bool {
+	eventually(t, id+" done", func() bool {
 		var err error
 
 		details, err = d.Tickets.Get(context.Background(), id)
@@ -351,7 +352,7 @@ func waitForTicket(t *testing.T, d *daemon.Daemon, id string, status work.Status
 			t.Fatal(err)
 		}
 
-		return details.Ticket.Status == status
+		return details.Ticket.Status == work.StatusDone
 	})
 
 	return details
@@ -402,4 +403,123 @@ func eventually(t *testing.T, what string, ok func() bool) {
 
 		time.Sleep(50 * time.Millisecond)
 	}
+}
+
+// With a feature, work moves between teams through git: specs commits in its
+// team's worktree and closes its ticket, which merges it into the feature
+// branch; dev claims the next ticket and finds the specs in its own worktree.
+func TestFeatureRelayThroughGit(t *testing.T) {
+	t.Parallel()
+
+	o := testOrg(t)
+	initGitProject(t, o.ProjectDir)
+
+	d := startDaemon(t, o)
+	ctx := context.Background()
+
+	before := outputs(d, o)
+
+	f, err := d.Tickets.StartFeature(ctx, org.HumanAddress, work.FeatureDraft{Title: "Add the order API"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	waitRestarted(t, d, o, before)
+
+	specs, err := d.Tickets.Create(ctx, org.HumanAddress, work.Draft{Title: "Write the spec", Team: "specs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	impl, err := d.Tickets.Create(ctx, org.HumanAddress, work.Draft{Title: "Implement", Team: "dev", BlockedBy: []string{specs.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	specsDone := waitForDone(t, d, specs.ID)
+	waitForDone(t, d, impl.ID)
+
+	files := git(t, o.ProjectDir, "ls-tree", "--name-only", f.Branch)
+	for _, want := range []string{specs.ID + ".md", impl.ID + ".md"} {
+		if !strings.Contains(files, want) {
+			t.Fatalf("feature branch %s misses %s:\n%s", f.Branch, want, files)
+		}
+	}
+
+	devDir := filepath.Join(o.ProjectDir, ".nobody", "worktrees", f.Slug, "dev")
+	if _, err := os.Stat(filepath.Join(devDir, specs.ID+".md")); err != nil {
+		t.Fatal("dev should have received the specs in its worktree when claiming")
+	}
+
+	if authors := git(t, o.ProjectDir, "log", "--format=%an", f.Branch); !strings.Contains(authors, "archi@specs (Nobody Inc)") {
+		t.Fatalf("commits should carry the agent's identity, authors:\n%s", authors)
+	}
+
+	if !hasCommitDeliverable(specsDone) {
+		t.Fatalf("the delivered commit should be a deliverable of %s: %+v", specs.ID, specsDone.Deliverables)
+	}
+
+	if branch := git(t, o.ProjectDir, "branch", "--show-current"); branch != "main" {
+		t.Fatalf("the user's checkout must stay on main, got %q", branch)
+	}
+}
+
+func initGitProject(t *testing.T, dir string) {
+	t.Helper()
+	git(t, dir, "init", "--initial-branch=main")
+
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("project\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	git(t, dir, "add", ".")
+	git(t, dir, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "chore: init")
+}
+
+func git(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd.Dir = dir
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+
+	return strings.TrimSpace(string(out))
+}
+
+// outputs records the current terminal of every agent, to detect restarts.
+func outputs(d *daemon.Daemon, o *org.Org) map[string]*runtime.Output {
+	current := map[string]*runtime.Output{}
+
+	for _, m := range o.Members() {
+		current[m.Address], _ = d.Supervisor.Output(m.Address)
+	}
+
+	return current
+}
+
+// waitRestarted waits until every agent runs a new process and is idle.
+func waitRestarted(t *testing.T, d *daemon.Daemon, o *org.Org, before map[string]*runtime.Output) {
+	t.Helper()
+
+	for _, m := range o.Members() {
+		eventually(t, m.Address+" restarted and idle", func() bool {
+			now, ok := d.Supervisor.Output(m.Address)
+
+			return ok && now != before[m.Address] && d.Statuses.Get(m.Address) == runtime.StatusIdle
+		})
+	}
+}
+
+func hasCommitDeliverable(d work.Details) bool {
+	for _, x := range d.Deliverables {
+		if x.Kind == "commit" && x.Reference != "" {
+			return true
+		}
+	}
+
+	return false
 }

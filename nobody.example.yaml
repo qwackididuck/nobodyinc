@@ -1,7 +1,7 @@
 # Example organisation for Nobody Inc.
 # Copy it to nobody.yaml, set project_dir, then start the daemon.
 
-# Repository the agents work in. It must already be trusted in Claude Code
+# Git repository the agents work in. It must already be trusted in Claude Code
 # (open it once with `claude` and accept the trust prompt).
 project_dir: /path/to/your/project
 

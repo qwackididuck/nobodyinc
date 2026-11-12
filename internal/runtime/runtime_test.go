@@ -50,7 +50,10 @@ func TestLaunchCommand(t *testing.T) {
 
 	o := testOrg()
 	m, _ := o.Member("archi@specs")
-	l := Launch{ClaudePath: "/bin/claude", HookPath: "/opt/nobody-hook", DaemonURL: "http://127.0.0.1:7420", ProjectDir: o.ProjectDir}
+	l := Launch{
+		ClaudePath: "/bin/claude", HookPath: "/opt/nobody-hook", DaemonURL: "http://127.0.0.1:7420",
+		WorkDir: func(string) string { return o.ProjectDir },
+	}
 
 	cmd, err := l.Command(context.Background(), o, m)
 	if err != nil {
@@ -77,7 +80,8 @@ func TestLaunchCommand(t *testing.T) {
 	}
 
 	env := strings.Join(cmd.Env, "\n")
-	if !strings.Contains(env, "NOBODY_AGENT=archi@specs") || !strings.Contains(env, "NOBODY_DAEMON_URL=http://127.0.0.1:7420") {
+	if !strings.Contains(env, "NOBODY_AGENT=archi@specs") || !strings.Contains(env, "NOBODY_DAEMON_URL=http://127.0.0.1:7420") ||
+		!strings.Contains(env, "GIT_AUTHOR_NAME=archi@specs (Nobody Inc)") || !strings.Contains(env, "GIT_COMMITTER_EMAIL=archi.specs@nobody.local") {
 		t.Fatal("agent environment is missing")
 	}
 }
@@ -176,6 +180,30 @@ func TestSupervisorInputAndOutput(t *testing.T) {
 
 	if err := s.Input("ghost@dev", []byte("x")); !errors.Is(err, ErrNotRunning) {
 		t.Fatalf("input to a stopped agent: err = %v", err)
+	}
+}
+
+func TestRestartAll(t *testing.T) {
+	t.Parallel()
+
+	s := newCatSupervisor(t)
+	if err := s.StartAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	before, _ := s.Output("archi@specs")
+
+	if err := s.RestartAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	after, ok := s.Output("archi@specs")
+	if !ok || after == before {
+		t.Fatal("RestartAll should run a new process for every agent")
+	}
+
+	if err := s.Stop("ghost@dev"); err != nil {
+		t.Fatalf("stopping an agent that is not running: %v", err)
 	}
 }
 
