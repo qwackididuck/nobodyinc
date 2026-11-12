@@ -17,6 +17,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/server"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 	"github.com/qwackididuck/nobodyinc/internal/work"
+	"github.com/qwackididuck/nobodyinc/internal/workspace"
 )
 
 // Options configure a daemon.
@@ -55,6 +56,9 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
+	git := &gitWorkspace{repo: workspace.Repo{Dir: opts.Org.ProjectDir}, org: opts.Org}
+	restoreActiveFeature(ctx, st, git, opts.Logger)
+
 	supervisor := &runtime.Supervisor{
 		Org:      opts.Org,
 		Statuses: statuses,
@@ -63,7 +67,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 			ClaudePath: opts.ClaudePath,
 			HookPath:   opts.HookPath,
 			DaemonURL:  opts.DaemonURL,
-			ProjectDir: opts.Org.ProjectDir,
+			WorkDir:    git.workDir,
 		}.Command,
 		HasMail: func(ctx context.Context, address string) (bool, error) {
 			return hasMail(ctx, st, address)
@@ -82,7 +86,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Statuses:      statuses,
 		Logger:        opts.Logger,
 		ClaudePath:    opts.ClaudePath,
-		ProjectDir:    opts.Org.ProjectDir,
+		WorkDir:       git.workDir,
 		Send:          messages.Send,
 		MarkDelivered: st.MarkDelivered,
 		Requeue:       st.Requeue,
@@ -105,7 +109,18 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	}
 	statuses.OnIdle = supervisor.OnIdle
 
-	tickets := &work.Service{Store: st, Org: opts.Org}
+	tickets := &work.Service{Store: st, Org: opts.Org, Workspace: git}
+	// A new feature moves every agent into its team's worktree.
+	tickets.OnFeatureStarted = func(f work.Feature) {
+		git.activate(f)
+
+		go func() {
+			if err := supervisor.RestartAll(context.WithoutCancel(ctx)); err != nil {
+				opts.Logger.Error("restart agents for the new feature", "feature", f.ID, "err", err)
+			}
+		}()
+	}
+
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
 	tickets.OnEvent = notifier.onEvent
 
@@ -141,6 +156,31 @@ func (d *Daemon) Close() error {
 	d.Supervisor.StopAll()
 
 	return d.Store.Close()
+}
+
+// restoreActiveFeature puts agents back into the worktrees of the feature that
+// was active when the daemon last stopped.
+func restoreActiveFeature(ctx context.Context, st *store.Store, git *gitWorkspace, logger *slog.Logger) {
+	features, err := st.ListFeatures(ctx)
+	if err != nil {
+		logger.Error("list features", "err", err)
+
+		return
+	}
+
+	for _, f := range features {
+		if !f.Active {
+			continue
+		}
+
+		if _, err := git.PrepareFeature(ctx, f); err != nil {
+			logger.Error("prepare the active feature, agents stay in the project directory", "feature", f.ID, "err", err)
+
+			return
+		}
+
+		git.activate(f)
+	}
 }
 
 // hasMail reports whether an agent has undelivered mail in any tray.

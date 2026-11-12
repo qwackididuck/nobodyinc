@@ -11,6 +11,8 @@ open ──claim──► in_progress ──done──► done
 ```
 
 - A ticket can depend on other tickets (`blocked_by`): it cannot be claimed until they are all done.
+- An agent works on **one ticket at a time**: claiming a second one is refused until the first is done or released.
+- A ticket belongs to the active **feature**, if any: claiming and closing it then move work through git (see `workspaces.md`), and the delivered commits become `commit` deliverables.
 - IDs look like `T-12`.
 
 ## Who may do what
@@ -61,5 +63,4 @@ A message to `@<team>` (e.g. `@specs`) goes to one member of that team, chosen t
 
 ## Not yet
 
-- One agent instance and one git worktree per ticket (agents currently share the project directory).
 - Bids (calls for tender) and the god session that writes the tickets from the requirements.

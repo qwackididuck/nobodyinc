@@ -20,9 +20,9 @@ func (s *Store) InsertTicket(ctx context.Context, t work.Ticket) (work.Ticket, e
 	defer tx.Rollback() //nolint:errcheck // no-op after a successful commit
 
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO tickets (title, description, acceptance_criteria, team, assignee, status, created_by, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.Title, t.Description, t.AcceptanceCriteria, t.Team, t.Assignee, t.Status, t.CreatedBy,
+		INSERT INTO tickets (title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.Title, t.Description, t.AcceptanceCriteria, t.Team, t.Feature, t.Assignee, t.Status, t.CreatedBy,
 		formatTime(t.CreatedAt), formatTime(t.UpdatedAt))
 	if err != nil {
 		return work.Ticket{}, fmt.Errorf("insert ticket: %w", err)
@@ -259,7 +259,7 @@ func (s *Store) ListComments(ctx context.Context, ticket string) ([]work.Comment
 }
 
 const selectTickets = `
-	SELECT id, title, description, acceptance_criteria, team, assignee, status, created_by, created_at, updated_at
+	SELECT id, title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at
 	FROM tickets`
 
 func scanTicket(row scanner) (work.Ticket, error) {
@@ -268,7 +268,7 @@ func scanTicket(row scanner) (work.Ticket, error) {
 		n                    int64
 		createdAt, updatedAt string
 	)
-	if err := row.Scan(&n, &t.Title, &t.Description, &t.AcceptanceCriteria, &t.Team, &t.Assignee,
+	if err := row.Scan(&n, &t.Title, &t.Description, &t.AcceptanceCriteria, &t.Team, &t.Feature, &t.Assignee,
 		&t.Status, &t.CreatedBy, &createdAt, &updatedAt); err != nil {
 		return work.Ticket{}, err
 	}

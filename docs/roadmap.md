@@ -38,6 +38,10 @@ Les outils existants ne couvrent chacun qu'une partie du besoin (Paperclip séqu
 
 ## Reste à faire
 
+### Features et worktrees
+- Fait (branche `ticket-worktrees`) : features avec branche `nobody/<slug>`, worktree par équipe, relais par git (sync à la prise, livraison à la clôture), un ticket à la fois par agent, identités git par agent. Testé en réel.
+- Reste : détecter un projet non approuvé dans Claude Code et prévenir ; plusieurs features actives ; push / PR.
+
 ### Tickets et travail
 - Fait : tickets (statuts, équipe, assigné, dépendances, AC), livrables, commentaires, messages rattachés, outils MCP `ticket_*` et `deliverable_add`, API et onglet Tickets, notifications `nobody`, migrations SQLite.
 - Reste : timeline unifiée par ticket (événements, coûts, diffs) ; appels d'offres (`bid`).
@@ -67,6 +71,7 @@ Les outils existants ne couvrent chacun qu'une partie du besoin (Paperclip séqu
 - Registre, santé, affectation par agent/équipe/Run, restrictions par outil, lancement en `--strict-mcp-config`, installation depuis l'UI, `request_mcp` via la file d'approbations, relecture de sécurité, plafonds de dépense par outil.
 
 ### Sécurité
+- **Profil de permissions par agent** (dans la définition de l'agent / le catalogue) : `default` (tout passe par la file d'approbations), `allowlist` (git, go test, édition dans le worktree sans demande), `auto` (classifieur Claude Code), `yolo` (`--dangerously-skip-permissions`) **uniquement couplé au bac à sable Claude Code** (écritures limitées au worktree, réseau filtré) — à valider par un test de contrat. Fixer aussi `--permission-mode` au lancement pour éviter la question « mode auto » au démarrage (retour du test réel du 2026-11-12).
 - Équipe validation sans accès au code en phase 1 ; approbations étendues (blueprint, escalades, budgets) ; coffre de secrets et masquage ; authentification de l'API et accès distant pour le VPS.
 
 ### Budgets et observabilité
@@ -79,6 +84,7 @@ Les outils existants ne couvrent chacun qu'une partie du besoin (Paperclip séqu
 - Tableau partagé du Run ; agent documentaliste ; option ragflow.
 
 ### UI (passe de design dédiée prévue)
+- Retour du test réel : rien n'indique où est le code produit. La feature active doit montrer sa branche, les fichiers modifiés / le diff (vs la base), un bouton « ouvrir le worktree dans l'IDE » et la commande de fusion.
 - Tableau de bord des Runs, kanban des tickets, éditeurs (agents, équipes, blueprint), diffs Monaco, coûts, MCP, paramètres, temps réel (WebSocket/SSE).
 
 ### Fondations et qualité

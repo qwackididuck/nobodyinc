@@ -2,7 +2,7 @@
 
 Run teams of Claude Code agents that talk to each other (normal and urgent mailboxes, one-way channels between teams), supervised from a web control room.
 
-> Early stage project. Architecture: [`docs/architecture.md`](docs/architecture.md) · Hooks: [`docs/hooks.md`](docs/hooks.md) · Approvals: [`docs/approvals.md`](docs/approvals.md) · Tickets: [`docs/tickets.md`](docs/tickets.md) · Decisions: [`docs/adr/`](docs/adr/).
+> Early stage project. Architecture: [`docs/architecture.md`](docs/architecture.md) · Hooks: [`docs/hooks.md`](docs/hooks.md) · Approvals: [`docs/approvals.md`](docs/approvals.md) · Tickets: [`docs/tickets.md`](docs/tickets.md) · Workspaces: [`docs/workspaces.md`](docs/workspaces.md) · Decisions: [`docs/adr/`](docs/adr/).
 
 ## Requirements
 
@@ -17,7 +17,7 @@ task dev:daemon   # builds bin/nobodyd and bin/nobody-hook, starts the agents
 task dev:web      # control room on http://localhost:3000
 ```
 
-`project_dir` must be a folder already trusted in Claude Code (open it once with `claude` and accept the trust prompt). Agents work there with the default permission mode: their permission requests show up in the control room, where you allow or deny them.
+`project_dir` must be a git repository already trusted in Claude Code (open it once with `claude` and accept the trust prompt). Agents work there with the default permission mode: their permission requests show up in the control room, where you allow or deny them.
 
 ## Development
 

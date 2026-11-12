@@ -64,6 +64,7 @@ func newForkEnv(t *testing.T, forkAnswer string) (*Forker, *messaging.Service, *
 		Org:           o,
 		Statuses:      statuses,
 		Logger:        slog.New(slog.DiscardHandler),
+		WorkDir:       func(string) string { return "/tmp/project" },
 		Send:          svc.Send,
 		MarkDelivered: st.markDelivered,
 		Requeue:       st.requeue,

@@ -20,10 +20,17 @@ var (
 	ErrBlocked   = errors.New("this ticket depends on tickets that are not done yet")
 	ErrConflict  = errors.New("this ticket cannot change that way")
 	ErrNoTicket  = errors.New("no ticket is available in your team's queue")
+	ErrBusy      = errors.New("one ticket at a time: finish or release the ticket you are working on first")
 )
 
-// Store keeps tickets (implemented by internal/store).
+// Store keeps tickets and features (implemented by internal/store).
 type Store interface {
+	TicketStore
+	FeatureStore
+}
+
+// TicketStore keeps tickets with their deliverables and comments.
+type TicketStore interface {
 	InsertTicket(ctx context.Context, t Ticket) (Ticket, error)
 	GetTicket(ctx context.Context, id string) (Ticket, error)
 	UpdateTicket(ctx context.Context, t Ticket) error
@@ -32,6 +39,15 @@ type Store interface {
 	ListDeliverables(ctx context.Context, ticket string) ([]Deliverable, error)
 	InsertComment(ctx context.Context, c Comment) (Comment, error)
 	ListComments(ctx context.Context, ticket string) ([]Comment, error)
+}
+
+// FeatureStore keeps features.
+type FeatureStore interface {
+	InsertFeature(ctx context.Context, f Feature) (Feature, error)
+	GetFeature(ctx context.Context, id string) (Feature, error)
+	ListFeatures(ctx context.Context) ([]Feature, error)
+	// ActivateFeature makes one feature the active one (the others are not).
+	ActivateFeature(ctx context.Context, id string) error
 }
 
 // Filter narrows ListTickets; empty fields match everything.
@@ -73,30 +89,27 @@ type Draft struct {
 type Service struct {
 	Store Store
 	Org   *org.Org
+	// Workspace, when set, ties tickets to git branches (see feature.go).
+	Workspace Workspace
 	// OnEvent, when set, is called after a change is stored.
 	OnEvent func(Event)
-	Now     func() time.Time
+	// OnFeatureStarted, when set, is called once a new feature is active.
+	OnFeatureStarted func(Feature)
+	Now              func() time.Time
 }
 
 // Create files a new ticket in a team's queue, or assigns it directly.
 func (s *Service) Create(ctx context.Context, by string, d Draft) (Ticket, error) {
-	if strings.TrimSpace(d.Title) == "" {
-		return Ticket{}, fmt.Errorf("%w: a ticket needs a title", ErrInvalid)
-	}
-
-	if !s.teamExists(d.Team) {
-		return Ticket{}, fmt.Errorf("%w: unknown team %q", ErrInvalid, d.Team)
-	}
-
-	if !s.mayCreateFor(by, d.Team) {
-		return Ticket{}, fmt.Errorf("%w: you can create tickets for your own team and for teams your team has a channel to", ErrForbidden)
-	}
-
-	if d.Assignee != "" && org.TeamOf(d.Assignee) != d.Team {
-		return Ticket{}, fmt.Errorf("%w: the assignee must belong to team %q", ErrInvalid, d.Team)
+	if err := s.validateDraft(ctx, by, d); err != nil {
+		return Ticket{}, err
 	}
 
 	blockedBy, err := s.normalizeDependencies(ctx, d.BlockedBy)
+	if err != nil {
+		return Ticket{}, err
+	}
+
+	feature, err := s.activeFeatureID(ctx)
 	if err != nil {
 		return Ticket{}, err
 	}
@@ -108,6 +121,7 @@ func (s *Service) Create(ctx context.Context, by string, d Draft) (Ticket, error
 		Description:        d.Description,
 		AcceptanceCriteria: d.AcceptanceCriteria,
 		Team:               d.Team,
+		Feature:            feature,
 		Assignee:           d.Assignee,
 		Status:             StatusOpen,
 		BlockedBy:          blockedBy,
@@ -154,6 +168,14 @@ func (s *Service) Claim(ctx context.Context, agent, id string) (Ticket, error) {
 		return Ticket{}, fmt.Errorf("%w: %s waits for %s", ErrBlocked, t.ID, strings.Join(t.BlockedBy, ", "))
 	}
 
+	if err := s.checkFree(ctx, agent, t.ID); err != nil {
+		return Ticket{}, err
+	}
+
+	if err := s.beforeClaim(ctx, t, agent); err != nil {
+		return Ticket{}, err
+	}
+
 	t.Assignee = agent
 	t.Status = StatusInProgress
 
@@ -176,25 +198,47 @@ func (s *Service) SetStatus(ctx context.Context, by, id string, status Status) (
 		return Ticket{}, fmt.Errorf("%w: %s is already %s", ErrConflict, t.ID, t.Status)
 	}
 
-	var event EventKind
+	event, err := transition(status)
+	if err != nil {
+		return Ticket{}, err
+	}
 
-	switch status {
-	case StatusDone:
-		event = EventDone
-	case StatusOpen:
-		t.Assignee = ""
-		event = EventReleased
-	case StatusCanceled:
-		event = ""
-	case StatusInProgress:
-		return Ticket{}, fmt.Errorf("%w: claim a ticket to start it", ErrInvalid)
-	default:
-		return Ticket{}, fmt.Errorf("%w: status must be done, open (release) or canceled", ErrInvalid)
+	if status == StatusDone {
+		delivered, err := s.beforeDone(ctx, t)
+		if err != nil {
+			return Ticket{}, err
+		}
+
+		// Recorded before the status changes, so a done ticket always shows
+		// the commits it delivered.
+		if err := s.recordDeliverables(ctx, t, delivered); err != nil {
+			return Ticket{}, err
+		}
+	}
+
+	if status == StatusOpen {
+		t.Assignee = "" // back to the team's queue
 	}
 
 	t.Status = status
 
 	return s.save(ctx, t, event, by)
+}
+
+// transition says which event a status change emits, or why it is refused.
+func transition(status Status) (EventKind, error) {
+	switch status {
+	case StatusDone:
+		return EventDone, nil
+	case StatusOpen:
+		return EventReleased, nil
+	case StatusCanceled:
+		return "", nil
+	case StatusInProgress:
+		return "", fmt.Errorf("%w: claim a ticket to start it", ErrInvalid)
+	default:
+		return "", fmt.Errorf("%w: status must be done, open (release) or canceled", ErrInvalid)
+	}
 }
 
 // Comment adds a remark to a ticket.
@@ -328,6 +372,112 @@ func (s *Service) Unblocked(ctx context.Context, done Ticket) ([]Ticket, error) 
 	}
 
 	return unblocked, nil
+}
+
+// validateDraft applies the creation rules to a draft.
+func (s *Service) validateDraft(ctx context.Context, by string, d Draft) error {
+	if strings.TrimSpace(d.Title) == "" {
+		return fmt.Errorf("%w: a ticket needs a title", ErrInvalid)
+	}
+
+	if !s.teamExists(d.Team) {
+		return fmt.Errorf("%w: unknown team %q", ErrInvalid, d.Team)
+	}
+
+	if !s.mayCreateFor(by, d.Team) {
+		return fmt.Errorf("%w: you can create tickets for your own team and for teams your team has a channel to", ErrForbidden)
+	}
+
+	if d.Assignee != "" && org.TeamOf(d.Assignee) != d.Team {
+		return fmt.Errorf("%w: the assignee must belong to team %q", ErrInvalid, d.Team)
+	}
+
+	return s.checkFree(ctx, d.Assignee, "")
+}
+
+// recordDeliverables attaches the commits delivered with a ticket.
+func (s *Service) recordDeliverables(ctx context.Context, t Ticket, delivered []Deliverable) error {
+	for _, d := range delivered {
+		d.Ticket, d.CreatedAt = t.ID, s.now()
+		if _, err := s.Store.InsertDeliverable(ctx, d); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// checkFree refuses a new ticket to an agent already working on another one.
+func (s *Service) checkFree(ctx context.Context, agent, except string) error {
+	if agent == "" {
+		return nil
+	}
+
+	current, err := s.Store.ListTickets(ctx, Filter{Assignee: agent, Status: StatusInProgress})
+	if err != nil {
+		return err
+	}
+
+	for _, t := range current {
+		if t.ID != except {
+			return fmt.Errorf("%w: %s is working on %s", ErrBusy, agent, t.ID)
+		}
+	}
+
+	return nil
+}
+
+// activeFeatureID returns the ID of the active feature, or "".
+func (s *Service) activeFeatureID(ctx context.Context) (string, error) {
+	features, err := s.Store.ListFeatures(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	for _, f := range features {
+		if f.Active {
+			return f.ID, nil
+		}
+	}
+
+	return "", nil
+}
+
+// beforeClaim brings the latest validated work into the claimer's worktree.
+func (s *Service) beforeClaim(ctx context.Context, t Ticket, agent string) error {
+	if s.Workspace == nil || t.Feature == "" {
+		return nil
+	}
+
+	f, err := s.Store.GetFeature(ctx, t.Feature)
+	if err != nil {
+		return err
+	}
+
+	if err := s.Workspace.BeforeClaim(ctx, f, agent); err != nil {
+		return fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+
+	return nil
+}
+
+// beforeDone delivers the assignee's committed work to the feature branch.
+func (s *Service) beforeDone(ctx context.Context, t Ticket) ([]Deliverable, error) {
+	if s.Workspace == nil || t.Feature == "" || t.Assignee == "" {
+		return nil, nil
+	}
+
+	f, err := s.Store.GetFeature(ctx, t.Feature)
+	if err != nil {
+		return nil, err
+	}
+
+	delivered, err := s.Workspace.BeforeDone(ctx, f, t.Assignee)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrConflict, err)
+	}
+
+	return delivered, nil
 }
 
 func (s *Service) ticketToClaim(ctx context.Context, agent, id string) (Ticket, error) {

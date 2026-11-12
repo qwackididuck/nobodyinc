@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
+	"github.com/qwackididuck/nobodyinc/internal/org"
 )
 
 type fakeInbox map[messaging.Priority][]messaging.Message
@@ -142,6 +143,15 @@ func TestRenderShowsWhatAMessageAnswers(t *testing.T) {
 
 	if text := renderMail(stopIntro, []messaging.Message{normalMsg}); strings.Contains(text, "In reply to") {
 		t.Fatalf("a new conversation has nothing to refer to:\n%s", text)
+	}
+}
+
+func TestRenderAsksToActOnSystemNotices(t *testing.T) {
+	t.Parallel()
+
+	notice := messaging.Message{ID: "s1", From: org.SystemAddress, Act: messaging.ActInform, Subject: "New ticket", Body: "Claim T-1"}
+	if text := renderMail(promptIntro, []messaging.Message{notice}); !strings.Contains(text, "do what it asks") {
+		t.Fatalf("a system notice must ask the agent to act:\n%s", text)
 	}
 }
 

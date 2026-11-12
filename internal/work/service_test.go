@@ -218,3 +218,113 @@ func TestParseID(t *testing.T) {
 		}
 	}
 }
+
+func TestOneTicketAtATime(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newService(t)
+	ctx := context.Background()
+	first := create(t, s, "dev")
+	second := create(t, s, "dev")
+
+	if _, err := s.Claim(ctx, "dev1@dev", first.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.Claim(ctx, "dev1@dev", second.ID); !errors.Is(err, work.ErrBusy) {
+		t.Fatalf("second claim: error = %v, want ErrBusy", err)
+	}
+
+	if _, err := s.Claim(ctx, "dev2@dev", second.ID); err != nil {
+		t.Fatalf("a teammate can take the other ticket: %v", err)
+	}
+
+	if _, err := s.Create(ctx, org.HumanAddress, work.Draft{Title: "x", Team: "dev", Assignee: "dev1@dev"}); !errors.Is(err, work.ErrBusy) {
+		t.Fatalf("assigning a busy agent: error = %v, want ErrBusy", err)
+	}
+}
+
+// fakeWorkspace records the git hooks and can refuse them.
+type fakeWorkspace struct {
+	claimErr, doneErr error
+	claims            []string
+}
+
+func (f *fakeWorkspace) PrepareFeature(_ context.Context, ft work.Feature) (work.Feature, error) {
+	ft.Slug, ft.Branch, ft.BaseBranch = "slug", "nobody/slug", "main"
+
+	return ft, nil
+}
+
+func (f *fakeWorkspace) BeforeClaim(_ context.Context, _ work.Feature, agent string) error {
+	f.claims = append(f.claims, agent)
+
+	return f.claimErr
+}
+
+func (f *fakeWorkspace) BeforeDone(context.Context, work.Feature, string) ([]work.Deliverable, error) {
+	return []work.Deliverable{{Kind: "commit", Reference: "abc123", Summary: "feat: implement", Author: "dev1@dev"}}, f.doneErr
+}
+
+func TestFeatureAndGitHooks(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newService(t)
+	ws := &fakeWorkspace{}
+	s.Workspace = ws
+	ctx := context.Background()
+
+	var started []string
+
+	s.OnFeatureStarted = func(f work.Feature) { started = append(started, f.ID) }
+
+	if _, err := s.StartFeature(ctx, "dev1@dev", work.FeatureDraft{Title: "x"}); !errors.Is(err, work.ErrForbidden) {
+		t.Fatalf("only the human starts features: error = %v", err)
+	}
+
+	f, err := s.StartFeature(ctx, org.HumanAddress, work.FeatureDraft{Title: "Add the order API"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if f.ID != "F-1" || !f.Active || f.Branch != "nobody/slug" || len(started) != 1 {
+		t.Fatalf("feature = %+v, started = %v", f, started)
+	}
+
+	tk := create(t, s, "dev")
+	if tk.Feature != "F-1" {
+		t.Fatalf("a new ticket belongs to the active feature, got %q", tk.Feature)
+	}
+
+	ws.claimErr = errors.New("merge conflict")
+
+	if _, err := s.Claim(ctx, "dev1@dev", tk.ID); !errors.Is(err, work.ErrConflict) {
+		t.Fatalf("a failed sync must refuse the claim: error = %v", err)
+	}
+
+	ws.claimErr = nil
+	if _, err := s.Claim(ctx, "dev1@dev", tk.ID); err != nil || len(ws.claims) != 2 {
+		t.Fatalf("claim: %v, sync calls %v", err, ws.claims)
+	}
+
+	ws.doneErr = errors.New("uncommitted changes")
+
+	if _, err := s.SetStatus(ctx, "dev1@dev", tk.ID, work.StatusDone); !errors.Is(err, work.ErrConflict) {
+		t.Fatalf("a failed delivery must refuse the closing: error = %v", err)
+	}
+
+	ws.doneErr = nil
+
+	if _, err := s.SetStatus(ctx, "dev1@dev", tk.ID, work.StatusDone); err != nil {
+		t.Fatal(err)
+	}
+
+	details, err := s.Get(ctx, tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(details.Deliverables) != 1 || details.Deliverables[0].Reference != "abc123" {
+		t.Fatalf("delivered commits should become deliverables: %+v", details.Deliverables)
+	}
+}

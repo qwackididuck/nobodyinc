@@ -114,6 +114,42 @@ paths:
         "403":
           $ref: "#/components/responses/Error"
 
+  /api/features:
+    get:
+      operationId: listFeatures
+      summary: Features, oldest first; at most one is active
+      responses:
+        "200":
+          description: Features
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Feature"
+    post:
+      operationId: startFeature
+      summary: Start a feature and make it the active one
+      description: |
+        Creates the feature branch (nobody/<slug>) from the base branch and one
+        worktree per team, then restarts every agent in its team's worktree.
+        New tickets belong to the active feature. See docs/workspaces.md.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeatureDraft"
+      responses:
+        "201":
+          description: Feature started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/tickets:
     get:
       operationId: listTickets
@@ -439,6 +475,45 @@ components:
         ticket:
           type: string
 
+    Feature:
+      type: object
+      required: [id, title, slug, base_branch, branch, active, created_by, created_at]
+      properties:
+        id:
+          type: string
+          example: F-1
+        title:
+          type: string
+        description:
+          type: string
+        slug:
+          type: string
+        base_branch:
+          type: string
+        branch:
+          type: string
+          example: nobody/add-order-api
+        active:
+          type: boolean
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    FeatureDraft:
+      type: object
+      required: [title]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        base_branch:
+          description: Branch the feature starts from; defaults to the project's current branch.
+          type: string
+
     TicketStatus:
       type: string
       enum: [open, in_progress, done, canceled]
@@ -456,6 +531,8 @@ components:
         acceptance_criteria:
           type: string
         team:
+          type: string
+        feature:
           type: string
         assignee:
           type: string

@@ -26,7 +26,8 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 | `internal/org` | Loads and validates `nobody.yaml`: teams, agents (`<agent>@<team>`), one-way channels. |
 | `internal/messaging` | The post office: validates a draft, attaches it to its thread, applies the sending rules (`policy.go`), files it in the recipient's tray. |
 | `internal/store` | SQLite (pure-Go driver), schema evolved by versioned migrations: messages (pending until delivered) and tickets. |
-| `internal/work` | Tickets: team queues, claims, dependencies, deliverables, comments, and who may do what (`tickets.md`). |
+| `internal/work` | Tickets and features: team queues, claims, dependencies, deliverables, comments, and who may do what (`tickets.md`). |
+| `internal/workspace` | The project's git repository: feature branches, team worktrees, and the merges that move work between teams (`workspaces.md`). |
 | `internal/hook` | Decides what to hand an agent on a Claude Code hook, and formats the mail for the model. |
 | `internal/officemcp` | Each agent's MCP server: `send_message`, `list_contacts` and the ticket tools. The address in the URL is the agent's identity. |
 | `internal/approval` | The queue of agents' permission requests waiting for the human (`approvals.md`). |

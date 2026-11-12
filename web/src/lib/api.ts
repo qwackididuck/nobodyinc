@@ -65,6 +65,27 @@ export async function decideApproval(id: string, allow: boolean, message = ""): 
   }
 }
 
+// A request the organization works on, with its own git branch (see docs/workspaces.md).
+export interface Feature {
+  id: string;
+  title: string;
+  description?: string;
+  slug: string;
+  base_branch: string;
+  branch: string;
+  active: boolean;
+  created_by: string;
+  created_at: string;
+}
+
+export function listFeatures(): Promise<Feature[]> {
+  return getJSON<Feature[]>("/api/features");
+}
+
+export function startFeature(draft: { title: string; description: string; base_branch: string }): Promise<Feature> {
+  return postJSON<Feature>("/api/features", draft);
+}
+
 export type TicketStatus = "open" | "in_progress" | "done" | "canceled";
 
 export interface Ticket {
@@ -73,6 +94,7 @@ export interface Ticket {
   description?: string;
   acceptance_criteria?: string;
   team: string;
+  feature?: string;
   assignee?: string;
   status: TicketStatus;
   blocked_by?: string[];

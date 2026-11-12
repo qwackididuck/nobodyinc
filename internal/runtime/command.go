@@ -22,8 +22,11 @@ var promptTemplate string
 var prompt = template.Must(template.New("prompt").Parse(promptTemplate))
 
 // onboardingPrompt is the agent's first turn. When it ends, the agent becomes
-// idle, which is the state in which incoming mail wakes it up.
-const onboardingPrompt = `You just joined Nobody Inc. Reply only "Ready." and end your turn; your mail will reach you automatically.`
+// idle, which is the state in which incoming mail wakes it up. Mail waiting
+// since before the start is attached to this very prompt, so the prompt must
+// not tell the agent to ignore it.
+const onboardingPrompt = `You just joined Nobody Inc. If mail is attached to this message, act on it now. ` +
+	`Otherwise reply only "Ready." and end your turn; your mail will reach you automatically.`
 
 // officeTools are the office MCP tools every agent may use without being
 // asked for permission.
@@ -44,8 +47,9 @@ type Launch struct {
 	HookPath string
 	// DaemonURL is how the agent's hooks and MCP client reach the daemon.
 	DaemonURL string
-	// ProjectDir is the repository the agent works in.
-	ProjectDir string
+	// WorkDir returns the directory an agent works in: its team's worktree
+	// for the active feature, or the project itself (see docs/workspaces.md).
+	WorkDir func(address string) string
 }
 
 // Command builds the claude command for one agent:
@@ -95,7 +99,7 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member) (*exec.Cm
 	}
 
 	cmd := exec.CommandContext(ctx, claude, args...)
-	cmd.Dir = l.ProjectDir
+	cmd.Dir = l.WorkDir(m.Address)
 	cmd.Env = agentEnvironment(cmd.Environ(), m.Address, l.DaemonURL)
 
 	return cmd, nil
@@ -114,8 +118,28 @@ var parentSessionPrefixes = []string{"CLAUDE_CODE_SESSION_", "CLAUDE_CODE_MESSAG
 
 // agentEnvironment is the daemon's environment without the parent session
 // markers, plus the variables nobody-hook needs.
+//
+// It also gives the agent its own git identity, so the history shows which
+// agent wrote each commit.
 func agentEnvironment(base []string, address, daemonURL string) []string {
-	return append(withoutParentSession(base), "NOBODY_AGENT="+address, "NOBODY_DAEMON_URL="+daemonURL)
+	return append(withoutParentSession(base),
+		"NOBODY_AGENT="+address,
+		"NOBODY_DAEMON_URL="+daemonURL,
+		"GIT_AUTHOR_NAME="+GitName(address),
+		"GIT_AUTHOR_EMAIL="+GitEmail(address),
+		"GIT_COMMITTER_NAME="+GitName(address),
+		"GIT_COMMITTER_EMAIL="+GitEmail(address),
+	)
+}
+
+// GitName is the git author name of an agent: "dev1@dev (Nobody Inc)".
+func GitName(address string) string {
+	return address + " (Nobody Inc)"
+}
+
+// GitEmail is the git author email of an agent: "dev1.dev@nobody.local".
+func GitEmail(address string) string {
+	return strings.ReplaceAll(address, "@", ".") + "@nobody.local"
 }
 
 // withoutParentSession removes the parent session markers from an environment.

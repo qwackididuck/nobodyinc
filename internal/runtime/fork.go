@@ -42,7 +42,8 @@ type Forker struct {
 	Statuses   *Statuses
 	Logger     *slog.Logger
 	ClaudePath string
-	ProjectDir string
+	// WorkDir returns the directory the agent works in; the fork runs there.
+	WorkDir func(address string) string
 	// Send files messages; MarkDelivered and Requeue take the question out of
 	// the agent's tray and put it back (usually messaging.Service.Send,
 	// store.MarkDelivered and store.Requeue).
@@ -106,7 +107,7 @@ func (f *Forker) ask(ctx context.Context, m org.Member, q messaging.Message) (st
 		args = append(args, "--model", m.Agent.Model)
 	}
 
-	out, err := f.run(ctx, args)
+	out, err := f.run(ctx, q, args)
 	if err != nil {
 		return "", err
 	}
@@ -161,9 +162,9 @@ func (f *Forker) reply(ctx context.Context, q messaging.Message, answer string) 
 	return err
 }
 
-func (f *Forker) run(ctx context.Context, args []string) ([]byte, error) {
+func (f *Forker) run(ctx context.Context, q messaging.Message, args []string) ([]byte, error) {
 	if f.Run != nil {
-		return f.Run(ctx, f.ProjectDir, args)
+		return f.Run(ctx, f.WorkDir(q.To), args)
 	}
 
 	claude := f.ClaudePath
@@ -172,7 +173,7 @@ func (f *Forker) run(ctx context.Context, args []string) ([]byte, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, claude, args...)
-	cmd.Dir = f.ProjectDir
+	cmd.Dir = f.WorkDir(q.To)
 	cmd.Env = withoutParentSession(os.Environ())
 
 	return cmd.Output()

@@ -363,3 +363,39 @@ func decode(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 		t.Fatalf("decode %s: %v", rec.Body, err)
 	}
 }
+
+func TestFeaturesAPI(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	rec := env.do(t, http.MethodPost, "/api/features", `{"title":"Add the order API","base_branch":"main"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("start feature: %d (%s)", rec.Code, rec.Body)
+	}
+
+	var started work.Feature
+	decode(t, rec, &started)
+
+	if started.ID != "F-1" || !started.Active {
+		t.Fatalf("started = %+v", started)
+	}
+
+	var features []work.Feature
+	decode(t, env.do(t, http.MethodGet, "/api/features", ""), &features)
+
+	if len(features) != 1 || !features[0].Active {
+		t.Fatalf("features = %+v", features)
+	}
+
+	var tk work.Ticket
+	decode(t, env.do(t, http.MethodPost, "/api/tickets", `{"title":"Build it","team":"dev"}`), &tk)
+
+	if tk.Feature != "F-1" {
+		t.Fatalf("a new ticket belongs to the active feature, got %q", tk.Feature)
+	}
+
+	if rec := env.do(t, http.MethodPost, "/api/features", `{"title":""}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a feature without title: status = %d", rec.Code)
+	}
+}

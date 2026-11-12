@@ -5,6 +5,7 @@
 //   - api.go:       /api/*           for the supervision UI and the human operator;
 //   - approvals.go: /api/approvals*  permission requests waiting for the human;
 //   - tickets.go:   /api/tickets*    tickets, as seen and handled by the human;
+//   - features.go:  /api/features    features and their git branches;
 //   - hooks.go:     /internal/*      for nobody-hook, called by Claude Code hooks.
 package server
 
@@ -68,6 +69,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/agents/{address}/start", s.startAgent)
 	mux.HandleFunc("GET /api/messages", s.listMessages)
 	mux.HandleFunc("POST /api/messages", s.sendMessageAsHuman)
+	mux.HandleFunc("GET /api/features", s.listFeatures)
+	mux.HandleFunc("POST /api/features", s.startFeature)
 	mux.HandleFunc("GET /api/tickets", s.listTickets)
 	mux.HandleFunc("POST /api/tickets", s.createTicketAsHuman)
 	mux.HandleFunc("GET /api/tickets/{id}", s.getTicket)
