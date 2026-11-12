@@ -88,7 +88,7 @@ func (s *server) acknowledgeHookDelivery(w http.ResponseWriter, r *http.Request)
 // agentAddress reads the {address} path value and checks the agent exists.
 func (s *server) agentAddress(w http.ResponseWriter, r *http.Request) (string, bool) {
 	address := r.PathValue("address")
-	if _, ok := s.Org.Member(address); !ok {
+	if _, ok := s.Org.Current().Member(address); !ok {
 		s.writeError(w, http.StatusNotFound, fmt.Errorf("unknown agent %q", address))
 
 		return "", false

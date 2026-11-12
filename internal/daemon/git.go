@@ -16,7 +16,7 @@ import (
 // knows which directory each agent works in (see docs/workspaces.md).
 type gitWorkspace struct {
 	repo workspace.Repo
-	org  *org.Org
+	org  org.Source
 
 	mu     sync.Mutex
 	active *work.Feature // nil until a feature is started
@@ -104,8 +104,10 @@ func (g *gitWorkspace) workDir(address string) string {
 }
 
 func (g *gitWorkspace) teams() []string {
-	teams := make([]string, 0, len(g.org.Teams))
-	for _, t := range g.org.Teams {
+	o := g.org.Current()
+
+	teams := make([]string, 0, len(o.Teams))
+	for _, t := range o.Teams {
 		teams = append(teams, t.ID)
 	}
 

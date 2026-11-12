@@ -21,7 +21,7 @@ type agentView struct {
 }
 
 func (s *server) listAgents(w http.ResponseWriter, _ *http.Request) {
-	members := s.Org.Members()
+	members := s.Org.Current().Members()
 
 	agents := make([]agentView, 0, len(members))
 	for _, m := range members {

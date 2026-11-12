@@ -36,7 +36,7 @@ var (
 // Supervisor runs one Claude Code session per agent, each in its own
 // pseudo-terminal, and wakes idle agents up when mail arrives.
 type Supervisor struct {
-	Org      *org.Org
+	Org      org.Source
 	Statuses *Statuses
 	Logger   *slog.Logger
 	// NewCommand builds the process of an agent; usually Launch.Command.
@@ -63,7 +63,7 @@ const stopTimeout = 10 * time.Second
 func (s *Supervisor) StartAll(ctx context.Context) error {
 	var errs []error
 
-	for _, m := range s.Org.Members() {
+	for _, m := range s.Org.Current().Members() {
 		if err := s.Start(ctx, m.Address); err != nil {
 			errs = append(errs, err)
 		}
@@ -75,7 +75,11 @@ func (s *Supervisor) StartAll(ctx context.Context) error {
 // Start launches an agent in a new pseudo-terminal. Its terminal output is
 // recorded and its status follows the process: starting, then exited.
 func (s *Supervisor) Start(ctx context.Context, address string) error {
-	member, ok := s.Org.Member(address)
+	// One snapshot for the whole start, so the member and the prompt's
+	// contacts come from the same organization.
+	o := s.Org.Current()
+
+	member, ok := o.Member(address)
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownAgent, address)
 	}
@@ -91,7 +95,7 @@ func (s *Supervisor) Start(ctx context.Context, address string) error {
 		return fmt.Errorf("%w: %s", ErrAlreadyRunning, address)
 	}
 
-	cmd, err := s.NewCommand(ctx, s.Org, member)
+	cmd, err := s.NewCommand(ctx, o, member)
 	if err != nil {
 		return err
 	}
@@ -148,7 +152,7 @@ func (s *Supervisor) Stop(address string) error {
 func (s *Supervisor) RestartAll(ctx context.Context) error {
 	var errs []error
 
-	for _, m := range s.Org.Members() {
+	for _, m := range s.Org.Current().Members() {
 		if err := s.Stop(m.Address); err != nil {
 			errs = append(errs, err)
 

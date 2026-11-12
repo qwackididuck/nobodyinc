@@ -32,8 +32,12 @@ type Sender interface {
 
 // Handler returns the HTTP handler serving one MCP server per agent. It must be
 // mounted on a pattern with an {address} wildcard, e.g. "/mcp/{address}".
-func Handler(o *org.Org, sender Sender, tickets Tickets, version string) http.Handler {
+// The server is stateless and built for each request, from the organization
+// current at that moment.
+func Handler(source org.Source, sender Sender, tickets Tickets, version string) http.Handler {
 	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		o := source.Current()
+
 		member, ok := o.Member(r.PathValue("address"))
 		if !ok {
 			return nil // the SDK answers 400 Bad Request

@@ -24,7 +24,7 @@ var (
 
 // Policy decides whether a message may be sent, from the organization chart.
 type Policy struct {
-	Org     *org.Org
+	Org     org.Source
 	MaxHops int
 }
 
@@ -70,7 +70,7 @@ func (p Policy) allowed(msg Message, parent *Message) bool {
 	case org.TeamOf(msg.From) == org.TeamOf(msg.To):
 		return true // a team always talks to itself
 	default:
-		return p.Org.HasChannel(org.TeamOf(msg.From), org.TeamOf(msg.To))
+		return p.Org.Current().HasChannel(org.TeamOf(msg.From), org.TeamOf(msg.To))
 	}
 }
 
@@ -93,7 +93,7 @@ func (p Policy) checkAddress(address string) error {
 		return nil
 	}
 
-	if _, ok := p.Org.Member(address); !ok {
+	if _, ok := p.Org.Current().Member(address); !ok {
 		return fmt.Errorf("%w: %q", ErrUnknownAddress, address)
 	}
 

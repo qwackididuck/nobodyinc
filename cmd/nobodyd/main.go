@@ -104,7 +104,7 @@ func run(logger *slog.Logger, opts options) error {
 	d, err := daemon.New(ctx, daemon.Options{
 		Version:    version,
 		Logger:     logger,
-		Org:        organization,
+		Org:        org.NewLive(organization),
 		DBPath:     dbPath,
 		ClaudePath: opts.claudePath,
 		HookPath:   hookPath,

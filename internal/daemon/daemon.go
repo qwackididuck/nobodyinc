@@ -24,7 +24,8 @@ import (
 type Options struct {
 	Version string
 	Logger  *slog.Logger
-	Org     *org.Org
+	// Org is the organization; a *org.Live lets it change while running.
+	Org org.Source
 	// DBPath is the SQLite file; ":memory:" for a throwaway database.
 	DBPath string
 	// ClaudePath and HookPath are the executables run for each agent.
@@ -56,7 +57,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
-	git := &gitWorkspace{repo: workspace.Repo{Dir: opts.Org.ProjectDir}, org: opts.Org}
+	git := &gitWorkspace{repo: workspace.Repo{Dir: opts.Org.Current().ProjectDir}, org: opts.Org}
 	restoreActiveFeature(ctx, st, git, opts.Logger)
 
 	supervisor := &runtime.Supervisor{
@@ -78,7 +79,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Store:  st,
 		Policy: messaging.Policy{Org: opts.Org},
 		PickMember: func(team string) string {
-			return pickMember(opts.Org, statuses, team, "")
+			return pickMember(opts.Org.Current(), statuses, team, "")
 		},
 	}
 	forker := &runtime.Forker{

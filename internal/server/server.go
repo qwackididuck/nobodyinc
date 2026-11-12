@@ -27,7 +27,7 @@ import (
 type Deps struct {
 	Version  string
 	Logger   *slog.Logger
-	Org      *org.Org
+	Org      org.Source
 	Store    *store.Store
 	Messages *messaging.Service
 	Tickets  *work.Service

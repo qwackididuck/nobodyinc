@@ -38,7 +38,7 @@ If the answer has not been decided or stated here yet, answer exactly %s and not
 // the fork answers ESCALATE (or fails), the question goes back to the tray
 // and follows the usual path.
 type Forker struct {
-	Org        *org.Org
+	Org        org.Source
 	Statuses   *Statuses
 	Logger     *slog.Logger
 	ClaudePath string
@@ -64,7 +64,7 @@ func (f *Forker) ShouldAnswer(m messaging.Message) bool {
 
 // Answer forks the recipient's session to answer an urgent question.
 func (f *Forker) Answer(ctx context.Context, q messaging.Message) {
-	member, ok := f.Org.Member(q.To)
+	member, ok := f.Org.Current().Member(q.To)
 	if !ok {
 		return
 	}

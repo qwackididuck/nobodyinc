@@ -31,6 +31,6 @@ Overview and the journey of a message: `docs/architecture.md`.
 - The daemon listens on loopback only by default.
 - Structured data about agents comes from hooks and OTel only, never from reading the PTY output. The only thing written to the PTY is keystrokes (wake-up, human input).
 - Agents are isolated from the user's global settings and from a parent session's environment (ADR-0003). Do not change this without a new ADR.
-- To test with real agents, use a throwaway git repository as the project, never a real one. Ready-made: `~/Documents/workspace/nobody-sandbox` (Haiku agents): `task dev:daemon`, then `task dev:web` (if it still has a `nobody.yaml` and no `.nobody/`, migrate it once with `./bin/nobodyd -org ../nobody-sandbox/nobody.yaml`). The `demo-shop` project next to the repo is also a throwaway demo. The project must be trusted once in Claude Code (`docs/workspaces.md`).
+- To test with real agents, use a throwaway git repository as the project, never a real one. Ready-made: `~/Documents/workspace/nobody-sandbox` (Haiku agents): `task dev:daemon`, then `task dev:web` (if it still has a `nobody.yaml` and no `.nobody/`, migrate it once with `./bin/nobodyd -org ../nobody-sandbox/nobody.yaml`). The project must be trusted once in Claude Code (`docs/workspaces.md`).
 - Commits and pushes are done by the maintainer: modify files, do not commit.
 - Documentation is written in English.
