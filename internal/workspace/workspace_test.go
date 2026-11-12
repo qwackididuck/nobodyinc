@@ -227,3 +227,49 @@ func TestSlugify(t *testing.T) {
 		}
 	}
 }
+
+func TestWithWorktreesExcluded(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		content     string
+		want        string
+		wantChanged bool
+	}{
+		{
+			name:        "empty file",
+			content:     "",
+			want:        "\n# Nobody Inc worktrees\n/.nobody/worktrees/\n",
+			wantChanged: true,
+		},
+		{
+			name:        "user lines kept",
+			content:     "*.log",
+			want:        "*.log\n\n# Nobody Inc worktrees\n/.nobody/worktrees/\n",
+			wantChanged: true,
+		},
+		{
+			name:        "legacy line replaced",
+			content:     "*.log\n\n# Nobody Inc worktrees\n/.nobody/\n",
+			want:        "*.log\n\n# Nobody Inc worktrees\n/.nobody/worktrees/\n",
+			wantChanged: true,
+		},
+		{
+			name:    "already up to date",
+			content: "# Nobody Inc worktrees\n/.nobody/worktrees/\n",
+			want:    "# Nobody Inc worktrees\n/.nobody/worktrees/\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, changed := withWorktreesExcluded(tt.content)
+			if got != tt.want || changed != tt.wantChanged {
+				t.Fatalf("got %q (changed=%v), want %q (changed=%v)", got, changed, tt.want, tt.wantChanged)
+			}
+		})
+	}
+}

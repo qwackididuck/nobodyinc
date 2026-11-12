@@ -1,6 +1,6 @@
 # Workspaces: features, branches and team worktrees
 
-This page is about the **project the agents work on** (`project_dir` in `nobody.yaml`), not about the Nobody Inc repository itself. The project keeps its own branching model; Nobody Inc only adds branches prefixed with `nobody/` and never merges into any other branch.
+This page is about the **project the agents work on** (the directory holding `.nobody/`, see `agents.md`), not about the Nobody Inc repository itself. The project keeps its own branching model; Nobody Inc only adds branches prefixed with `nobody/` and never merges into any other branch.
 
 ## Features
 
@@ -16,7 +16,7 @@ A feature is a request, e.g. "Add the order API". Starting one (Feature panel in
        dev/     branch nobody/add-the-order-api--dev
    ```
 
-   `.nobody/` is added to `.git/info/exclude`, so it never shows in the user's `git status`;
+   `.nobody/worktrees/` is ignored by git (`.nobody/.gitignore`, and `.git/info/exclude` for projects without it), so worktrees never show in the user's `git status`. The rest of `.nobody/` is the project's configuration and is committed. Throwaway merge worktrees live in `.nobody/worktrees/_merge/`;
 3. restarts every agent in its team's worktree.
 
 New tickets belong to the active feature. Only one feature is active at a time; without one, agents work in the project directory itself and tickets have no branches.
