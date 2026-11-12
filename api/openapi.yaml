@@ -1,9 +1,19 @@
 openapi: 3.1.0
 info:
   title: Nobody Inc daemon API
-  version: 0.0.1
+  version: 0.1.0
+  description: |
+    HTTP API of nobodyd. Two audiences:
+    - `/api/*` is used by the supervision web UI and the human operator;
+    - `/internal/*` is used by nobody-hook, the binary Claude Code runs on hook
+      events (see docs/hooks.md). It is not meant to be called by hand.
+    - `/mcp/{address}` (not described here) is the MCP endpoint (streamable
+      HTTP, stateless) of the agent with that address: tools send_message and
+      list_contacts, see internal/officemcp.
+    The daemon listens on loopback only by default.
 servers:
   - url: http://127.0.0.1:7420
+
 paths:
   /healthz:
     get:
@@ -16,7 +26,324 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+
+  /api/agents:
+    get:
+      operationId: listAgents
+      summary: List the agents of the organisation with their current status
+      responses:
+        "200":
+          description: Agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+
+  /api/agents/{address}/start:
+    post:
+      operationId: startAgent
+      summary: Launch (or relaunch) an agent's Claude Code session
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      responses:
+        "202":
+          description: Agent launched
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}/terminal:
+    get:
+      operationId: attachTerminal
+      summary: WebSocket streaming the agent's terminal
+      description: |
+        Upgrades to a WebSocket. Server → browser binary frames carry raw
+        terminal output (recent backlog first). Browser → server text frames
+        are JSON controls: {"type":"input","data":"..."} or
+        {"type":"resize","rows":40,"cols":120}.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      responses:
+        "101":
+          description: Switching to the WebSocket protocol
+        "404":
+          description: Agent is not running
+
+  /api/messages:
+    get:
+      operationId: listMessages
+      summary: Latest messages of the whole organisation, oldest first
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessageAsHuman
+      summary: Send a message as the human operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HumanDraft"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets:
+    get:
+      operationId: listTickets
+      summary: Tickets, oldest first, optionally filtered
+      parameters:
+        - name: team
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/TicketStatus"
+      responses:
+        "200":
+          description: Tickets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Ticket"
+    post:
+      operationId: createTicketAsHuman
+      summary: Create a ticket as the human operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketDraft"
+      responses:
+        "201":
+          description: Ticket created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets/{id}:
+    get:
+      operationId: getTicket
+      summary: A ticket with its deliverables, comments and messages
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+      responses:
+        "200":
+          description: Ticket details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketDetails"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets/{id}/comments:
+    post:
+      operationId: commentTicketAsHuman
+      summary: Comment on a ticket as the human operator
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              additionalProperties: false
+              properties:
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Comment added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketComment"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets/{id}/status:
+    post:
+      operationId: setTicketStatusAsHuman
+      summary: Change a ticket's status as the human operator (done, open, canceled)
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status:
+                  $ref: "#/components/schemas/TicketStatus"
+      responses:
+        "200":
+          description: Updated ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/approvals:
+    get:
+      operationId: listApprovals
+      summary: Permission requests of agents waiting for the human, oldest first
+      responses:
+        "200":
+          description: Pending approvals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Approval"
+
+  /api/approvals/{id}:
+    post:
+      operationId: decideApproval
+      summary: Allow or deny a pending permission request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecision"
+      responses:
+        "204":
+          description: Decision sent to the agent
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /internal/agents/{address}/hook:
+    post:
+      operationId: handleHookEvent
+      summary: Decide what to tell an agent on a Claude Code hook event
+      description: |
+        Called by nobody-hook with the event JSON received from Claude Code.
+        Returns the hook response to print (if any) and the IDs of the messages
+        it carries, to acknowledge once printed. For a PermissionRequest event,
+        the call blocks until the human decides (up to 9 minutes) and carries
+        no message; without a decision, no response is returned and Claude
+        Code shows its own prompt in the agent's terminal.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HookEvent"
+      responses:
+        "200":
+          description: What to tell the agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HookDecision"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /internal/agents/{address}/hook/ack:
+    post:
+      operationId: acknowledgeHookDelivery
+      summary: Confirm that a hook response was handed to the agent
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HookAck"
+      responses:
+        "204":
+          description: Messages marked delivered
+        "404":
+          $ref: "#/components/responses/Error"
+
 components:
+  parameters:
+    Address:
+      name: address
+      in: path
+      required: true
+      description: Agent address, "<agent>@<team>"
+      schema:
+        type: string
+        example: archi@specs
+
+    TicketID:
+      name: id
+      in: path
+      required: true
+      description: Ticket ID, "T-<number>"
+      schema:
+        type: string
+        example: T-12
+
+  responses:
+    Error:
+      description: Request refused
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
   schemas:
     Health:
       type: object
@@ -27,3 +354,266 @@ components:
           enum: [ok]
         version:
           type: string
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    Agent:
+      type: object
+      required: [address, team, name, role, status]
+      properties:
+        address:
+          type: string
+        team:
+          type: string
+        name:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+          enum: [stopped, starting, working, idle, exited, awaiting_approval]
+
+    Act:
+      type: string
+      enum: [request, query, propose, inform, agree, refuse, done]
+
+    Priority:
+      type: string
+      enum: [normal, urgent]
+
+    Message:
+      type: object
+      required: [id, conversation, from, to, act, priority, subject, body, hops, sent_at]
+      properties:
+        id:
+          type: string
+        conversation:
+          type: string
+        in_reply_to:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        act:
+          $ref: "#/components/schemas/Act"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        subject:
+          type: string
+        body:
+          type: string
+        hops:
+          type: integer
+        ticket:
+          type: string
+        sent_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type: string
+          format: date-time
+
+    HumanDraft:
+      type: object
+      required: [to, act, priority]
+      additionalProperties: false
+      properties:
+        to:
+          type: string
+        act:
+          $ref: "#/components/schemas/Act"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        subject:
+          type: string
+        body:
+          type: string
+        in_reply_to:
+          type: string
+        ticket:
+          type: string
+
+    TicketStatus:
+      type: string
+      enum: [open, in_progress, done, canceled]
+
+    Ticket:
+      type: object
+      required: [id, title, team, status, created_by, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        acceptance_criteria:
+          type: string
+        team:
+          type: string
+        assignee:
+          type: string
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        blocked_by:
+          type: array
+          items:
+            type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TicketDraft:
+      type: object
+      required: [title, team]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        team:
+          type: string
+        description:
+          type: string
+        acceptance_criteria:
+          type: string
+        blocked_by:
+          type: array
+          items:
+            type: string
+        assignee:
+          type: string
+
+    TicketComment:
+      type: object
+      required: [id, ticket, author, body, created_at]
+      properties:
+        id:
+          type: integer
+        ticket:
+          type: string
+        author:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Deliverable:
+      type: object
+      required: [id, ticket, author, kind, summary, created_at]
+      properties:
+        id:
+          type: integer
+        ticket:
+          type: string
+        author:
+          type: string
+        kind:
+          type: string
+          enum: [file, commit, report, note]
+        reference:
+          type: string
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    TicketDetails:
+      type: object
+      required: [ticket, deliverables, comments, messages]
+      properties:
+        ticket:
+          $ref: "#/components/schemas/Ticket"
+        deliverables:
+          type: array
+          items:
+            $ref: "#/components/schemas/Deliverable"
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketComment"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+
+    Approval:
+      type: object
+      required: [id, agent, tool_name, created_at]
+      properties:
+        id:
+          type: string
+        agent:
+          type: string
+        tool_name:
+          type: string
+        tool_input:
+          description: The tool's arguments, as sent by Claude Code.
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    ApprovalDecision:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [allow, deny]
+        message:
+          description: Shown to the agent, typically to explain a refusal.
+          type: string
+
+    HookEvent:
+      description: Event JSON as sent by Claude Code; only these fields are used.
+      type: object
+      required: [hook_event_name]
+      properties:
+        hook_event_name:
+          type: string
+        session_id:
+          type: string
+        cwd:
+          type: string
+        tool_name:
+          type: string
+        tool_input:
+          type: object
+        stop_hook_active:
+          type: boolean
+
+    HookDecision:
+      type: object
+      required: [message_ids]
+      properties:
+        response:
+          description: JSON to print on stdout for Claude Code; absent when there is nothing to say.
+          type: object
+        message_ids:
+          type: array
+          items:
+            type: string
+
+    HookAck:
+      type: object
+      required: [message_ids]
+      properties:
+        message_ids:
+          type: array
+          items:
+            type: string

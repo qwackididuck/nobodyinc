@@ -1,20 +1,36 @@
 # Nobody Inc
 
-Outil d'orchestration d'équipes d'agents Claude Code : équipes, messagerie inter-agents (bannettes normale/urgente), tickets avec livrables, blueprint sans code, supervision web. Vision et liste des travaux : `docs/roadmap.md`. Décisions : `docs/adr/`.
+Orchestration of teams of Claude Code agents: teams, inter-agent messaging (normal/urgent mailboxes), tickets with deliverables, no-code blueprint, web supervision. Decisions: `docs/adr/`. The roadmap (`docs/roadmap.md`) is a local, unversioned file.
 
 ## Stack
-- `cmd/nobodyd` : démon Go (Go 1.27), API décrite dans `api/openapi.yaml` (à mettre à jour avant tout changement d'endpoint).
-- `internal/` : code Go par domaine.
-- `web/` : Next.js 16 (App Router, TypeScript strict), géré avec pnpm.
+Overview and the journey of a message: `docs/architecture.md`.
+- `cmd/nobodyd`: Go daemon (Go 1.27). Starts the agents, owns the mailboxes, serves the API described in `api/openapi.yaml` (update it before changing any endpoint).
+- `cmd/nobody-hook`: relay run by the agents' Claude Code hooks (`docs/hooks.md`).
+- `internal/`: `org` (nobody.yaml), `messaging` (sending rules), `store` (SQLite, versioned migrations in `store/migrations/`: never edit a shipped one), `work` (tickets, `docs/tickets.md`), `hook` (what to hand the agent), `approval` (permission requests waiting for the human, `docs/approvals.md`), `officemcp` (the agents' MCP), `runtime` (PTY, statuses, wake-up, terminal), `server` (HTTP).
+- `internal/daemon`: wires everything together; used by `cmd/nobodyd` and by the end-to-end tests.
+- `test/contract`: checks against the real Claude Code CLI the behaviours we depend on (hooks, `--fork-session`, `--strict-mcp-config`, PTY, permission requests).
+- `test/e2e` + `test/fakeclaude`: whole multi-agent scenarios through the real daemon, hooks and PTYs, with a deterministic fake `claude` (free, part of `task check`). Add a scenario here for every new cross-cutting behaviour.
+- `web/`: Next.js 16 control room (App Router, strict TypeScript, pnpm). Read `web/AGENTS.md`: this Next.js version has breaking changes, its docs are in `web/node_modules/next/dist/docs/`.
 
-## Commandes
-- `task check` : lint + tests, à passer avant chaque commit.
+## Commands
+- `task check`: lint + tests, must pass before every commit.
 - `task test` / `task lint` / `task build`
-- `task dev:daemon` (écoute sur 127.0.0.1:7420, surchargeable via `NOBODY_ADDR`) et `task dev:web`
+- `task contract`: contract tests against the real CLI (costs a few cents); rerun after every Claude Code upgrade.
+- `task dev:daemon`: builds and runs the daemon with `nobody.yaml` (local copy of `nobody.example.yaml`, not versioned); listens on 127.0.0.1:7420, override with `NOBODY_ADDR`.
+- `task dev:web`: control room on http://localhost:3000.
 - `task web:install`
+- CI (`.github/workflows/ci.yml`): every branch runs golangci-lint (v2.15.0, `.golangci.yml`, adapted from ring-go-dev), `go vet` and `go test -race`; main also builds the binaries and publishes a GitHub release tagged from the conventional commits. Contract tests are not run in CI.
 
 ## Conventions
-- Branches : `main` (prod), `develop` (intégration), `<iid>-<description>` pour les features.
-- Logs via `log/slog`, jamais de `fmt.Println` permanent.
-- Le démon n'écoute que sur loopback par défaut.
-- Données structurées sur les agents : hooks et OTel uniquement, jamais de lecture de la sortie du PTY.
+- **Readability first**: package docs that explain how things work, small well-named functions, doc comments on exported identifiers, and a `docs/` page for every cross-cutting mechanism.
+- Hooks, integrations and glue: documented, tested Go code, never bash scripts or one-liners.
+- Table-driven tests (`t.Run`) for non-trivial logic.
+- Never start an agent with `--bare` (it disables hooks).
+- Branches: `<iid>-<description>` for features → `develop` (collects features) → `main` (merging is the decision to release). Use conventional commits: they decide the next version.
+- Logging through `log/slog`, never a permanent `fmt.Println`.
+- The daemon listens on loopback only by default.
+- Structured data about agents comes from hooks and OTel only, never from reading the PTY output. The only thing written to the PTY is keystrokes (wake-up, human input).
+- Agents are isolated from the user's global settings and from a parent session's environment (ADR-0003). Do not change this without a new ADR.
+- To test with real agents, use a sandbox folder as `project_dir`, never a real repository.
+- Commits and pushes are done by the maintainer: modify files, do not commit.
+- Documentation is written in English.

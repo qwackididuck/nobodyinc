@@ -1,0 +1,159 @@
+# Continuous integration and delivery.
+#
+# Branch flow: feature branch -> develop -> main. develop collects several
+# feature branches; merging develop into main is the decision to release.
+#
+#   any branch (develop included): lint, vet, tests
+#   main:                          lint, vet, tests, build, release
+#
+# A release gets the next vX.Y.Z tag, computed from the conventional commits
+# since the previous tag (feat -> minor, fix -> patch, BREAKING CHANGE ->
+# major). Commits that do not call for a release (docs, chore, test…) produce
+# no release.
+#
+# The contract tests (test/contract, build tag "contract") are not run here:
+# they call the real Claude Code CLI and the API. Run them locally with
+# `task contract` after a Claude Code upgrade.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"] # the tags pushed by a release must not start a new run
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # Never cancel a run on main: it may be in the middle of a release.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          # Keep in line with the version used locally (see CLAUDE.md).
+          version: v2.15.0
+
+  vet:
+    name: go vet
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The contract tag makes vet check the contract tests too.
+      - run: go vet -tags contract ./...
+
+  test:
+    name: go test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Unit tests and the end-to-end scenarios (test/e2e), which run the real
+      # daemon, nobody-hook and pseudo-terminals with a fake claude.
+      - run: go test -race -count=1 ./...
+
+  # --- main only: build and release -----------------------------------------
+
+  version:
+    name: next version
+    if: github.ref == 'refs/heads/main'
+    needs: [lint, vet, test]
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.next.outputs.new_tag }}
+      changelog: ${{ steps.next.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dry run: computes the next tag; the release job creates it.
+      - id: next
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          dry_run: true
+          default_bump: false # no release-worthy commit, no release
+          release_branches: main
+
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    if: needs.version.outputs.tag != ''
+    needs: [version]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux, darwin]
+        goarch: [amd64, arm64]
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      ARCHIVE: nobodyinc_${{ needs.version.outputs.tag }}_${{ matrix.goos }}_${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # Pure Go (no cgo), so every target builds from Linux.
+      - name: Build binaries
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p "dist/$ARCHIVE"
+          go build -trimpath -ldflags "-s -w -X main.version=$TAG" -o "dist/$ARCHIVE/nobodyd" ./cmd/nobodyd
+          go build -trimpath -ldflags "-s -w" -o "dist/$ARCHIVE/nobody-hook" ./cmd/nobody-hook
+          cp README.md nobody.example.yaml "dist/$ARCHIVE/"
+          tar -C dist -czf "dist/$ARCHIVE.tar.gz" "$ARCHIVE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARCHIVE }}
+          path: dist/${{ env.ARCHIVE }}.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the tag and the release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum *.tar.gz > checksums.txt
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.version.outputs.tag }}
+          body: ${{ needs.version.outputs.changelog }}
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt
+          fail_on_unmatched_files: true

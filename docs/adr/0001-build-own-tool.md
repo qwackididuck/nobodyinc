@@ -1,34 +1,34 @@
-# ADR-0001 — Construire notre propre outil d'équipes d'agents
+# ADR-0001 — Build our own agent-teams tool
 
-- Statut : accepté
-- Date : 2026-11-11
+- Status: accepted
+- Date: 2026-11-11
 
-## Contexte
+## Context
 
-Nous voulons faire travailler plusieurs équipes d'agents Claude Code (specs archi+sécu, dev, validation BDD, pentest, métrologie, documentation), capables de communiquer à l'intérieur d'une équipe et entre équipes, avec traçabilité par ticket et validations humaines, le tout supervisé depuis une interface graphique.
+We want several teams of Claude Code agents (architecture + security specs, development, BDD validation, pentest, performance, documentation) to work together, able to talk within a team and across teams, with per-ticket traceability and human approvals, all supervised from a graphical interface.
 
-Outils évalués (novembre 2026) :
+Tools evaluated (November 2026):
 
-| Outil | Pourquoi il ne convient pas seul |
+| Tool | Why it does not fit on its own |
 |---|---|
-| Paperclip | Testé : séquentiel, piloté par réveils périodiques et tickets, lent pour les échanges |
-| OpenRig (+ Herdr) | Messagerie `rôle@équipe` solide, mais interface trop orientée terminal, sans budgets ni gouvernance |
-| munder-difflin | Bon protocole de messages (le « hive »), mais habillage « The Office », pas de notion d'équipe, livraison des messages seulement en fin de tour |
-| oh-my-claudecode | Dépend du flag expérimental Agent Teams |
-| Orca, agent-orchestrator, omnigent, Orkas | Agents en parallèle, sans communication entre eux |
-| MCP Agent Mail, BMAD, LangGraph, CrewAI… | Briques partielles (messagerie seule, méthode seule, ou hors Claude Code) |
+| Paperclip | Tested: sequential, driven by periodic heartbeats and tickets, slow for exchanges |
+| OpenRig (+ Herdr) | Solid `role@team` messaging, but a terminal-centric interface, with no budgets or governance |
+| munder-difflin | Good message protocol (the "hive"), but "The Office" theming, no notion of team, messages delivered only at the end of a turn |
+| oh-my-claudecode | Depends on the experimental Agent Teams flag |
+| Orca, agent-orchestrator, omnigent, Orkas | Agents run in parallel, without talking to each other |
+| MCP Agent Mail, BMAD, LangGraph, CrewAI… | Partial building blocks (messaging only, method only, or outside Claude Code) |
 
-## Décision
+## Decision
 
-Construire un outil dédié qui reprend les meilleures idées existantes :
-- les équipes et l'adressage `rôle@équipe` d'OpenRig ;
-- le protocole de messages du hive (types de messages inspirés de FIPA, plafond d'échanges, bannettes) ;
-- en ajoutant une bannette urgente (embranchement de session, injection en cours de tour), un blueprint sans code avec channels unidirectionnels, une session god avec appels d'offres, et des tickets avec livrables.
+Build a dedicated tool that reuses the best existing ideas:
+- OpenRig's teams and `role@team` addressing;
+- the hive's message protocol (FIPA-inspired acts, hop cap, trays);
+- adding an urgent tray (session fork, mid-turn injection), a no-code blueprint with one-way channels, a god session with calls for tender, and tickets with deliverables.
 
-L'outil reste une couche fine au-dessus de Claude Code, appuyée sur ses interfaces documentées (hooks, options CLI, OTel).
+The tool stays a thin layer on top of Claude Code, relying on its documented interfaces (hooks, CLI options, OTel).
 
-## Conséquences
+## Consequences
 
-- Coût de développement et de maintenance assumé ; périmètre détaillé dans `docs/roadmap.md`.
-- Dépendance aux évolutions de Claude Code limitée par un adaptateur de runtime isolé et des tests de contrat.
-- Si Agent Teams devient stable, il pourra devenir un runtime supplémentaire plutôt qu'un concurrent.
+- We accept the cost of building and maintaining it.
+- Dependence on Claude Code changes is contained by an isolated runtime adapter and contract tests.
+- If Agent Teams becomes stable, it can become an additional runtime rather than a competitor.

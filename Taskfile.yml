@@ -13,6 +13,7 @@ tasks:
     desc: Build the daemon binary into bin/
     cmds:
       - go build -ldflags "-X main.version={{.VERSION}}" -o bin/nobodyd ./cmd/nobodyd
+      - go build -o bin/nobody-hook ./cmd/nobody-hook
 
   test:
     desc: Run Go tests
@@ -28,15 +29,21 @@ tasks:
       - pnpm --dir web exec tsc --noEmit
       - pnpm --dir web lint
 
+  contract:
+    desc: Check Claude Code behaviours we rely on, against the real CLI (costs a few cents)
+    cmds:
+      - go test -tags contract -count=1 -timeout 15m -v ./test/contract/...
+
   web:install:
     desc: Install web dependencies
     cmds:
       - pnpm --dir web install
 
   dev:daemon:
-    desc: Run the daemon
+    desc: Build and run the daemon with nobody.yaml
+    deps: [build]
     cmds:
-      - go run ./cmd/nobodyd
+      - ./bin/nobodyd -org nobody.yaml -db nobody.db
 
   dev:web:
     desc: Run the Next.js dev server

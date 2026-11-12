@@ -1,0 +1,407 @@
+/* Supervision screen: three columns — teams, terminal, mail. */
+
+.room {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr) 420px;
+  gap: 1px;
+  height: 100vh;
+  background: var(--border);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  background: var(--panel);
+}
+
+.panelTitle {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* --- teams --- */
+
+.team + .team {
+  margin-top: 16px;
+}
+
+.teamName {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.agentList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent,
+.agentSelected {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.agent:hover {
+  background: var(--hover);
+}
+
+.agentSelected {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.agentName {
+  font-weight: 600;
+}
+
+.agentRole {
+  grid-column: 1;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 999px;
+}
+
+.status_working {
+  color: #0b1d0f;
+  background: #4ade80;
+}
+
+.status_idle {
+  color: var(--text);
+  background: #374151;
+}
+
+.status_starting {
+  color: #1c1405;
+  background: #facc15;
+}
+
+.status_awaiting_approval {
+  color: #1f0f02;
+  background: #f97316;
+}
+
+.status_stopped,
+.status_exited {
+  color: #fecaca;
+  background: #7f1d1d;
+}
+
+/* --- terminal --- */
+
+.terminal {
+  flex: 1;
+  min-height: 0;
+  padding: 6px;
+  background: #000;
+  border-radius: 6px;
+}
+
+/* --- mail --- */
+
+.feed {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.message,
+.messageUrgent {
+  padding: 8px 10px;
+  background: var(--card);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+.messageUrgent {
+  border-left-color: #f97316;
+}
+
+.messageHeader {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.route {
+  font-weight: 600;
+}
+
+.act {
+  padding: 0 6px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+}
+
+.urgent {
+  color: #f97316;
+}
+
+.time {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.subject {
+  margin: 6px 0 2px;
+  font-weight: 600;
+}
+
+.body {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--text-soft);
+}
+
+.messageFooter {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* --- approvals --- */
+
+.approvals {
+  margin-bottom: 16px;
+  padding: 10px;
+  border: 1px solid #f97316;
+  border-radius: 6px;
+}
+
+.approval + .approval {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.toolInput {
+  max-height: 160px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  background: #000;
+  border-radius: 4px;
+}
+
+.denyButton {
+  padding: 6px 14px;
+  color: #fff;
+  background: #7f1d1d;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.reason {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+/* --- tabs and tickets --- */
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tab,
+.tabActive {
+  padding: 6px 12px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+
+.tabActive {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.tickets {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+
+.ticketTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.ticketTable th,
+.ticketTable td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.ticketRow,
+.ticketRowSelected {
+  cursor: pointer;
+}
+
+.ticketRow:hover,
+.ticketRowSelected {
+  background: var(--hover);
+}
+
+.ticketDetail {
+  padding: 10px 12px;
+  background: var(--card);
+  border-radius: 6px;
+}
+
+.plainList {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- composer --- */
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.composer input,
+.composer textarea,
+.composer select {
+  padding: 6px 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--card);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.replying {
+  font-size: 13px;
+}
+
+.checkbox {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* --- buttons and states --- */
+
+.primaryButton,
+.smallButton {
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.primaryButton {
+  padding: 6px 14px;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.smallButton {
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.linkButton {
+  padding: 0;
+  color: var(--accent);
+  background: none;
+  border: none;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.empty {
+  color: var(--muted);
+}
+
+.error {
+  color: #f87171;
+  font-size: 12px;
+}

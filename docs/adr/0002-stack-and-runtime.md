@@ -1,22 +1,22 @@
-# ADR-0002 — Stack : démon Go, UI Next.js, SQLite, CLI Claude Code dans un PTY
+# ADR-0002 — Stack: Go daemon, Next.js UI, SQLite, Claude Code CLI in a PTY
 
-- Statut : accepté
-- Date : 2026-11-11
+- Status: accepted
+- Date: 2026-11-11
 
-## Contexte
+## Context
 
-L'outil doit lancer et superviser de nombreuses sessions d'agents, router des messages, recevoir des hooks, exposer un serveur MCP et tourner aussi bien en local que 24h/24 sur un VPS, avec une interface de supervision consultable à distance.
+The tool must start and supervise many agent sessions, route messages, receive hooks, expose an MCP server and run both locally and 24/7 on a VPS, with a supervision interface reachable remotely.
 
-## Décision
+## Decision
 
-- **Démon Go** (`cmd/nobodyd`) : un seul binaire, beaucoup de PTY et de flux en parallèle grâce aux goroutines, faible empreinte mémoire. Un navigateur ne peut ni lancer de processus, ni accéder à git, ni rester actif une fois fermé : un backend permanent est donc obligatoire.
-- **UI Next.js** (`web/`, App Router, TypeScript strict), servie par le démon, unique client pour les modes local et VPS.
-- **SQLite** comme source de vérité (état, messages, tickets, journal d'événements) ; les décisions et livrables sont exportés en markdown versionné.
-- **CLI `claude` lancée dans un PTY** plutôt que l'Agent SDK : réutilise tels quels les settings, hooks, skills et MCP de l'utilisateur, et permet à l'humain de reprendre la main dans le terminal d'un agent. Les données structurées proviennent des hooks et d'OTel, jamais de la lecture de l'écran ; la lecture des transcripts JSONL (format interne non documenté) est optionnelle et isolée.
-- Le démon écoute par défaut sur `127.0.0.1` : il lance des processus et ne doit pas être exposé sans authentification.
+- **Go daemon** (`cmd/nobodyd`): a single binary, many PTYs and streams in parallel thanks to goroutines, a small memory footprint. A browser can neither start processes, nor access git, nor stay active once closed: a permanent backend is therefore required.
+- **Next.js UI** (`web/`, App Router, strict TypeScript), the single client for both local and VPS modes.
+- **SQLite** as the source of truth (state, messages, tickets, event log); decisions and deliverables are exported as versioned markdown.
+- **`claude` CLI started in a PTY** rather than the Agent SDK: it reuses Claude Code as is, and lets the human take over in an agent's terminal. Structured data comes from hooks and OTel, never from reading the screen; reading JSONL transcripts (an undocumented internal format) is optional and isolated.
+- The daemon listens on `127.0.0.1` by default: it starts processes and must not be exposed without authentication.
 
-## Conséquences
+## Consequences
 
-- Deux langages (Go, TypeScript), alignés sur la stack habituelle.
-- Mode d'intégration du front (export statique servi par Go ou serveur Next.js séparé) encore à trancher.
-- Un faux runtime `claude` sera nécessaire pour tester sans coût d'API.
+- Two languages (Go, TypeScript), in line with the usual stack.
+- How the UI is served in production (static export served by Go, or a separate Next.js server) is still to be decided.
+- A fake `claude` runtime (`test/fakeclaude`) runs end-to-end scenarios without API costs; the real CLI is covered by the contract tests.

@@ -1,12 +1,137 @@
+# Adapted from the ring-go-dev configuration: every linter is enabled except
+# the ones listed under "disable". Differences, each explained where it is set:
+#   - gocritic hugeParam and rangeValCopy are off (values passed by value for
+#     readability);
+#   - tagliatelle expects snake_case (our API and Claude Code's hook format);
+#   - cyclop and gocyclo are not applied to tests (table-driven tests);
+#   - ring-specific exclusions (golangci-lint's own source paths) are dropped.
 version: "2"
+run:
+  build-tags:
+    - contract
+output:
+  sort-order:
+    - file
+    - linter
+    - severity
 linters:
+  default: all
+  disable:
+    - asciicheck
+    - bodyclose
+    - dupl
+    - err113
+    - exhaustruct
+    - exhaustruct_v5
+    - gochecknoglobals
+    - gocognit
+    - godot
+    - godox
+    - gomoddirectives
+    - gosmopolitan
+    - ireturn
+    - nestif
+    - noinlineerr
+    - prealloc
+    - testpackage
+    - varnamelen
+    - wrapcheck
+    - wsl
+    - gomodguard
   enable:
-    - errorlint
-    - gosec
-    - misspell
-    - revive
-    - unconvert
+    - gomodguard_v2
+  settings:
+    depguard:
+      rules:
+        logger:
+          deny:
+            - pkg: github.com/sirupsen/logrus
+              desc: logging goes through log/slog
+    funlen:
+      lines: -1
+      statements: 50
+    goconst:
+      min-len: 2
+      min-occurrences: 5
+    gocritic:
+      disabled-checks:
+        - dupImport
+        - ifElseChain
+        - octalLiteral
+        - whyNoLint
+        - unnamedResult
+        # Nobody Inc passes its small domain values (messages, tickets) by
+        # value for readability; the copies are negligible.
+        - hugeParam
+        - rangeValCopy
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+    gocyclo:
+      min-complexity: 15
+    lll:
+      line-length: 140
+    misspell:
+      locale: US
+    mnd:
+      checks:
+        - argument
+        - case
+        - condition
+        - return
+      ignored-numbers:
+        - "0"
+        - "1"
+        - "2"
+        - "3"
+      ignored-functions:
+        - strings.SplitN
+    nolintlint:
+      require-explanation: false
+      require-specific: false
+      allow-unused: false
+    tagliatelle:
+      case:
+        rules:
+          # The API and Claude Code's hook format use snake_case.
+          json: snake
+          yaml: snake
+    revive:
+      rules:
+        - name: unexported-return
+          disabled: true
+        - name: unused-parameter
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - dupl
+          - goconst
+          - lll
+          # Table-driven tests go past the complexity thresholds without
+          # being hard to read.
+          - cyclop
+          - gocyclo
+        path: (.+)_test\.go
 formatters:
   enable:
     - gofmt
     - goimports
+  settings:
+    gofmt:
+      rewrite-rules:
+        - pattern: interface{}
+          replacement: any
+    goimports:
+      local-prefixes:
+        - github.com/qwackididuck/nobodyinc
+  exclusions:
+    generated: lax

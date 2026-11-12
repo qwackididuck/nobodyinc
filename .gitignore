@@ -1,4 +1,6 @@
 bin/
+nobody.yaml
+docs/roadmap.md
 *.db
 *.db-*
 .env

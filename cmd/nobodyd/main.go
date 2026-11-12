@@ -1,48 +1,150 @@
-// Command nobodyd is the Nobody Inc daemon.
+// Command nobodyd is the Nobody Inc daemon: it loads the organization, runs
+// one Claude Code session per agent, keeps the mailboxes, and serves the API
+// used by the web UI, by nobody-hook and by the agents' MCP clients.
+//
+// Usage:
+//
+//	nobodyd -org nobody.yaml -db nobody.db
+//
+// The listen address defaults to 127.0.0.1:7420 and can be changed with the
+// NOBODY_ADDR environment variable.
 package main
 
 import (
 	"context"
 	"errors"
+	"flag"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
-	"github.com/qwackididuck/nobodyinc/internal/server"
+	"github.com/qwackididuck/nobodyinc/internal/daemon"
+	"github.com/qwackididuck/nobodyinc/internal/org"
 )
 
 var version = "dev"
 
+// shutdownTimeout bounds how long in-flight requests get on shutdown.
+const shutdownTimeout = 10 * time.Second
+
+type options struct {
+	orgPath    string
+	dbPath     string
+	start      bool
+	claudePath string
+	hookPath   string
+	origins    string
+}
+
 func main() {
+	var opts options
+	flag.StringVar(&opts.orgPath, "org", "nobody.yaml", "organization file")
+	flag.StringVar(&opts.dbPath, "db", "nobody.db", "SQLite database file")
+	flag.BoolVar(&opts.start, "start", true, "launch every agent at startup")
+	flag.StringVar(&opts.claudePath, "claude", "claude", "claude executable")
+	flag.StringVar(&opts.hookPath, "hook", "", "nobody-hook binary (default: next to nobodyd)")
+	flag.StringVar(&opts.origins, "origins", "localhost:3000,127.0.0.1:3000", "extra browser origins allowed to open terminals")
+	flag.Parse()
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	if err := run(logger); err != nil {
+	if err := run(logger, opts); err != nil {
 		logger.Error("nobodyd stopped", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(logger *slog.Logger) error {
-	// Loopback by default: the daemon spawns processes and must not be exposed without auth.
-	addr := os.Getenv("NOBODY_ADDR")
-	if addr == "" {
-		addr = "127.0.0.1:7420"
-	}
-
-	srv := &http.Server{
-		Addr:              addr,
-		Handler:           server.NewHandler(version, logger),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
+func run(logger *slog.Logger, opts options) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	organization, err := org.Load(opts.orgPath)
+	if err != nil {
+		return err
+	}
+
+	hookPath, err := resolveHookPath(opts.hookPath)
+	if err != nil {
+		return err
+	}
+
+	addr := listenAddr()
+
+	d, err := daemon.New(ctx, daemon.Options{
+		Version:    version,
+		Logger:     logger,
+		Org:        organization,
+		DBPath:     opts.dbPath,
+		ClaudePath: opts.claudePath,
+		HookPath:   hookPath,
+		DaemonURL:  "http://" + addr,
+		Origins:    strings.Split(opts.origins, ","),
+	})
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	if opts.start {
+		if err := d.Supervisor.StartAll(ctx); err != nil {
+			logger.Error("some agents did not start", "err", err)
+		}
+	}
+
+	return serve(ctx, logger, addr, d.Handler)
+}
+
+// resolveHookPath finds nobody-hook: the given path, or the binary installed
+// next to nobodyd (task build puts both in bin/).
+func resolveHookPath(path string) (string, error) {
+	if path == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			return "", err
+		}
+
+		path = filepath.Join(filepath.Dir(exe), "nobody-hook")
+	}
+
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+
+	if _, err := os.Stat(abs); err != nil {
+		return "", errors.New("nobody-hook not found at " + abs + ": build it with `task build` or pass -hook")
+	}
+
+	return abs, nil
+}
+
+// listenAddr is loopback by default: the daemon spawns processes and must not
+// be exposed without authentication.
+func listenAddr() string {
+	if addr := os.Getenv("NOBODY_ADDR"); addr != "" {
+		return addr
+	}
+
+	return "127.0.0.1:7420"
+}
+
+// serve runs the HTTP server until ctx is canceled, then shuts it down.
+func serve(ctx context.Context, logger *slog.Logger, addr string, handler http.Handler) error {
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
 	errCh := make(chan error, 1)
+
 	go func() {
 		logger.Info("nobodyd listening", "addr", addr, "version", version)
+
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -51,11 +153,14 @@ func run(logger *slog.Logger) error {
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
+
 		return nil
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// ctx is already canceled here: shut down with a fresh deadline.
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
+
 	return srv.Shutdown(shutdownCtx)
 }
