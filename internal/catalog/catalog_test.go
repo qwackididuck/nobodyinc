@@ -107,3 +107,24 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRecruit(t *testing.T) {
+	t.Parallel()
+
+	tmpl := Template{Name: "dev",
+		Description: "Writes code", Version: 3, Role: "Developer",
+		Tools: []string{"Read"}, Permissions: Permissions{Allow: []string{"Edit"}}, Prompt: "Code."}
+
+	d := tmpl.Recruit()
+
+	if d.From != "dev@3" || d.Description != "" || d.Version != 0 || d.Role != "Developer" || d.Prompt != "Code." {
+		t.Fatalf("recruit = %+v", d)
+	}
+
+	d.Tools[0] = "Bash"
+	d.Permissions.Allow[0] = "Bash(*)"
+
+	if tmpl.Tools[0] != "Read" || tmpl.Permissions.Allow[0] != "Edit" {
+		t.Fatal("editing the recruit changed the template")
+	}
+}

@@ -45,6 +45,26 @@ type Template struct {
 	Builtin bool
 }
 
+// Recruit returns the definition of a new agent hired from this template: a
+// copy that remembers where it comes from. The copy is independent: later
+// changes to the template never reach it (ADR-0004).
+func (t Template) Recruit() Definition {
+	d := t.Definition
+	d.Description = ""
+	d.Version = 0
+	d.From = fmt.Sprintf("%s@%d", t.Name, t.Version)
+	d.OnLeave = false
+
+	// Slices are copied so that editing the recruit never alters the template.
+	d.Tools = slices.Clone(d.Tools)
+	d.MCP = slices.Clone(d.MCP)
+	d.Skills = slices.Clone(d.Skills)
+	d.Permissions.Allow = slices.Clone(d.Permissions.Allow)
+	d.Permissions.Deny = slices.Clone(d.Permissions.Deny)
+
+	return d
+}
+
 // Catalog lists and stores templates.
 type Catalog struct {
 	builtin fs.FS

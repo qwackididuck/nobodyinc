@@ -123,7 +123,7 @@ jobs:
           mkdir -p "dist/$ARCHIVE"
           go build -trimpath -ldflags "-s -w -X main.version=$TAG" -o "dist/$ARCHIVE/nobodyd" ./cmd/nobodyd
           go build -trimpath -ldflags "-s -w" -o "dist/$ARCHIVE/nobody-hook" ./cmd/nobody-hook
-          cp README.md nobody.example.yaml "dist/$ARCHIVE/"
+          cp README.md "dist/$ARCHIVE/"
           tar -C dist -czf "dist/$ARCHIVE.tar.gz" "$ARCHIVE"
 
       - uses: actions/upload-artifact@v4

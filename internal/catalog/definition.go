@@ -136,7 +136,7 @@ func splitFrontMatter(s string) (string, string, error) {
 
 // Format writes a definition back to its file form.
 func Format(d Definition) ([]byte, error) {
-	header, err := yaml.Marshal(d)
+	header, err := MarshalYAML(d)
 	if err != nil {
 		return nil, fmt.Errorf("encode front matter: %w", err)
 	}
@@ -155,6 +155,28 @@ func Format(d Definition) ([]byte, error) {
 	if d.Prompt != "" {
 		b.WriteString(strings.TrimSpace(d.Prompt))
 		b.WriteByte('\n')
+	}
+
+	return b.Bytes(), nil
+}
+
+// yamlIndent matches the usual style of hand-written YAML files.
+const yamlIndent = 2
+
+// MarshalYAML encodes v the way configuration files are written by hand
+// (two-space indentation), since users edit them directly.
+func MarshalYAML(v any) ([]byte, error) {
+	var b bytes.Buffer
+
+	enc := yaml.NewEncoder(&b)
+	enc.SetIndent(yamlIndent)
+
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+
+	if err := enc.Close(); err != nil {
+		return nil, err
 	}
 
 	return b.Bytes(), nil
