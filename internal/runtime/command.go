@@ -58,8 +58,8 @@ type Launch struct {
 //   - its UserPromptSubmit, PostToolUse and Stop hooks run nobody-hook to
 //     receive mail (docs/hooks.md), and its PermissionRequest hook sends
 //     permission requests to the human's approval queue (docs/approvals.md);
-//   - the office MCP server is added at /mcp/{address}, keeping the user's own
-//     MCP servers available;
+//   - the office MCP server is added at /mcp/{address} (the user's own MCP
+//     servers are not loaded, see ADR-0003);
 //   - NOBODY_AGENT and NOBODY_DAEMON_URL tell nobody-hook who and where it is;
 //   - a short onboarding turn brings the agent to the idle state.
 func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member) (*exec.Cmd, error) {

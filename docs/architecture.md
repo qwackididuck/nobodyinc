@@ -13,7 +13,7 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 │ server     /api/* (UI), /internal/* (hooks)          officemcp  /mcp/{address} │
 │ messaging  sending rules, threads, hop cap           runtime    PTYs, statuses,│
 │ org        teams, agents, channels (nobody.yaml)                wake-up, terms │
-│ store      SQLite: messages and trays                                          │
+│ store      SQLite: messages, tickets, features (versioned migrations)          │
 └───────────────┬───────────────────────────────▲──────────────────▲─────────────┘
                 │ starts in a PTY               │ hooks (HTTP)     │ MCP (HTTP)
                 ▼                               │                  │

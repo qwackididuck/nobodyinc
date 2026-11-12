@@ -26,11 +26,11 @@ Overview and the journey of a message: `docs/architecture.md`.
 - Hooks, integrations and glue: documented, tested Go code, never bash scripts or one-liners.
 - Table-driven tests (`t.Run`) for non-trivial logic.
 - Never start an agent with `--bare` (it disables hooks).
-- Branches: `<iid>-<description>` for features → `develop` (collects features) → `main` (merging is the decision to release). Use conventional commits: they decide the next version.
+- Branches: `<iid>-<description>` when an issue exists, otherwise a short description (e.g. `ticket-worktrees`; no tracker yet), for features → `develop` (collects features) → `main` (merging is the decision to release). Use conventional commits: they decide the next version.
 - Logging through `log/slog`, never a permanent `fmt.Println`.
 - The daemon listens on loopback only by default.
 - Structured data about agents comes from hooks and OTel only, never from reading the PTY output. The only thing written to the PTY is keystrokes (wake-up, human input).
 - Agents are isolated from the user's global settings and from a parent session's environment (ADR-0003). Do not change this without a new ADR.
-- To test with real agents, use a sandbox folder as `project_dir`, never a real repository.
+- To test with real agents, use a throwaway git repository as `project_dir`, never a real one. Ready-made: `~/Documents/workspace/nobody-sandbox` (Haiku agents, its own `nobody.yaml`): `task build && ./bin/nobodyd -org ../nobody-sandbox/nobody.yaml -db ../nobody-sandbox/nobody.db`, then `task dev:web`. The `demo-shop` project next to the repo is also a throwaway demo. The project must be trusted once in Claude Code (`docs/workspaces.md`).
 - Commits and pushes are done by the maintainer: modify files, do not commit.
 - Documentation is written in English.
