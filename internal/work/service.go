@@ -203,9 +203,15 @@ func (s *Service) SetStatus(ctx context.Context, by, id string, status Status) (
 		return Ticket{}, err
 	}
 
-	var delivered []Deliverable
 	if status == StatusDone {
-		if delivered, err = s.beforeDone(ctx, t); err != nil {
+		delivered, err := s.beforeDone(ctx, t)
+		if err != nil {
+			return Ticket{}, err
+		}
+
+		// Recorded before the status changes, so a done ticket always shows
+		// the commits it delivered.
+		if err := s.recordDeliverables(ctx, t, delivered); err != nil {
 			return Ticket{}, err
 		}
 	}
@@ -216,12 +222,7 @@ func (s *Service) SetStatus(ctx context.Context, by, id string, status Status) (
 
 	t.Status = status
 
-	t, err = s.save(ctx, t, event, by)
-	if err != nil {
-		return Ticket{}, err
-	}
-
-	return t, s.recordDeliverables(ctx, t, delivered)
+	return s.save(ctx, t, event, by)
 }
 
 // transition says which event a status change emits, or why it is refused.

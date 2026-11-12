@@ -436,7 +436,7 @@ func TestFeatureRelayThroughGit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	specsDone := waitForDone(t, d, specs.ID)
+	waitForDone(t, d, specs.ID)
 	waitForDone(t, d, impl.ID)
 
 	files := git(t, o.ProjectDir, "ls-tree", "--name-only", f.Branch)
@@ -455,8 +455,13 @@ func TestFeatureRelayThroughGit(t *testing.T) {
 		t.Fatalf("commits should carry the agent's identity, authors:\n%s", authors)
 	}
 
-	if !hasCommitDeliverable(specsDone) {
-		t.Fatalf("the delivered commit should be a deliverable of %s: %+v", specs.ID, specsDone.Deliverables)
+	final, err := d.Tickets.Get(ctx, specs.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !hasCommitDeliverable(final) {
+		t.Fatalf("the delivered commit should be a deliverable of %s: %+v", specs.ID, final.Deliverables)
 	}
 
 	if branch := git(t, o.ProjectDir, "branch", "--show-current"); branch != "main" {
