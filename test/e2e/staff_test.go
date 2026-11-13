@@ -2,6 +2,11 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
@@ -176,4 +181,123 @@ func hasNotice(t *testing.T, d *daemon.Daemon, to, subject string) bool {
 	}
 
 	return false
+}
+
+// The whole lifecycle through the HTTP API, as the UI will drive it: recruit
+// from a template, edit (the agent restarts), leave, return, dismiss.
+func TestAgentLifecycleThroughTheAPI(t *testing.T) {
+	t.Parallel()
+
+	d := startDaemon(t, staffProject(t))
+
+	call(t, d, http.MethodPost, "/api/teams/dev/agents", `{"name":"rev","template":"reviewer"}`, http.StatusCreated)
+	eventually(t, "rev@dev started", func() bool { return d.Statuses.Get("rev@dev") == runtime.StatusIdle })
+
+	if a := agentByAddress(t, d, "rev@dev"); !strings.HasPrefix(a.From, "reviewer@") {
+		t.Fatalf("recruit from = %q", a.From)
+	}
+
+	// Refusals.
+	call(t, d, http.MethodPost, "/api/teams/dev/agents", `{"name":"rev","template":"reviewer"}`, http.StatusConflict)
+	call(t, d, http.MethodPost, "/api/teams/ghosts/agents", `{"name":"x","template":"reviewer"}`, http.StatusNotFound)
+	call(t, d, http.MethodPost, "/api/teams/dev/agents", `{"name":"x","template":"dev","definition":{}}`, http.StatusBadRequest)
+	call(t, d, http.MethodPut, "/api/agents/rev@dev/definition", `{"permissions":{"profile":"yolo"}}`, http.StatusBadRequest)
+
+	// Edit: the agent restarts with its new definition.
+	before, _ := d.Supervisor.Output("rev@dev")
+	call(t, d, http.MethodPut, "/api/agents/rev@dev/definition", `{"role":"Senior reviewer","prompt":"Review carefully."}`, http.StatusOK)
+	eventually(t, "rev@dev restarted", func() bool {
+		after, running := d.Supervisor.Output("rev@dev")
+
+		return running && after != before && d.Statuses.Get("rev@dev") == runtime.StatusIdle
+	})
+
+	var def struct {
+		Role   string `json:"role"`
+		From   string `json:"from"`
+		Prompt string `json:"prompt"`
+	}
+	decodeBody(t, call(t, d, http.MethodGet, "/api/agents/rev@dev/definition", "", http.StatusOK), &def)
+
+	if def.Role != "Senior reviewer" || def.Prompt != "Review carefully." || !strings.HasPrefix(def.From, "reviewer@") {
+		t.Fatalf("definition after edit = %+v", def)
+	}
+
+	// Leave, return, dismiss.
+	call(t, d, http.MethodPost, "/api/agents/rev@dev/leave", "", http.StatusAccepted)
+	eventually(t, "rev@dev on leave", func() bool { return d.Statuses.Get("rev@dev") == runtime.StatusStopped })
+
+	if !agentByAddress(t, d, "rev@dev").OnLeave {
+		t.Fatal("GET /api/agents does not show the leave")
+	}
+
+	call(t, d, http.MethodPost, "/api/agents/rev@dev/return", "", http.StatusAccepted)
+	eventually(t, "rev@dev back", func() bool { return d.Statuses.Get("rev@dev") == runtime.StatusIdle })
+
+	call(t, d, http.MethodDelete, "/api/agents/rev@dev", "", http.StatusAccepted)
+	eventually(t, "rev@dev gone", func() bool {
+		_, running := d.Supervisor.Output("rev@dev")
+
+		return !running && !hasAgent(t, d, "rev@dev")
+	})
+
+	call(t, d, http.MethodDelete, "/api/agents/rev@dev", "", http.StatusNotFound)
+}
+
+type apiAgent struct {
+	Address string `json:"address"`
+	Role    string `json:"role"`
+	From    string `json:"from"`
+	OnLeave bool   `json:"on_leave"`
+}
+
+func call(t *testing.T, d *daemon.Daemon, method, path, body string, want int) []byte {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	d.Handler.ServeHTTP(rec, req)
+
+	if rec.Code != want {
+		t.Fatalf("%s %s = %d, want %d: %s", method, path, rec.Code, want, rec.Body.String())
+	}
+
+	return rec.Body.Bytes()
+}
+
+func decodeBody(t *testing.T, data []byte, v any) {
+	t.Helper()
+
+	if err := json.Unmarshal(data, v); err != nil {
+		t.Fatalf("decode %s: %v", data, err)
+	}
+}
+
+func agents(t *testing.T, d *daemon.Daemon) []apiAgent {
+	t.Helper()
+
+	var list []apiAgent
+	decodeBody(t, call(t, d, http.MethodGet, "/api/agents", "", http.StatusOK), &list)
+
+	return list
+}
+
+func hasAgent(t *testing.T, d *daemon.Daemon, address string) bool {
+	t.Helper()
+
+	return slices.ContainsFunc(agents(t, d), func(a apiAgent) bool { return a.Address == address })
+}
+
+func agentByAddress(t *testing.T, d *daemon.Daemon, address string) apiAgent {
+	t.Helper()
+
+	for _, a := range agents(t, d) {
+		if a.Address == address {
+			return a
+		}
+	}
+
+	t.Fatalf("%s not in GET /api/agents", address)
+
+	return apiAgent{}
 }

@@ -7,6 +7,7 @@ An **agent** is a member of a team that runs as a Claude Code session. A **templ
 ```
 <nobody binary>                           built-in templates (internal/catalog/builtin/)
 ~/.nobody/
+  settings.yaml                           your settings for every project (created by nobodyd init)
   catalog/<template>.md                   your templates; same name as a built-in one = replaces it
   projects/<id>/nobody.db                 runtime state of one project on this machine (never shared)
 <project>/.nobody/                        committed with the project
@@ -67,7 +68,7 @@ The agent's name is the file name, its team the directory name: `teams/dev/dev1.
 | `allowlist` | Claude Code's `acceptEdits` mode (editing files in the working directory passes), plus git (except `push`) and the usual test commands (`go test`, `npm test`, `pnpm test`, `pytest`, `cargo test`...); the rest goes to the approval queue. |
 | `auto` | Claude Code's classifier decides. Not available with Haiku models (refused when the file is read). |
 
-Whatever the profile, agents get the deny rules `Edit(./.nobody/**)` and `Write(./.nobody/**)`, and a delivery touching `.nobody/` is refused. The exact launch flags are built in `internal/runtime/command.go` and `permissions.go`.
+Whatever the profile, agents get the deny rules `Edit(./.nobody/**)` and `Write(./.nobody/**)`. A delivery whose commits change `.nobody/` anyway (through a shell command) is refused, or delivered with a warning to the human, depending on `config_protection` in `~/.nobody/settings.yaml` (`block` by default, or `warn`). The exact launch flags are built in `internal/runtime/command.go` and `permissions.go`.
 
 ## `org.yaml`
 
@@ -110,4 +111,14 @@ The name `nobody` is reserved for the office server.
 | **Leave** | Sets `on_leave: true`. Once idle the agent stops; its file and session are kept. Its ticket in progress goes back to the team queue, it is skipped by team addressing (`@dev`) and queue notifications, and direct mail waits in its mailbox; senders get a notice from `nobody`. **Return** clears the flag and resumes its session. |
 | **Dismiss** | Once idle, the agent stops and its file is deleted. Its ticket in progress goes back to the team queue; undelivered mail is returned to the senders with a notice. History (messages, tickets, commits) is kept. |
 
-All of these go through the daemon's API (`api/openapi.yaml`) and take effect without restarting the daemon.
+All of these go through the daemon's API (`api/openapi.yaml`, `internal/staffing`) and take effect without restarting the daemon:
+
+| Action | Endpoint |
+|---|---|
+| Templates | `GET /api/catalog`, `GET /api/catalog/{name}`, `PUT /api/catalog/{name}` |
+| Recruit / create | `POST /api/teams/{team}/agents` with `{"name", "template"}` or `{"name", "definition"}` |
+| Read / edit | `GET` / `PUT /api/agents/{address}/definition` (`?fresh=true` for a new session, `?now=true` not to wait for the end of the turn) |
+| Leave / return | `POST /api/agents/{address}/leave`, `POST /api/agents/{address}/return` |
+| Dismiss | `DELETE /api/agents/{address}` |
+
+Each change is validated against the whole organization before anything is written (unknown team, undeclared MCP server, invalid profile...). Files edited by hand are picked up at the next change made through the API, or when the daemon restarts.

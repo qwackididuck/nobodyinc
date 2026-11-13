@@ -18,6 +18,10 @@ type agentView struct {
 	Name    string `json:"name"`
 	Role    string `json:"role"`
 	Status  string `json:"status"`
+	OnLeave bool   `json:"on_leave"`
+	From    string `json:"from,omitempty"`
+	// PendingChange: a change waits for the agent to end its turn.
+	PendingChange bool `json:"pending_change"`
 }
 
 func (s *server) listAgents(w http.ResponseWriter, _ *http.Request) {
@@ -25,16 +29,23 @@ func (s *server) listAgents(w http.ResponseWriter, _ *http.Request) {
 
 	agents := make([]agentView, 0, len(members))
 	for _, m := range members {
-		agents = append(agents, agentView{
-			Address: m.Address,
-			Team:    m.Team.ID,
-			Name:    m.Agent.Name,
-			Role:    m.Agent.Role,
-			Status:  string(s.Statuses.Get(m.Address)),
-		})
+		agents = append(agents, s.agentView(m))
 	}
 
 	s.writeJSON(w, http.StatusOK, agents)
+}
+
+func (s *server) agentView(m org.Member) agentView {
+	return agentView{
+		Address:       m.Address,
+		Team:          m.Team.ID,
+		Name:          m.Agent.Name,
+		Role:          m.Agent.Role,
+		Status:        string(s.Statuses.Get(m.Address)),
+		OnLeave:       m.Agent.OnLeave,
+		From:          m.Agent.From,
+		PendingChange: s.Agents != nil && s.Agents.Pending(m.Address),
+	}
 }
 
 func (s *server) startAgent(w http.ResponseWriter, r *http.Request) {

@@ -10,11 +10,14 @@ import (
 	"net/http"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/server"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
+	"github.com/qwackididuck/nobodyinc/internal/staffing"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 	"github.com/qwackididuck/nobodyinc/internal/work"
 	"github.com/qwackididuck/nobodyinc/internal/workspace"
@@ -24,8 +27,15 @@ import (
 type Options struct {
 	Version string
 	Logger  *slog.Logger
-	// Org is the organization; a *org.Live lets it change while running.
+	// Org is the organization. With an *org.Live, agents can be recruited,
+	// edited, put on leave and dismissed through the API; a fixed *org.Org
+	// disables that.
 	Org org.Source
+	// CatalogDir holds the user's agent templates (~/.nobody/catalog).
+	CatalogDir string
+	// Settings are the user's global settings (~/.nobody/settings.yaml); the
+	// zero value means the defaults.
+	Settings settings.Settings
 	// DBPath is the SQLite file; ":memory:" for a throwaway database.
 	DBPath string
 	// ClaudePath and HookPath are the executables run for each agent.
@@ -46,6 +56,8 @@ type Daemon struct {
 	Statuses   *runtime.Statuses
 	Approvals  *approval.Queue
 	Supervisor *runtime.Supervisor
+	// Staff changes agents; nil when the organization is fixed.
+	Staff *staffing.Service
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
@@ -57,7 +69,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
-	git := &gitWorkspace{repo: workspace.Repo{Dir: opts.Org.Current().ProjectDir}, org: opts.Org}
+	git := &gitWorkspace{
+		repo:             workspace.Repo{Dir: opts.Org.Current().ProjectDir},
+		org:              opts.Org,
+		configProtection: opts.Settings.ConfigProtection,
+	}
 	restoreActiveFeature(ctx, st, git, opts.Logger)
 
 	supervisor := &runtime.Supervisor{
@@ -83,6 +99,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		},
 	}
 	staff := &staff{org: opts.Org, store: st, messages: messages, logger: opts.Logger}
+	git.onConfigDelivered = staff.onConfigDelivered
 	forker := &runtime.Forker{
 		Org:           opts.Org,
 		Statuses:      statuses,
@@ -132,6 +149,13 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	staff.tickets = tickets
 	supervisor.OnRetired = staff.onRetired
 
+	cat := catalog.New(opts.CatalogDir)
+
+	var staffService *staffing.Service
+	if live, ok := opts.Org.(*org.Live); ok {
+		staffService = &staffing.Service{Org: live, Catalog: cat, Agents: supervisor}
+	}
+
 	handler := server.New(server.Deps{
 		Version:   opts.Version,
 		Logger:    opts.Logger,
@@ -142,6 +166,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Statuses:  statuses,
 		Approvals: approvals,
 		Agents:    supervisor,
+		Staff:     staffService,
+		Catalog:   cat,
 		Extra: map[string]http.Handler{
 			"/mcp/{address}":                     officemcp.Handler(opts.Org, messages, tickets, opts.Version),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),
@@ -156,6 +182,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Statuses:   statuses,
 		Approvals:  approvals,
 		Supervisor: supervisor,
+		Staff:      staffService,
 	}, nil
 }
 

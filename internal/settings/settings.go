@@ -1,0 +1,111 @@
+// Package settings reads the user's global Nobody Inc settings, in
+// ~/.nobody/settings.yaml. They apply to every project the user runs; the
+// project's own configuration lives in its .nobody/ (ADR-0004).
+//
+// A missing file means the defaults. Settings are read when the daemon
+// starts: restart it after a change.
+package settings
+
+import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"go.yaml.in/yaml/v3"
+
+	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
+)
+
+// FileName is the settings file, inside the user's ~/.nobody.
+const FileName = "settings.yaml"
+
+// What happens when a ticket delivery changes the project's .nobody/
+// (ConfigProtection).
+const (
+	// ProtectBlock refuses the delivery: the agent must undo its change.
+	ProtectBlock = "block"
+	// ProtectWarn delivers, and warns the human, who reviews the change
+	// before merging the feature.
+	ProtectWarn = "warn"
+)
+
+// Settings are the user's global settings.
+type Settings struct {
+	// ConfigProtection is ProtectBlock (default) or ProtectWarn. Agents are
+	// never allowed to change their own configuration (ADR-0004); this says
+	// how strictly a delivery that does so anyway is treated.
+	ConfigProtection string `yaml:"config_protection"`
+}
+
+// Defaults are the settings without a settings file.
+func Defaults() Settings {
+	return Settings{ConfigProtection: ProtectBlock}
+}
+
+// defaultFile is written by `nobodyd init`, so that the settings are easy to
+// find and to change.
+const defaultFile = `# Nobody Inc settings for this user, used by every project.
+# Restart the daemon after a change.
+
+# What happens when an agent delivers (closes a ticket with) changes to the
+# project's .nobody/ directory, i.e. to the agents' own configuration:
+#   block: the delivery is refused until the agent undoes the change;
+#   warn:  the delivery goes through and the human is warned.
+config_protection: block
+`
+
+// Load reads home/settings.yaml. Unset values keep their default; unknown
+// keys and invalid values are refused, so that a typo is noticed.
+func Load(home string) (Settings, error) {
+	path := filepath.Join(home, FileName)
+	s := Defaults()
+
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s, nil
+	}
+
+	if err != nil {
+		return Settings{}, err
+	}
+
+	dec := yaml.NewDecoder(strings.NewReader(string(data)))
+	dec.KnownFields(true)
+
+	// An empty (or comments-only) file decodes to io.EOF: the defaults.
+	if err := dec.Decode(&s); err != nil && strings.TrimSpace(stripComments(string(data))) != "" {
+		return Settings{}, fmt.Errorf("parse %s: %w", path, err)
+	}
+
+	if s.ConfigProtection != ProtectBlock && s.ConfigProtection != ProtectWarn {
+		return Settings{}, fmt.Errorf("%s: config_protection %q: use %s or %s", path, s.ConfigProtection, ProtectBlock, ProtectWarn)
+	}
+
+	return s, nil
+}
+
+// WriteDefaultIfMissing writes a commented settings file with the defaults,
+// unless one exists. It reports whether it wrote one.
+func WriteDefaultIfMissing(home string) (bool, error) {
+	path := filepath.Join(home, FileName)
+	if _, err := os.Stat(path); err == nil {
+		return false, nil
+	}
+
+	return true, atomicfile.Write(path, []byte(defaultFile))
+}
+
+func stripComments(s string) string {
+	var b strings.Builder
+
+	for line := range strings.SplitSeq(s, "\n") {
+		if code, _, _ := strings.Cut(line, "#"); strings.TrimSpace(code) != "" {
+			b.WriteString(code)
+		}
+	}
+
+	return b.String()
+}

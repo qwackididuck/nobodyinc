@@ -42,6 +42,7 @@ nobody/…--specs                               nobody/…--dev
 - **Closing a ticket** (done):
   - the agent commits its own work first, with conventional commits;
   - closing is refused while the team's worktree has uncommitted changes (the refusal lists them);
+  - work that changes the project's `.nobody/` (the agents' own configuration) is refused, or delivered with a warning to the human, depending on `config_protection` in `~/.nobody/settings.yaml` (`docs/agents.md`);
   - the team branch is then merged into the feature branch: a fast-forward when possible, otherwise a merge in a temporary worktree;
   - on a conflict nothing changes, and the refusal explains how to fix it (merge the feature branch into your branch, resolve, commit, close again);
   - the delivered commits are attached to the ticket as `commit` deliverables.

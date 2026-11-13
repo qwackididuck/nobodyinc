@@ -39,10 +39,10 @@ const fileExt = ".md"
 type Template struct {
 	Definition
 
-	Name string
+	Name string `json:"name"`
 	// Builtin is true for a template shipped with Nobody Inc and not
 	// replaced by a user template.
-	Builtin bool
+	Builtin bool `json:"builtin"`
 }
 
 // Recruit returns the definition of a new agent hired from this template: a

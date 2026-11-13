@@ -85,6 +85,7 @@ func startDaemon(t *testing.T, o org.Source) *daemon.Daemon {
 	d, err := daemon.New(ctx, daemon.Options{
 		Logger:     slog.New(slog.DiscardHandler),
 		Org:        o,
+		CatalogDir: t.TempDir(),
 		DBPath:     ":memory:",
 		ClaudePath: fakeClaude,
 		HookPath:   hookBinary,

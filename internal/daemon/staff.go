@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
@@ -64,6 +65,16 @@ func (s *staff) onSent(ctx context.Context, m messaging.Message) {
 	body := fmt.Sprintf("%s is on leave: your message %q waits in their mailbox until they return. "+
 		"If it cannot wait, write to their team (@%s) or to the human instead.", m.To, m.Subject, org.TeamOf(m.To))
 	s.notice(ctx, m.From, m.Ticket, m.To+" is on leave", body)
+}
+
+// onConfigDelivered warns the human that an agent delivered changes to the
+// project's .nobody/ (settings.ProtectWarn): they must review them before
+// merging the feature, or the agents' configuration changes with it.
+func (s *staff) onConfigDelivered(agent string, f work.Feature, files []string) {
+	body := fmt.Sprintf("%s delivered changes to the agents' configuration (.nobody/) on the feature branch %s:\n%s\n\n"+
+		"Agents must not change their own configuration. Review these changes before merging the feature, "+
+		"and revert them if they were not intended.", agent, f.Branch, strings.Join(files, "\n"))
+	s.notice(context.Background(), org.HumanAddress, "", agent+" changed .nobody/", body)
 }
 
 // releaseTickets puts the agent's tickets in progress back in their team's

@@ -30,6 +30,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
 )
 
 var version = "dev"
@@ -94,6 +95,16 @@ func run(logger *slog.Logger, opts options) error {
 		return err
 	}
 
+	home, err := nobodyHome()
+	if err != nil {
+		return err
+	}
+
+	userSettings, err := settings.Load(home)
+	if err != nil {
+		return err
+	}
+
 	hookPath, err := resolveHookPath(opts.hookPath)
 	if err != nil {
 		return err
@@ -105,6 +116,8 @@ func run(logger *slog.Logger, opts options) error {
 		Version:    version,
 		Logger:     logger,
 		Org:        org.NewLive(organization),
+		CatalogDir: filepath.Join(home, "catalog"),
+		Settings:   userSettings,
 		DBPath:     dbPath,
 		ClaudePath: opts.claudePath,
 		HookPath:   hookPath,

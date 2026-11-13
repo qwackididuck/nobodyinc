@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
 	"github.com/qwackididuck/nobodyinc/internal/work"
 	"github.com/qwackididuck/nobodyinc/internal/workspace"
 )
@@ -17,6 +18,11 @@ import (
 type gitWorkspace struct {
 	repo workspace.Repo
 	org  org.Source
+	// configProtection says what to do with a delivery that changes the
+	// project's .nobody/ (settings.ProtectBlock or ProtectWarn).
+	configProtection string
+	// onConfigDelivered is told about such a delivery in warn mode.
+	onConfigDelivered func(agent string, f work.Feature, files []string)
 
 	mu     sync.Mutex
 	active *work.Feature // nil until a feature is started
@@ -53,8 +59,9 @@ func (g *gitWorkspace) BeforeClaim(ctx context.Context, f work.Feature, agent st
 	return g.repo.Sync(ctx, toWorkspace(f), org.TeamOf(agent))
 }
 
-// BeforeDone checks the team's worktree is committed, then delivers the
-// team's branch to the feature branch. The commits become deliverables.
+// BeforeDone checks the team's worktree is committed and that the work does
+// not change the agents' configuration, then delivers the team's branch to
+// the feature branch. The commits become deliverables.
 func (g *gitWorkspace) BeforeDone(ctx context.Context, f work.Feature, agent string) ([]work.Deliverable, error) {
 	wf, team := toWorkspace(f), org.TeamOf(agent)
 
@@ -67,9 +74,18 @@ func (g *gitWorkspace) BeforeDone(ctx context.Context, f work.Feature, agent str
 		return nil, fmt.Errorf("%w:\n%s", workspace.ErrDirty, strings.Join(dirty, "\n"))
 	}
 
+	configFiles, err := g.checkConfigChanges(ctx, wf, team)
+	if err != nil {
+		return nil, err
+	}
+
 	commits, err := g.repo.Deliver(ctx, wf, team)
 	if err != nil {
 		return nil, err
+	}
+
+	if len(configFiles) > 0 && g.onConfigDelivered != nil {
+		g.onConfigDelivered(agent, f, configFiles)
 	}
 
 	deliverables := make([]work.Deliverable, 0, len(commits))
@@ -80,6 +96,25 @@ func (g *gitWorkspace) BeforeDone(ctx context.Context, f work.Feature, agent str
 	}
 
 	return deliverables, nil
+}
+
+// checkConfigChanges looks for changes to the project's .nobody/ in the
+// team's work (ADR-0004). In block mode they refuse the delivery, with the
+// way to undo them; in warn mode they are returned, to warn the human once
+// delivered.
+func (g *gitWorkspace) checkConfigChanges(ctx context.Context, f workspace.Feature, team string) ([]string, error) {
+	files, err := g.repo.ConfigChanges(ctx, f, team)
+	if err != nil || len(files) == 0 {
+		return nil, err
+	}
+
+	if g.configProtection == settings.ProtectWarn {
+		return files, nil
+	}
+
+	return nil, fmt.Errorf("%w:\n%s\nUndo these changes, then close the ticket again:\n"+
+		"  git checkout %s -- %s && git commit -m \"revert: leave .nobody alone\"",
+		workspace.ErrConfigChanged, strings.Join(files, "\n"), f.Branch(), workspace.ConfigDir)
 }
 
 // activate records the feature agents now work on.

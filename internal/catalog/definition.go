@@ -30,34 +30,34 @@ var profiles = []string{ProfileDefault, ProfileAllowlist, ProfileAuto}
 // OnLeave. Everything else is shared, so recruiting is a copy.
 type Definition struct {
 	// Description is the one-line summary shown in the catalog.
-	Description string `yaml:"description,omitempty"`
+	Description string `json:"description,omitempty" yaml:"description,omitempty"`
 	// Version identifies a revision of a template; bump it on change.
-	Version int `yaml:"version,omitempty"`
+	Version int `json:"version,omitempty" yaml:"version,omitempty"`
 	// Role is a one-line description, e.g. "Software architect".
-	Role string `yaml:"role,omitempty"`
+	Role string `json:"role,omitempty" yaml:"role,omitempty"`
 	// Model is the Claude model; empty means the Claude Code default.
-	Model       string      `yaml:"model,omitempty"`
-	Permissions Permissions `yaml:"permissions,omitempty"`
+	Model       string      `json:"model,omitempty"      yaml:"model,omitempty"`
+	Permissions Permissions `json:"permissions,omitzero" yaml:"permissions,omitempty"`
 	// Tools may be used without asking, on top of the office tools.
-	Tools []string `yaml:"tools,omitempty"`
+	Tools []string `json:"tools,omitempty" yaml:"tools,omitempty"`
 	// MCP lists servers of the project's .nobody/mcp.yaml.
-	MCP    []string `yaml:"mcp,omitempty"`
-	Skills []string `yaml:"skills,omitempty"`
+	MCP    []string `json:"mcp,omitempty"    yaml:"mcp,omitempty"`
+	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
 	// From is "<template>@<version>" for a recruit; information only.
-	From string `yaml:"from,omitempty"`
+	From string `json:"from,omitempty" yaml:"from,omitempty"`
 	// OnLeave stops the agent while keeping its file and session.
-	OnLeave bool `yaml:"on_leave,omitempty"`
+	OnLeave bool `json:"on_leave,omitempty" yaml:"on_leave,omitempty"`
 	// Prompt is the markdown body: the agent's own instructions.
-	Prompt string `yaml:"-"`
+	Prompt string `json:"prompt,omitempty" yaml:"-"`
 }
 
 // Permissions sets how freely an agent may act.
 type Permissions struct {
 	// Profile is one of the Profile constants; empty means ProfileDefault.
-	Profile string `yaml:"profile,omitempty"`
+	Profile string `json:"profile,omitempty" yaml:"profile,omitempty"`
 	// Allow and Deny are Claude Code permission rules, e.g. "Bash(go test *)".
-	Allow []string `yaml:"allow,omitempty"`
-	Deny  []string `yaml:"deny,omitempty"`
+	Allow []string `json:"allow,omitempty" yaml:"allow,omitempty"`
+	Deny  []string `json:"deny,omitempty"  yaml:"deny,omitempty"`
 }
 
 // EffectiveProfile is the profile, with the empty value resolved.

@@ -14,6 +14,7 @@ package org
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
@@ -115,6 +116,46 @@ func (o *Org) HasChannel(from, to string) bool {
 	return false
 }
 
+// ErrUnknownTeam is returned when a team is not declared in org.yaml.
+var ErrUnknownTeam = errors.New("unknown team")
+
+// WithAgent returns a copy of the organization where the team has agent a,
+// added or replacing the agent with the same name. The receiver, a snapshot
+// others may be reading, is left untouched (see Source).
+func (o *Org) WithAgent(team string, a Agent) (*Org, error) {
+	c := o.copyTeams()
+
+	for i := range c.Teams {
+		if c.Teams[i].ID != team {
+			continue
+		}
+
+		if j := slices.IndexFunc(c.Teams[i].Agents, func(x Agent) bool { return x.Name == a.Name }); j >= 0 {
+			c.Teams[i].Agents[j] = a
+		} else {
+			c.Teams[i].Agents = append(c.Teams[i].Agents, a)
+		}
+
+		return c, nil
+	}
+
+	return nil, fmt.Errorf("%w: %q (declare it in .nobody/%s)", ErrUnknownTeam, team, orgFile)
+}
+
+// WithoutAgent returns a copy of the organization without the agent at
+// address. The receiver is left untouched.
+func (o *Org) WithoutAgent(address string) *Org {
+	c := o.copyTeams()
+
+	for i := range c.Teams {
+		c.Teams[i].Agents = slices.DeleteFunc(c.Teams[i].Agents, func(a Agent) bool {
+			return Address(a.Name, c.Teams[i].ID) == address
+		})
+	}
+
+	return c
+}
+
 // validateTeams checks team and agent names, and returns the known team IDs.
 func (o *Org) validateTeams() (map[string]bool, []error) {
 	var errs []error
@@ -192,4 +233,18 @@ func TeamOf(address string) string {
 	}
 
 	return team
+}
+
+// copyTeams returns a copy whose team and agent slices can be changed
+// without touching the receiver's.
+func (o *Org) copyTeams() *Org {
+	c := *o
+	c.Teams = make([]Team, len(o.Teams))
+
+	for i, t := range o.Teams {
+		t.Agents = slices.Clone(t.Agents)
+		c.Teams[i] = t
+	}
+
+	return &c
 }

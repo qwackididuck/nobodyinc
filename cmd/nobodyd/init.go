@@ -10,6 +10,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
 )
 
 // catalogDirPerm is the mode of ~/.nobody/catalog when init creates it.
@@ -71,6 +72,10 @@ func initProject(out io.Writer, home, projectDir string) error {
 		return fmt.Errorf("create %s: %w", userCatalog, err)
 	}
 
+	if _, err := settings.WriteDefaultIfMissing(home); err != nil {
+		return err
+	}
+
 	tmpl, err := catalog.New(userCatalog).Get(firstTemplate)
 	if err != nil {
 		return err
@@ -105,5 +110,6 @@ func printNextSteps(out io.Writer, dir, userCatalog string) {
 		"  - commit .nobody/ so that others can run the same organization;\n"+
 		"  - trust the project once in Claude Code (run `claude` in %s);\n"+
 		"  - start the daemon: nobodyd -project %s\n"+
-		"Your own agent templates go in %s.\n", dir, dir, userCatalog)
+		"Your own agent templates go in %s; your settings are in %s.\n",
+		dir, dir, userCatalog, filepath.Join(filepath.Dir(userCatalog), settings.FileName))
 }

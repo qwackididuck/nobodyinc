@@ -273,3 +273,40 @@ func TestWithWorktreesExcluded(t *testing.T) {
 		})
 	}
 }
+
+func TestConfigChanges(t *testing.T) {
+	t.Parallel()
+
+	r := newRepo(t)
+	ctx := context.Background()
+
+	// The project's committed configuration is there from the start: having
+	// it in the worktree is not a change.
+	if err := os.MkdirAll(filepath.Join(r.Dir, ".nobody"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	commitFile(t, r.Dir, ".nobody/org.yaml", "teams: [{id: dev}]\n", "chore: add nobody config")
+
+	if err := r.Prepare(ctx, feature, []string{"dev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	dev := r.TeamDir(feature, "dev")
+	commitFile(t, dev, "main.go", "package main\n", "feat: code")
+
+	if files, err := r.ConfigChanges(ctx, feature, "dev"); err != nil || len(files) != 0 {
+		t.Fatalf("code only: ConfigChanges = %v, %v; want none", files, err)
+	}
+
+	commitFile(t, dev, ".nobody/org.yaml", "teams: [{id: dev}, {id: ops}]\n", "chore: sneaky")
+
+	files, err := r.ConfigChanges(ctx, feature, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(files) != 1 || files[0] != ".nobody/org.yaml" {
+		t.Fatalf("ConfigChanges = %v, want [.nobody/org.yaml]", files)
+	}
+}

@@ -36,6 +36,8 @@ var (
 	ErrNotARepository = errors.New("the project directory is not a git repository")
 	ErrDirty          = errors.New("there are uncommitted changes in your team's worktree: commit your work before closing the ticket")
 	ErrConflict       = errors.New("merging hit a conflict")
+	ErrConfigChanged  = errors.New("your commits change the project's .nobody/ directory, which holds the agents' own " +
+		"configuration and is managed by Nobody Inc only")
 )
 
 // BranchPrefix marks the branches Nobody Inc owns.
@@ -44,7 +46,7 @@ const BranchPrefix = "nobody/"
 // worktreesDir is where Nobody Inc creates worktrees, inside the project.
 // The rest of .nobody/ is the project's committed configuration (ADR-0004),
 // so only this directory is kept out of git.
-var worktreesDir = filepath.Join(".nobody", "worktrees")
+var worktreesDir = filepath.Join(ConfigDir, "worktrees")
 
 // mergeDirName holds the throwaway merge worktrees, under worktreesDir. Feature
 // slugs never contain "_", so it cannot clash with a feature.
@@ -176,6 +178,22 @@ func (r Repo) Deliver(ctx context.Context, f Feature, team string) ([]Commit, er
 	}
 
 	return commits, r.mergeInto(ctx, f.Branch(), teamBranch)
+}
+
+// ConfigDir is the project's Nobody Inc configuration, relative to the
+// repository root (ADR-0004). Agents must never change it.
+const ConfigDir = ".nobody"
+
+// ConfigChanges lists the files of the project's .nobody/ that the team's
+// branch changes compared with the feature branch (since they diverged): what
+// a delivery would bring into the agents' configuration.
+func (r Repo) ConfigChanges(ctx context.Context, f Feature, team string) ([]string, error) {
+	out, err := r.git(ctx, r.Dir, "diff", "--name-only", f.Branch()+"..."+f.TeamBranch(team), "--", ConfigDir+"/")
+	if err != nil || out == "" {
+		return nil, err
+	}
+
+	return strings.Split(out, "\n"), nil
 }
 
 func (r Repo) prepareTeam(ctx context.Context, f Feature, team string) error {

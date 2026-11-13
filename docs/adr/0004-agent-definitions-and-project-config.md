@@ -42,7 +42,7 @@ The SQLite database (mail, tickets, approvals history) and anything specific to 
 
 - the daemon reads the configuration **only from the project's main checkout**, never from a worktree;
 - every agent is launched with `deny` rules on `Edit(.nobody/**)` and `Write(.nobody/**)`, whatever its profile;
-- a delivery (ticket closure) whose commits touch `.nobody/` is refused (deny rules do not cover every shell command, this is the backstop).
+- a delivery (ticket closure) whose commits touch `.nobody/` is caught (deny rules do not cover every shell command, this is the backstop). The user's setting `config_protection` in `~/.nobody/settings.yaml` decides how: `block` (default) refuses the delivery until the agent undoes the change; `warn` delivers and warns the human, who must review the change before merging the feature. This only covers deliveries: without an active feature, agents work in the project's checkout itself, where the deny rules and the approval queue are the only protection.
 
 Only Nobody Inc itself (daemon, UI) writes `.nobody/`. The god session, when it exists, will change the configuration through office MCP tools, so the daemon remains the only writer.
 

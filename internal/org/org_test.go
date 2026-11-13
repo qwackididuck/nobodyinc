@@ -1,6 +1,7 @@
 package org
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
@@ -104,5 +105,43 @@ func TestTeamOf(t *testing.T) {
 
 	if got := TeamOf(HumanAddress); got != "" {
 		t.Fatalf("TeamOf(human) = %q, want empty", got)
+	}
+}
+
+func TestWithAndWithoutAgentLeaveTheSnapshotAlone(t *testing.T) {
+	t.Parallel()
+
+	o := &Org{Teams: []Team{{ID: "dev", Agents: []Agent{{Name: "dev1", Role: "Developer"}}}}}
+
+	added, err := o.WithAgent("dev", Agent{Name: "dev2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	replaced, err := o.WithAgent("dev", Agent{Name: "dev1", Role: "Lead"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	removed := o.WithoutAgent("dev1@dev")
+
+	if _, ok := added.Member("dev2@dev"); !ok {
+		t.Error("WithAgent did not add dev2")
+	}
+
+	if m, _ := replaced.Member("dev1@dev"); m.Agent.Role != "Lead" || len(replaced.Members()) != 1 {
+		t.Errorf("WithAgent did not replace dev1: %+v", replaced.Members())
+	}
+
+	if _, ok := removed.Member("dev1@dev"); ok {
+		t.Error("WithoutAgent kept dev1")
+	}
+
+	if m, _ := o.Member("dev1@dev"); len(o.Members()) != 1 || m.Agent.Role != "Developer" {
+		t.Fatalf("the original snapshot changed: %+v", o.Members())
+	}
+
+	if _, err := o.WithAgent("ghosts", Agent{Name: "a"}); !errors.Is(err, ErrUnknownTeam) {
+		t.Fatalf("unknown team: err = %v", err)
 	}
 }
