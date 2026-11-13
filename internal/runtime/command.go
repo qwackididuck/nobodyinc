@@ -30,23 +30,24 @@ const onboardingPrompt = `You just joined Nobody Inc. If mail is attached to thi
 	`Otherwise reply only "Ready." and end your turn; your mail will reach you automatically.`
 
 // resumePrompt opens the first turn of a resumed session: the agent keeps its
-// memory, but its definition (role, prompt, permissions, tools...) may have
-// changed.
+// memory and its system prompt (Claude Code ignores a new
+// --append-system-prompt on --resume), while its model, permissions, tools
+// and MCP servers follow the new launch flags. A new role or new instructions
+// never go through a resume: they restart the agent with a fresh session
+// (staffing.needsFreshSession).
 //
-// Claude Code keeps the system prompt a session started with and ignores a
-// new --append-system-prompt on --resume (checked by task contract), so the
-// current system prompt is handed over in this message instead (see
-// resumeMessage). Model, permission mode, tools and MCP servers do follow the
-// new flags.
-const resumePrompt = `Nobody Inc restarted your session with your current definition. ` +
-	`It replaces the system prompt you started with: from now on, follow the instructions below. ` +
+// What may have changed is the organization (new colleagues, leaves): the
+// current organization travels in this message, as information (see
+// resumeMessage).
+const resumePrompt = `Nobody Inc restarted your session: your model, permissions or tools may have changed, ` +
+	`and the organization may have changed too; its current state is below, for your information. ` +
 	`If mail is attached to this message, act on it now. ` +
 	`Otherwise reply only "Ready." and end your turn; your mail will reach you automatically.`
 
 // resumeMessage is the first prompt of a resumed session: resumePrompt, then
-// the agent's current system prompt.
+// the agent's current system prompt, for its up-to-date organization chart.
 func resumeMessage(systemPrompt string) string {
-	return resumePrompt + "\n\n<current_definition>\n" + systemPrompt + "\n</current_definition>"
+	return resumePrompt + "\n\n<current_organization>\n" + systemPrompt + "\n</current_organization>"
 }
 
 // officeTools are the office MCP tools every agent may use without being
@@ -92,16 +93,15 @@ type Launch struct {
 //   - a short onboarding turn brings the agent to the idle state.
 //
 // With a non-empty resume session ID, the agent continues that Claude Code
-// session (claude --resume): it keeps its memory and gets its current
-// definition, its system prompt being handed over in the first message
-// (see resumePrompt).
+// session (claude --resume): it keeps its memory and system prompt, and gets
+// its current launch flags (see resumePrompt).
 func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, error) {
 	systemPrompt, err := SystemPrompt(o, m)
 	if err != nil {
 		return nil, err
 	}
 
-	settings, err := agentSettings(l.HookPath, m.Agent.Permissions)
+	settings, err := agentSettings(l.HookPath, m.Agent.Permissions, o.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
@@ -243,13 +243,13 @@ func allowedTools(tools []string) string {
 // agentSettings is the --settings value: the mail and permission hooks wired
 // to nobody-hook (docs/hooks.md, docs/approvals.md) and the agent's
 // permission rules (permissions.go).
-func agentSettings(hookPath string, p catalog.Permissions) (string, error) {
+func agentSettings(hookPath string, p catalog.Permissions, projectDir string) (string, error) {
 	run := []map[string]any{{"hooks": []map[string]any{{"type": "command", "command": hookPath}}}}
 	permission := []map[string]any{{"hooks": []map[string]any{{
 		"type": "command", "command": hookPath, "timeout": int(PermissionHookTimeout.Seconds()),
 	}}}}
 
-	allow, deny := permissionRules(p)
+	allow, deny := permissionRules(p, projectDir)
 
 	return toJSON(map[string]any{
 		"hooks": map[string]any{

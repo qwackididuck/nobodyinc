@@ -34,6 +34,7 @@ var builtinFiles embed.FS
 var (
 	ErrNotFound = errors.New("template not found")
 	ErrBuiltin  = errors.New("built-in templates cannot be deleted")
+	ErrInvalid  = errors.New("invalid template")
 )
 
 const fileExt = ".md"
@@ -140,11 +141,11 @@ func (c *Catalog) Get(name string) (Template, error) {
 // name of a built-in template overrides that template.
 func (c *Catalog) Save(name string, d Definition) error {
 	if !ValidName(name) {
-		return fmt.Errorf("template name %q: use lowercase letters, digits and dashes", name)
+		return fmt.Errorf("%w: name %q: use lowercase letters, digits and dashes", ErrInvalid, name)
 	}
 
 	if err := d.Validate(); err != nil {
-		return fmt.Errorf("template %q: %w", name, err)
+		return fmt.Errorf("%w %q: %w", ErrInvalid, name, err)
 	}
 
 	data, err := Format(d)

@@ -38,12 +38,16 @@ type Options struct {
 	Settings settings.Settings
 	// DBPath is the SQLite file; ":memory:" for a throwaway database.
 	DBPath string
+	// WorktreesDir holds the teams' worktrees, outside the project
+	// (~/.nobody/projects/<id>/worktrees, see workspace.Repo).
+	WorktreesDir string
 	// ClaudePath and HookPath are the executables run for each agent.
 	ClaudePath string
 	HookPath   string
 	// DaemonURL is how agents reach this daemon, e.g. "http://127.0.0.1:7420".
 	DaemonURL string
-	// Origins are the extra browser origins allowed to open terminals.
+	// Origins are the browser origins (host patterns) allowed to open
+	// terminals and to change things through the API.
 	Origins []string
 }
 
@@ -58,6 +62,9 @@ type Daemon struct {
 	Supervisor *runtime.Supervisor
 	// Staff changes agents; nil when the organization is fixed.
 	Staff *staffing.Service
+	// WorkDir is the directory an agent works in: its team's worktree for the
+	// active feature, or the project.
+	WorkDir func(address string) string
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
@@ -70,7 +77,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
 	git := &gitWorkspace{
-		repo:             workspace.Repo{Dir: opts.Org.Current().ProjectDir},
+		repo:             workspace.Repo{Dir: opts.Org.Current().ProjectDir, WorktreesDir: opts.WorktreesDir},
 		org:              opts.Org,
 		configProtection: opts.Settings.ConfigProtection,
 	}
@@ -145,9 +152,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
 	tickets.OnEvent = notifier.onEvent
 
-	// Agents on leave or dismissed hand their tickets and mail over (staff.go).
+	// Agents on leave or dismissed hand their tickets and mail over (staff.go),
+	// including what was still waiting when the daemon last stopped.
 	staff.tickets = tickets
 	supervisor.OnRetired = staff.onRetired
+	staff.reconcile(ctx)
 
 	cat := catalog.New(opts.CatalogDir)
 
@@ -168,6 +177,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Agents:    supervisor,
 		Staff:     staffService,
 		Catalog:   cat,
+		Origins:   opts.Origins,
 		Extra: map[string]http.Handler{
 			"/mcp/{address}":                     officemcp.Handler(opts.Org, messages, tickets, opts.Version),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),
@@ -183,6 +193,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Approvals:  approvals,
 		Supervisor: supervisor,
 		Staff:      staffService,
+		WorkDir:    git.workDir,
 	}, nil
 }
 

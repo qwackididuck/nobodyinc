@@ -286,3 +286,137 @@ func eventually(t *testing.T, cond func() bool, what string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestStopAllDropsPendingChanges(t *testing.T) {
+	t.Parallel()
+
+	s, _, started := newApplySupervisor(t)
+	s.Statuses.Set("dev1@dev", StatusWorking)
+
+	if err := s.Apply(context.Background(), "dev1@dev", ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	s.StopAll()
+
+	eventually(t, func() bool {
+		_, running := s.Output("dev1@dev")
+
+		return !running
+	}, "dev1 stopped")
+
+	if s.Pending("dev1@dev") || len(started.all()) != 1 {
+		t.Fatal("a pending change must not restart an agent while the daemon shuts down")
+	}
+
+	if err := s.Apply(context.Background(), "dev1@dev", ApplyOptions{}); !errors.Is(err, ErrStopping) {
+		t.Fatalf("Apply after StopAll: err = %v, want ErrStopping", err)
+	}
+
+	if err := s.Start(context.Background(), "dev1@dev"); !errors.Is(err, ErrStopping) {
+		t.Fatalf("Start after StopAll: err = %v, want ErrStopping", err)
+	}
+}
+
+func TestRestartAllTakesOverPendingChanges(t *testing.T) {
+	t.Parallel()
+
+	s, source, started := newApplySupervisor(t)
+
+	var retired []string
+
+	s.OnRetired = func(address string) { retired = append(retired, address) }
+
+	s.Statuses.Set("dev1@dev", StatusWorking)
+	source.set(applyOrg(true)) // put on leave while working: the change waits
+
+	if err := s.Apply(context.Background(), "dev1@dev", ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A feature starts meanwhile.
+	if err := s.RestartAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if s.Pending("dev1@dev") || len(retired) != 1 || len(started.all()) != 1 {
+		t.Fatalf("pending=%v retired=%v launches=%v: RestartAll should take the leave over and hand the work over",
+			s.Pending("dev1@dev"), retired, started.all())
+	}
+}
+
+func TestSessionIsOnlyResumedInItsDirectory(t *testing.T) {
+	t.Parallel()
+
+	var (
+		mu      sync.Mutex
+		dir     = "/project"
+		resumes []string
+	)
+
+	s := &Supervisor{
+		Org:      &mutableOrg{o: applyOrg(false)},
+		Statuses: NewStatuses(),
+		Logger:   slog.New(slog.DiscardHandler),
+		NewCommand: func(ctx context.Context, _ *org.Org, _ org.Member, resume string) (*exec.Cmd, error) {
+			mu.Lock()
+			defer mu.Unlock()
+
+			resumes = append(resumes, resume)
+			cmd := exec.CommandContext(ctx, "cat")
+			cmd.Dir = dir
+
+			return cmd, nil
+		},
+		HasMail: func(context.Context, string) (bool, error) { return false, nil },
+	}
+	t.Cleanup(s.StopAll)
+
+	mu.Lock()
+	dir = t.TempDir()
+	mu.Unlock()
+
+	if err := s.Start(context.Background(), "dev1@dev"); err != nil {
+		t.Fatal(err)
+	}
+
+	s.Statuses.ObserveHook("dev1@dev", hook.Event{Name: hook.EventStop, SessionID: "s-1"}, 0)
+
+	// The agent now works elsewhere (a feature's worktree).
+	mu.Lock()
+	dir = t.TempDir()
+	mu.Unlock()
+
+	if err := s.Apply(context.Background(), "dev1@dev", ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if last := resumes[len(resumes)-1]; last != "" {
+		t.Fatalf("launches = %q: a session started in another directory must not be resumed", resumes)
+	}
+}
+
+func TestNoWakeUpBetweenIdleAndRestart(t *testing.T) {
+	t.Parallel()
+
+	s, _, _ := newApplySupervisor(t)
+	s.Statuses.Set("dev1@dev", StatusWorking)
+
+	if err := s.Apply(context.Background(), "dev1@dev", ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	s.Statuses.OnIdle = nil // observe the status right after applyIfPending
+	s.Statuses.Set("dev1@dev", StatusIdle)
+
+	if !s.applyIfPending("dev1@dev") {
+		t.Fatal("the pending change should be applied")
+	}
+
+	if got := s.Statuses.Get("dev1@dev"); got == StatusIdle {
+		t.Fatal("the agent must not look idle (and be woken up for mail) while it is about to restart")
+	}
+}

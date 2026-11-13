@@ -32,6 +32,7 @@ var (
 	ErrNotRunning     = errors.New("agent is not running")
 	ErrAlreadyRunning = errors.New("agent is already running")
 	ErrOnLeave        = errors.New("agent is on leave")
+	ErrStopping       = errors.New("the daemon is shutting down")
 )
 
 // Supervisor runs one Claude Code session per agent, each in its own
@@ -54,6 +55,11 @@ type Supervisor struct {
 	agents map[string]*agentProcess
 	// pending holds the changes waiting for an agent to end its turn (apply.go).
 	pending map[string]pendingChange
+	// stopping is set by StopAll: the daemon shuts down, nothing starts again.
+	stopping bool
+	// sessionDirs is the directory each agent's current session started in:
+	// a session is only resumed there (start).
+	sessionDirs map[string]string
 }
 
 type agentProcess struct {
@@ -94,9 +100,16 @@ func (s *Supervisor) Start(ctx context.Context, address string) error {
 }
 
 // StopAll terminates every running agent.
+//
+// Changes waiting for an agent to end its turn are dropped, and no agent can
+// start afterwards: the daemon is shutting down. A pending leave or dismissal
+// is handed over at the next start instead (daemon/staff.go, reconcile).
 func (s *Supervisor) StopAll() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	s.stopping = true
+	s.pending = nil
 
 	for address, p := range s.agents {
 		if err := p.cmd.Process.Kill(); err != nil {
@@ -128,10 +141,16 @@ func (s *Supervisor) Stop(address string) error {
 // RestartAll stops every agent and starts it again with a fresh session,
 // e.g. so that it works in the worktree of a newly activated feature. Agents
 // on leave stay stopped.
+//
+// Changes waiting for these agents are taken over: the restart already uses
+// their current definition. An agent whose leave was waiting hands its work
+// over (OnRetired), as Apply would have done.
 func (s *Supervisor) RestartAll(ctx context.Context) error {
 	var errs []error
 
 	for _, m := range s.Org.Current().Members() {
+		hadPending := s.takePending(m.Address)
+
 		if err := s.Stop(m.Address); err != nil {
 			errs = append(errs, err)
 
@@ -139,6 +158,10 @@ func (s *Supervisor) RestartAll(ctx context.Context) error {
 		}
 
 		if m.Agent.OnLeave {
+			if hadPending && s.OnRetired != nil {
+				s.OnRetired(m.Address)
+			}
+
 			continue
 		}
 
@@ -240,6 +263,10 @@ func (s *Supervisor) start(ctx context.Context, address, resume string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if s.stopping {
+		return fmt.Errorf("%w: %s", ErrStopping, address)
+	}
+
 	if s.agents == nil {
 		s.agents = map[string]*agentProcess{}
 	}
@@ -248,7 +275,7 @@ func (s *Supervisor) start(ctx context.Context, address, resume string) error {
 		return fmt.Errorf("%w: %s", ErrAlreadyRunning, address)
 	}
 
-	cmd, err := s.NewCommand(ctx, o, member, resume)
+	cmd, resumed, err := s.command(ctx, o, member, resume)
 	if err != nil {
 		return err
 	}
@@ -261,11 +288,52 @@ func (s *Supervisor) start(ctx context.Context, address, resume string) error {
 	p := &agentProcess{cmd: cmd, terminal: terminal, output: NewOutput(), exited: make(chan struct{})}
 	s.agents[address] = p
 	s.Statuses.Set(address, StatusStarting)
-	s.Logger.Info("agent started", "agent", address, "pid", cmd.Process.Pid, "resumed", resume != "")
+	s.Logger.Info("agent started", "agent", address, "pid", cmd.Process.Pid, "resumed", resumed)
 
 	go s.watch(address, p)
 
 	return nil
+}
+
+// command builds an agent's process, resuming the given session when it can,
+// and reports whether it does. Called with s.mu held.
+//
+// Claude Code keeps sessions per directory: a session started in another
+// directory (e.g. before a feature moved the agent into its worktree) cannot
+// be resumed, so the agent then starts afresh.
+func (s *Supervisor) command(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, bool, error) {
+	cmd, err := s.NewCommand(ctx, o, m, resume)
+	if err != nil || resume == "" {
+		s.recordSessionDir(m.Address, cmd)
+
+		return cmd, false, err
+	}
+
+	if cmd.Dir == s.sessionDirs[m.Address] {
+		return cmd, true, nil
+	}
+
+	s.Logger.Info("agent moved to another directory: fresh session instead of resuming",
+		"agent", m.Address, "from", s.sessionDirs[m.Address], "to", cmd.Dir)
+
+	cmd, err = s.NewCommand(ctx, o, m, "")
+	s.recordSessionDir(m.Address, cmd)
+
+	return cmd, false, err
+}
+
+// recordSessionDir remembers where a fresh session starts. Called with s.mu
+// held.
+func (s *Supervisor) recordSessionDir(address string, cmd *exec.Cmd) {
+	if cmd == nil {
+		return
+	}
+
+	if s.sessionDirs == nil {
+		s.sessionDirs = map[string]string{}
+	}
+
+	s.sessionDirs[address] = cmd.Dir
 }
 
 // watch copies the agent's terminal output until the process ends.

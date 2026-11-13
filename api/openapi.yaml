@@ -45,6 +45,7 @@ paths:
     post:
       operationId: startAgent
       summary: Launch (or relaunch) an agent's Claude Code session
+      description: 409 when the agent is already running, is on leave, or the daemon is shutting down.
       parameters:
         - $ref: "#/components/parameters/Address"
       responses:
@@ -69,6 +70,8 @@ paths:
       responses:
         "202":
           description: Dismissal recorded; applied once the agent is idle
+        "400":
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
 
@@ -130,6 +133,8 @@ paths:
       responses:
         "202":
           description: Leave recorded; applied once the agent is idle
+        "400":
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
 
@@ -141,9 +146,12 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Address"
         - $ref: "#/components/parameters/Fresh"
+        - $ref: "#/components/parameters/Now"
       responses:
         "202":
           description: Agent restarting
+        "400":
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
 
@@ -604,7 +612,13 @@ components:
 
   responses:
     Error:
-      description: Request refused
+      description: |
+        Request refused. On every route that changes something (anything but
+        GET), a browser request from another origin than the control room is
+        refused with 403, and a body that is not application/json with 415.
+        Agent and catalog routes answer 501 when the organization cannot be
+        changed by this daemon, and 500 when a change was saved but could not
+        be reloaded or applied (the message says which).
       content:
         application/json:
           schema:

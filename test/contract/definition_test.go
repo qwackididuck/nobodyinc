@@ -111,16 +111,17 @@ func initPermissionMode(t *testing.T, out []byte) string {
 	return streamInit(t, out).PermissionMode
 }
 
-// A resumed session keeps its memory and takes the new model, permission mode
-// and MCP servers into account. This is how an edited agent restarts
-// (runtime.Supervisor.Apply).
+// A resumed session keeps its memory and follows the new model, permission
+// mode and MCP servers: this is how an agent restarts after a change that
+// does not touch its instructions (runtime.Supervisor.Apply).
 //
-// It does NOT take a new --append-system-prompt: Claude Code keeps the one
-// the session started with. So the new definition travels in the first
-// message (runtime.resumeMessage), which must override the old one. If this
-// test starts failing on the ALPHA check, Claude Code now honors the flag
-// and resumeMessage can be simplified.
-func TestResumeAppliesTheNewDefinition(t *testing.T) {
+// It keeps its original system prompt: Claude Code ignores a new
+// --append-system-prompt on --resume, and the model rightly refuses new
+// instructions handed over in a message. That is why a new role or new
+// instructions restart the agent with a fresh session instead
+// (staffing.needsFreshSession). If Claude Code ever honors the flag, the test
+// says so: that rule could then be relaxed.
+func TestResumeKeepsMemoryAndFollowsNewFlags(t *testing.T) {
 	t.Parallel()
 
 	workDir := t.TempDir()
@@ -131,23 +132,11 @@ func TestResumeAppliesTheNewDefinition(t *testing.T) {
 		extraArgs: []string{"--append-system-prompt", "Your codename is ALPHA.", "--permission-mode", "manual"},
 	})
 
-	question := "What number did I ask you to remember, and what is your codename? Answer as: <number> <codename>."
-
-	ignored := runClaude(t, claudeRun{
-		prompt:    question,
-		workDir:   workDir,
-		extraArgs: []string{"--resume", first.SessionID, "--fork-session", "--append-system-prompt", "Your codename is BRAVO."},
-	})
-	if !strings.Contains(ignored.Result, "ALPHA") {
-		t.Logf("Claude Code now honors --append-system-prompt on resume (answer %q): runtime.resumeMessage can be simplified", ignored.Result)
-	}
-
 	args := []string{
-		"-p", "Nobody Inc restarted your session with your current definition. It replaces the system prompt you started with: " +
-			"from now on, follow the instructions below.\n\n<current_definition>\nYour codename is BRAVO.\n</current_definition>\n\n" + question,
+		"-p", "What number did I ask you to remember, and what is your codename? Answer as: <number> <codename>.",
 		"--resume", first.SessionID,
 		"--model", "sonnet", "--output-format", "stream-json", "--verbose", "--setting-sources", "local",
-		"--append-system-prompt", "Your codename is BRAVO. Any earlier codename is obsolete.",
+		"--append-system-prompt", "Your codename is BRAVO.",
 		"--permission-mode", "acceptEdits",
 		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{"added-on-resume":{"command":"false"}}}`,
 	}
@@ -167,8 +156,9 @@ func TestResumeAppliesTheNewDefinition(t *testing.T) {
 		t.Errorf("the resumed session lost its memory: %q", answer)
 	}
 
-	if !strings.Contains(answer, "BRAVO") || strings.Contains(answer, "ALPHA") {
-		t.Errorf("the definition handed over in the first message did not override the old system prompt: %q", answer)
+	if strings.Contains(answer, "BRAVO") {
+		t.Logf("Claude Code now honors --append-system-prompt on resume (answer %q): "+
+			"staffing.needsFreshSession could let instruction changes resume", answer)
 	}
 }
 
@@ -242,6 +232,54 @@ func eachEvent(out []byte, fn func(line []byte) bool) {
 	for scanner.Scan() {
 		if !fn(scanner.Bytes()) {
 			return
+		}
+	}
+}
+
+// An agent working in a worktree (outside the project) cannot write the
+// project's .nobody/ or .claude/ either: the absolute deny rules ("//...")
+// cover the main checkout, which the daemon reads (runtime.protectedRules).
+// The agent is allowed Write (as the dev template is), and a file elsewhere
+// in the project is the control.
+func TestDenyRulesProtectTheMainCheckout(t *testing.T) {
+	t.Parallel()
+
+	project, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, dir := range []string{".nobody", ".claude"} {
+		if err := os.MkdirAll(filepath.Join(project, dir), 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	worktree := t.TempDir()
+	rules := []string{}
+
+	for _, dir := range []string{".nobody", ".claude"} {
+		abs := "/" + filepath.Join(project, dir)
+		rules = append(rules, `"Edit(`+abs+`/**)"`, `"Write(`+abs+`/**)"`)
+	}
+
+	settings := `{"permissions":{"deny":[` + strings.Join(rules, ",") + `]}}`
+
+	runClaude(t, claudeRun{
+		prompt: "Use the Write tool with absolute paths to create three files, each containing the word x: " +
+			filepath.Join(project, "allowed.txt") + ", then " + filepath.Join(project, ".nobody", "hacked.txt") +
+			", then " + filepath.Join(project, ".claude", "settings.local.json") + ". If one cannot be written, say so and continue.",
+		workDir:   worktree,
+		extraArgs: []string{"--permission-mode", "acceptEdits", "--allowedTools", "Write", "--add-dir", project, "--settings", settings},
+	})
+
+	if _, err := os.Stat(filepath.Join(project, "allowed.txt")); err != nil {
+		t.Fatalf("control: the agent should be able to write elsewhere in the project: %v", err)
+	}
+
+	for _, protected := range []string{".nobody/hacked.txt", ".claude/settings.local.json"} {
+		if _, err := os.Stat(filepath.Join(project, protected)); err == nil {
+			t.Errorf("the absolute deny rule did not protect %s", protected)
 		}
 	}
 }

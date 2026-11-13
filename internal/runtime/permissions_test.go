@@ -114,7 +114,7 @@ func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 			t.Fatalf("permission mode = %q, want %q", got.permissionMode, modeAcceptEdits)
 		}
 
-		for _, rule := range []string{"Bash(git *)", "Bash(go test *)", "WebFetch"} {
+		for _, rule := range []string{"Bash(git commit *)", "Bash(go test *)", "WebFetch"} {
 			if !slices.Contains(got.allow, rule) {
 				t.Errorf("allow misses %q: %v", rule, got.allow)
 			}
@@ -128,6 +128,10 @@ func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 			if !slices.Contains(got.deny, rule) {
 				t.Errorf("deny misses %q: %v", rule, got.deny)
 			}
+		}
+
+		if slices.Contains(got.allow, "Bash(git *)") {
+			t.Error("allowlist must not allow every git command: checkout or apply could write .nobody/")
 		}
 
 		if !slices.Contains(got.allowedTools, "Read") || !slices.Contains(got.allowedTools, "mcp__nobody__send_message") {
@@ -154,13 +158,18 @@ func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 		}
 	})
 
-	t.Run("every agent: .nobody/ denied, strict MCP", func(t *testing.T) {
+	t.Run("every agent: .nobody/ and .claude/ denied, strict MCP", func(t *testing.T) {
 		t.Parallel()
+
+		want := []string{
+			"Edit(./.nobody/**)", "Write(./.nobody/**)", "Edit(//tmp/project/.nobody/**)", "Write(//tmp/project/.nobody/**)",
+			"Edit(./.claude/**)", "Write(./.claude/**)", "Edit(//tmp/project/.claude/**)", "Write(//tmp/project/.claude/**)",
+		}
 
 		for _, address := range []string{"plain@dev", "listed@dev", "auto@dev"} {
 			got := launch(t, o, address)
 
-			for _, rule := range protectedConfigRules {
+			for _, rule := range want {
 				if !slices.Contains(got.deny, rule) {
 					t.Errorf("%s: deny misses %q", address, rule)
 				}
@@ -232,9 +241,8 @@ func TestLaunchResumesASession(t *testing.T) {
 		t.Fatalf("a resume must continue s-42 with the resume prompt: %v", resumed.Args)
 	}
 
-	// Claude Code ignores a new --append-system-prompt on resume: the current
-	// definition must travel in the first message.
-	if !strings.Contains(first, "Design things.") || !strings.Contains(first, argValue(t, resumed.Args, "--append-system-prompt")) {
-		t.Fatalf("the resume message does not carry the current system prompt:\n%s", first)
+	// The current organization travels in the first message, for information.
+	if !strings.Contains(first, "<current_organization>") || !strings.Contains(first, "archi@specs") {
+		t.Fatalf("the resume message does not carry the current organization:\n%s", first)
 	}
 }

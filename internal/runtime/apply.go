@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 )
 
 // ApplyOptions tune how a definition change reaches a running agent.
@@ -38,6 +39,12 @@ type pendingChange struct {
 // request (e.g. context.WithoutCancel of the daemon's context).
 func (s *Supervisor) Apply(ctx context.Context, address string, opts ApplyOptions) error {
 	s.mu.Lock()
+	if s.stopping {
+		s.mu.Unlock()
+
+		return fmt.Errorf("%w: %s", ErrStopping, address)
+	}
+
 	if s.pending == nil {
 		s.pending = map[string]pendingChange{}
 	}
@@ -65,6 +72,18 @@ func (s *Supervisor) Pending(address string) bool {
 	return ok
 }
 
+// takePending removes the change waiting for an agent, and reports whether
+// there was one.
+func (s *Supervisor) takePending(address string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, ok := s.pending[address]
+	delete(s.pending, address)
+
+	return ok
+}
+
 // midTurn reports whether a running agent is not idle yet. A starting agent
 // counts: its onboarding turn is under way.
 func (s *Supervisor) midTurn(address string) bool {
@@ -85,6 +104,10 @@ func (s *Supervisor) applyIfPending(address string) bool {
 	if !s.Pending(address) {
 		return false
 	}
+
+	// No longer idle from now on: mail arriving before the restart must not
+	// wake up (and be handed to) the process about to be stopped.
+	s.Statuses.Set(address, StatusStarting)
 
 	go func() {
 		if err := s.applyPending(address); err != nil {

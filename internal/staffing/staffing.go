@@ -9,7 +9,8 @@
 //  2. write the agent's file in the project's .nobody/ (or delete it);
 //  3. reload the organization from disk (org.Live);
 //  4. ask the supervisor to apply it: the agent starts, restarts or stops
-//     once its current turn is over (runtime.Supervisor.Apply).
+//     once its current turn is over (runtime.Supervisor.Apply). Other agents
+//     whose file changed meanwhile (edited by hand) are applied too.
 //
 // The files stay the source of truth: this package only writes what a human
 // could write by hand.
@@ -19,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
@@ -33,10 +36,11 @@ var (
 	ErrInvalid  = errors.New("invalid")
 )
 
-// Applier brings a running agent in line with its definition (implemented by
-// runtime.Supervisor).
+// Applier brings a running agent in line with its definition, and tells
+// whether a change still waits for it (implemented by runtime.Supervisor).
 type Applier interface {
 	Apply(ctx context.Context, address string, opts runtime.ApplyOptions) error
+	Pending(address string) bool
 }
 
 // Service changes the organization's agents.
@@ -81,6 +85,9 @@ func (s *Service) Definition(address string) (catalog.Definition, error) {
 // Edit replaces an agent's definition and restarts it with it. Where it came
 // from and whether it is on leave are kept: they change through Recruit and
 // Leave/Return. The template it came from is never touched.
+//
+// A change of role or instructions restarts the agent with a fresh session
+// (see needsFreshSession); other changes resume its session.
 func (s *Service) Edit(ctx context.Context, address string, d catalog.Definition, opts runtime.ApplyOptions) (catalog.Definition, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -93,6 +100,7 @@ func (s *Service) Edit(ctx context.Context, address string, d catalog.Definition
 	d = agentFields(d)
 	d.From = m.Agent.From
 	d.OnLeave = m.Agent.OnLeave
+	opts.Fresh = opts.Fresh || needsFreshSession(m.Agent.Definition, d)
 
 	if err := s.save(ctx, m.Team.ID, org.Agent{Name: m.Agent.Name, Definition: d}, opts); err != nil {
 		return catalog.Definition{}, err
@@ -164,8 +172,15 @@ func (s *Service) hire(ctx context.Context, team, name string, d catalog.Definit
 		return org.Member{}, fmt.Errorf("%w: agent name %q: use lowercase letters, digits and dashes", ErrInvalid, name)
 	}
 
-	if _, exists := s.Org.Current().Member(address); exists {
+	if _, exists := s.Org.Current().Member(address); exists || org.AgentFileExists(s.Org.Current().ProjectDir, team, name) {
 		return org.Member{}, fmt.Errorf("%w: agent %s", ErrExists, address)
+	}
+
+	// A dismissed agent may still be finishing its turn: its stop, and the
+	// hand-over of its tickets and mail, must happen before anyone takes its
+	// address.
+	if s.Agents.Pending(address) {
+		return org.Member{}, fmt.Errorf("%w: %s is still finishing its turn after a change; try again once it has stopped", ErrExists, address)
 	}
 
 	d = agentFields(d)
@@ -205,13 +220,71 @@ func (s *Service) save(ctx context.Context, team string, a org.Agent, opts runti
 	return s.reloadAndApply(ctx, org.Address(a.Name, team), opts)
 }
 
+// reloadAndApply reloads the organization and applies the change to the
+// agent at address, with opts. Any other agent whose file changed since the
+// last reload (edited by hand) is applied too, with the default options, so
+// that the running agents always match the files.
 func (s *Service) reloadAndApply(ctx context.Context, address string, opts runtime.ApplyOptions) error {
+	before := s.Org.Current()
+
 	// A reload can only fail here if another file was broken by hand meanwhile.
-	if _, err := s.Org.Reload(); err != nil {
+	after, err := s.Org.Reload()
+	if err != nil {
 		return fmt.Errorf("saved, but the organization cannot be reloaded (fix .nobody/ by hand): %w", err)
 	}
 
-	return s.Agents.Apply(ctx, address, opts)
+	if err := s.Agents.Apply(ctx, address, opts); err != nil {
+		return fmt.Errorf("saved, but %s cannot be restarted: %w", address, err)
+	}
+
+	var errs []error
+
+	for _, other := range changedAgents(before, after) {
+		if other == address {
+			continue
+		}
+
+		oldMember, wasThere := before.Member(other)
+		newMember, isThere := after.Member(other)
+		fresh := wasThere && isThere && needsFreshSession(oldMember.Agent.Definition, newMember.Agent.Definition)
+
+		if err := s.Agents.Apply(ctx, other, runtime.ApplyOptions{Fresh: fresh}); err != nil {
+			errs = append(errs, fmt.Errorf("apply the hand-made change to %s: %w", other, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// needsFreshSession reports whether a definition change needs a new Claude
+// Code session. A resumed session keeps the system prompt it started with
+// (Claude Code ignores a new --append-system-prompt on --resume), and the
+// model does not reliably accept new instructions handed over in a message
+// (checked by task contract): a new role or new instructions only take
+// effect in a fresh session. Model, permissions, tools and MCP servers are
+// launch flags, which a resumed session does follow.
+func needsFreshSession(before, after catalog.Definition) bool {
+	return before.Role != after.Role || strings.TrimSpace(before.Prompt) != strings.TrimSpace(after.Prompt)
+}
+
+// changedAgents lists the agents added, removed or changed between two
+// snapshots of the organization.
+func changedAgents(before, after *org.Org) []string {
+	var changed []string
+
+	for _, m := range after.Members() {
+		if old, ok := before.Member(m.Address); !ok || !reflect.DeepEqual(old.Agent, m.Agent) {
+			changed = append(changed, m.Address)
+		}
+	}
+
+	for _, m := range before.Members() {
+		if _, ok := after.Member(m.Address); !ok {
+			changed = append(changed, m.Address)
+		}
+	}
+
+	return changed
 }
 
 func (s *Service) member(address string) (org.Member, error) {

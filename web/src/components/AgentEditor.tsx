@@ -112,6 +112,10 @@ export function AgentEditor({ agent, onChanged }: Props) {
         </button>
       </div>
 
+      <p className={styles.muted}>
+        Changing the role or the instructions restarts the agent with a new session (it forgets the conversation): Claude Code
+        cannot change the instructions of a running conversation. Other changes keep its memory.
+      </p>
       {notice && <p className={styles.muted}>{notice}</p>}
       {error && <p className={styles.error}>{error}</p>}
     </section>

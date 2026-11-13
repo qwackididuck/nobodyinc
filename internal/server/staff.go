@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/staffing"
 )
@@ -37,23 +38,23 @@ func (s *server) recruitAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx, team := context.WithoutCancel(r.Context()), r.PathValue("team")
-
-	var err error
-
-	var view agentView
-
-	switch {
-	case (body.Template == "") == (body.Definition == nil):
+	if (body.Template == "") == (body.Definition == nil) {
 		s.writeError(w, http.StatusBadRequest, errors.New("give either a template to recruit from, or a definition"))
 
 		return
-	case body.Template != "":
-		m, recruitErr := s.Staff.Recruit(ctx, team, body.Name, body.Template)
-		err, view = recruitErr, s.agentView(m)
-	default:
-		m, createErr := s.Staff.Create(ctx, team, body.Name, *body.Definition)
-		err, view = createErr, s.agentView(m)
+	}
+
+	ctx, team := context.WithoutCancel(r.Context()), r.PathValue("team")
+
+	var (
+		m   org.Member
+		err error
+	)
+
+	if body.Template != "" {
+		m, err = s.Staff.Recruit(ctx, team, body.Name, body.Template)
+	} else {
+		m, err = s.Staff.Create(ctx, team, body.Name, *body.Definition)
 	}
 
 	if err != nil {
@@ -62,7 +63,7 @@ func (s *server) recruitAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.writeJSON(w, http.StatusCreated, view)
+	s.writeJSON(w, http.StatusCreated, s.agentView(m))
 }
 
 func (s *server) getAgentDefinition(w http.ResponseWriter, r *http.Request) {
@@ -190,7 +191,11 @@ func (s *server) saveTemplate(w http.ResponseWriter, r *http.Request) {
 
 	name := r.PathValue("name")
 	if err := s.Catalog.Save(name, d); err != nil {
-		s.writeError(w, http.StatusBadRequest, err)
+		if errors.Is(err, catalog.ErrInvalid) {
+			s.writeError(w, http.StatusBadRequest, err)
+		} else {
+			s.templateError(w, err)
+		}
 
 		return
 	}

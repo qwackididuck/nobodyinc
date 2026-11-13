@@ -77,6 +77,39 @@ func (s *staff) onConfigDelivered(agent string, f work.Feature, files []string) 
 	s.notice(context.Background(), org.HumanAddress, "", agent+" changed .nobody/", body)
 }
 
+// reconcile hands over, when the daemon starts, what agents on leave or no
+// longer in the organization left behind: a leave or dismissal still waiting
+// for the end of a turn when the daemon stopped, or a file edited by hand.
+// Their tickets in progress go back to their team's queue; the undelivered
+// mail of agents no longer in the organization is returned.
+func (s *staff) reconcile(ctx context.Context) {
+	o := s.org.Current()
+
+	inProgress, err := s.tickets.Store.ListTickets(ctx, work.Filter{Status: work.StatusInProgress})
+	if err != nil {
+		s.logger.Error("reconcile tickets", "err", err)
+	}
+
+	for _, t := range inProgress {
+		if m, ok := o.Member(t.Assignee); !ok {
+			s.releaseTicket(ctx, t, t.Assignee+" has left Nobody Inc")
+		} else if m.Agent.OnLeave {
+			s.releaseTicket(ctx, t, t.Assignee+" is on leave")
+		}
+	}
+
+	recipients, err := s.store.PendingRecipients(ctx)
+	if err != nil {
+		s.logger.Error("reconcile mail", "err", err)
+	}
+
+	for _, r := range recipients {
+		if _, ok := o.Member(r); !ok && r != org.HumanAddress && r != org.SystemAddress {
+			s.returnMail(ctx, r)
+		}
+	}
+}
+
 // releaseTickets puts the agent's tickets in progress back in their team's
 // queue. The usual "back in your team's queue" notice then reaches a teammate.
 func (s *staff) releaseTickets(ctx context.Context, address, reason string) {
@@ -88,15 +121,20 @@ func (s *staff) releaseTickets(ctx context.Context, address, reason string) {
 	}
 
 	for _, t := range assigned {
-		comment := fmt.Sprintf("%s %s: the ticket goes back to the team's queue. "+
-			"Its work so far is in the team's worktree and in its comments and deliverables.", address, reason)
-		if _, err := s.tickets.Comment(ctx, org.SystemAddress, t.ID, comment); err != nil {
-			s.logger.Warn("comment released ticket", "ticket", t.ID, "err", err)
-		}
+		s.releaseTicket(ctx, t, address+" "+reason)
+	}
+}
 
-		if _, err := s.tickets.SetStatus(ctx, org.SystemAddress, t.ID, work.StatusOpen); err != nil {
-			s.logger.Error("release ticket of a retired agent", "agent", address, "ticket", t.ID, "err", err)
-		}
+// releaseTicket puts one ticket back in its team's queue, saying why.
+func (s *staff) releaseTicket(ctx context.Context, t work.Ticket, why string) {
+	comment := why + ": the ticket goes back to the team's queue. " +
+		"Its work so far is in the team's worktree and in its comments and deliverables."
+	if _, err := s.tickets.Comment(ctx, org.SystemAddress, t.ID, comment); err != nil {
+		s.logger.Warn("comment released ticket", "ticket", t.ID, "err", err)
+	}
+
+	if _, err := s.tickets.SetStatus(ctx, org.SystemAddress, t.ID, work.StatusOpen); err != nil {
+		s.logger.Error("release ticket", "agent", t.Assignee, "ticket", t.ID, "err", err)
 	}
 }
 

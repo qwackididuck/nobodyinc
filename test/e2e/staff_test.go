@@ -5,14 +5,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
+	"github.com/qwackididuck/nobodyinc/internal/store"
 	"github.com/qwackididuck/nobodyinc/internal/work"
 )
 
@@ -261,6 +264,8 @@ func call(t *testing.T, d *daemon.Daemon, method, path, body string, want int) [
 	t.Helper()
 
 	req := httptest.NewRequestWithContext(t.Context(), method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json") // as the control room sends it
+
 	rec := httptest.NewRecorder()
 	d.Handler.ServeHTTP(rec, req)
 
@@ -306,4 +311,49 @@ func agentByAddress(t *testing.T, d *daemon.Daemon, address string) apiAgent {
 	t.Fatalf("%s not in GET /api/agents", address)
 
 	return apiAgent{}
+}
+
+// A dismissal still waiting for the end of a turn is lost when the daemon
+// stops. At the next start, what the departed agent left behind is handed
+// over: its ticket goes back to the queue (and a teammate finishes it), its
+// undelivered mail is returned to the sender.
+func TestStartupHandsOverWhatDepartedAgentsLeft(t *testing.T) {
+	t.Parallel()
+
+	live := staffProject(t)
+	dbPath := filepath.Join(t.TempDir(), "nobody.db")
+
+	// What the previous run left: ghost@dev was dismissed (no file any more)
+	// with a ticket in progress and a message it never read.
+	previous, err := store.Open(context.Background(), dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tk, err := previous.InsertTicket(context.Background(), work.Ticket{
+		Title: "Left behind", Team: "dev", Assignee: "ghost@dev", Status: work.StatusInProgress, CreatedBy: org.HumanAddress,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = previous.InsertMessage(context.Background(), messaging.Message{
+		ID: "m-ghost", Conversation: "m-ghost", From: org.HumanAddress, To: "ghost@dev",
+		Act: messaging.ActInform, Priority: messaging.Normal, Subject: "Never read", SentAt: time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	previous.Close()
+
+	d := startDaemonWithDB(t, live, dbPath)
+
+	if done := waitForDone(t, d, tk.ID); !strings.HasPrefix(done.Ticket.Assignee, "dev") || done.Ticket.Assignee == "ghost@dev" {
+		t.Fatalf("ticket finished by %q, want a member of dev", done.Ticket.Assignee)
+	}
+
+	eventually(t, "the sender told the message was not delivered", func() bool {
+		return hasNotice(t, d, org.HumanAddress, "Message not delivered: Never read")
+	})
 }

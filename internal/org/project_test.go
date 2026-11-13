@@ -43,30 +43,10 @@ func TestWriteThenLoadProject(t *testing.T) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
 	}
 
-	for _, file := range []string{"org.yaml", ".gitignore", "teams/dev/dev1.md", "teams/specs/archi.md"} {
+	for _, file := range []string{"org.yaml", "teams/dev/dev1.md", "teams/specs/archi.md"} {
 		if _, err := os.Stat(filepath.Join(dir, ".nobody", file)); err != nil {
 			t.Errorf("missing .nobody/%s: %v", file, err)
 		}
-	}
-}
-
-func TestWriteProjectKeepsAnExistingGitignore(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, ".nobody", ".gitignore"), "custom\n")
-
-	if err := WriteProject(&Org{ProjectDir: dir}); err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(dir, ".nobody", ".gitignore"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if string(data) != "custom\n" {
-		t.Fatalf(".gitignore overwritten: %q", data)
 	}
 }
 

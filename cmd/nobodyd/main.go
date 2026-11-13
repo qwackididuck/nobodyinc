@@ -67,7 +67,8 @@ func main() {
 	flag.BoolVar(&opts.start, "start", true, "launch every agent at startup")
 	flag.StringVar(&opts.claudePath, "claude", "claude", "claude executable")
 	flag.StringVar(&opts.hookPath, "hook", "", "nobody-hook binary (default: next to nobodyd)")
-	flag.StringVar(&opts.origins, "origins", "localhost:3000,127.0.0.1:3000", "extra browser origins allowed to open terminals")
+	flag.StringVar(&opts.origins, "origins", "localhost:3000,127.0.0.1:3000",
+		"browser origins (host patterns) allowed to open terminals and change things through the API")
 	flag.Parse()
 
 	if err := run(logger, opts); err != nil {
@@ -92,40 +93,14 @@ func run(logger *slog.Logger, opts options) error {
 
 	warnIfUntrusted(logger, organization.ProjectDir)
 
-	dbPath, err := resolveDBPath(opts.dbPath, organization.ProjectDir)
-	if err != nil {
-		return err
-	}
-
-	home, err := nobodyHome()
-	if err != nil {
-		return err
-	}
-
-	userSettings, err := settings.Load(home)
-	if err != nil {
-		return err
-	}
-
-	hookPath, err := resolveHookPath(opts.hookPath)
-	if err != nil {
-		return err
-	}
-
 	addr := listenAddr()
 
-	d, err := daemon.New(ctx, daemon.Options{
-		Version:    version,
-		Logger:     logger,
-		Org:        org.NewLive(organization),
-		CatalogDir: filepath.Join(home, "catalog"),
-		Settings:   userSettings,
-		DBPath:     dbPath,
-		ClaudePath: opts.claudePath,
-		HookPath:   hookPath,
-		DaemonURL:  "http://" + addr,
-		Origins:    strings.Split(opts.origins, ","),
-	})
+	daemonOpts, err := daemonOptions(logger, opts, organization, addr)
+	if err != nil {
+		return err
+	}
+
+	d, err := daemon.New(ctx, daemonOpts)
 	if err != nil {
 		return err
 	}
@@ -138,6 +113,50 @@ func run(logger *slog.Logger, opts options) error {
 	}
 
 	return serve(ctx, logger, addr, d.Handler)
+}
+
+// daemonOptions gathers what the daemon needs besides the organization: the
+// user's settings and templates in ~/.nobody, the project's state directory
+// there (database, worktrees), and the executables.
+func daemonOptions(logger *slog.Logger, opts options, organization *org.Org, addr string) (daemon.Options, error) {
+	home, err := nobodyHome()
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
+	state, err := stateDir(home, organization.ProjectDir)
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
+	dbPath := opts.dbPath
+	if dbPath == "" {
+		dbPath = filepath.Join(state, "nobody.db")
+	}
+
+	userSettings, err := settings.Load(home)
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
+	hookPath, err := resolveHookPath(opts.hookPath)
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
+	return daemon.Options{
+		Version:      version,
+		Logger:       logger,
+		Org:          org.NewLive(organization),
+		CatalogDir:   filepath.Join(home, "catalog"),
+		Settings:     userSettings,
+		DBPath:       dbPath,
+		WorktreesDir: filepath.Join(state, "worktrees"),
+		ClaudePath:   opts.claudePath,
+		HookPath:     hookPath,
+		DaemonURL:    "http://" + addr,
+		Origins:      strings.Split(opts.origins, ","),
+	}, nil
 }
 
 // resolveHookPath finds nobody-hook: the given path, or the binary installed

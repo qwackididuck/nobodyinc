@@ -5,7 +5,7 @@
 //
 //	nobody/<feature>            the feature branch: everything validated so far
 //	nobody/<feature>--<team>    one branch per team, checked out in the team's
-//	                            worktree under <project>/.nobody/worktrees/
+//	                            worktree, outside the project (Repo.WorktreesDir)
 //
 // Work moves between teams through the feature branch:
 //
@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -36,6 +37,7 @@ var (
 	ErrNotARepository = errors.New("the project directory is not a git repository")
 	ErrDirty          = errors.New("there are uncommitted changes in your team's worktree: commit your work before closing the ticket")
 	ErrConflict       = errors.New("merging hit a conflict")
+	errNoWorktreesDir = errors.New("the worktrees directory must be an absolute path")
 	ErrConfigChanged  = errors.New("your commits change the project's .nobody/ directory, which holds the agents' own " +
 		"configuration and is managed by Nobody Inc only")
 )
@@ -43,35 +45,32 @@ var (
 // BranchPrefix marks the branches Nobody Inc owns.
 const BranchPrefix = "nobody/"
 
-// worktreesDir is where Nobody Inc creates worktrees, inside the project.
-// The rest of .nobody/ is the project's committed configuration (ADR-0004),
-// so only this directory is kept out of git.
-var worktreesDir = filepath.Join(ConfigDir, "worktrees")
-
-// mergeDirName holds the throwaway merge worktrees, under worktreesDir. Feature
-// slugs never contain "_", so it cannot clash with a feature.
+// mergeDirName holds the throwaway merge worktrees, under WorktreesDir.
+// Feature slugs never contain "_", so it cannot clash with a feature.
 const mergeDirName = "_merge"
 
-// Lines of .git/info/exclude written by Nobody Inc.
-const (
-	excludeComment = "# Nobody Inc worktrees"
-	excludeLine    = "/.nobody/worktrees/"
-	// legacyExcludeLine hid the whole .nobody/ before it held configuration.
-	legacyExcludeLine = "/.nobody/"
-)
+// legacyExcludeLine is the .git/info/exclude line that earlier versions wrote
+// to hide their worktrees, then kept inside the project's .nobody/. It hid the
+// whole .nobody/, which now holds configuration that must be committed.
+const legacyExcludeLine = "/.nobody/"
 
-// Permissions for the exclude file and its directory.
-const (
-	dirPerm  = 0o750
-	filePerm = 0o600
-)
+// filePerm is the mode of the exclude file when it is rewritten.
+const filePerm = 0o600
 
 // Daemon merges are signed by Nobody Inc, whatever identity the machine has.
 var daemonIdentity = []string{"-c", "user.name=Nobody Inc", "-c", "user.email=nobody@nobody.local"}
 
 // Repo is the project the agents work on.
 type Repo struct {
+	// Dir is the project's main checkout.
 	Dir string
+	// WorktreesDir holds the teams' worktrees, outside the project (usually
+	// ~/.nobody/projects/<id>/worktrees). Keeping them out of the project
+	// lets agents be denied any write to the project's .nobody/ by absolute
+	// path, without denying their own worktree (ADR-0004). Claude Code's
+	// trust of the project still covers them: git ties a worktree to its
+	// repository.
+	WorktreesDir string
 }
 
 // Feature is what the workspace needs to know about a feature.
@@ -98,7 +97,7 @@ type Commit struct {
 
 // TeamDir is the worktree of a team for a feature.
 func (r Repo) TeamDir(f Feature, team string) string {
-	return filepath.Join(r.Dir, worktreesDir, f.Slug, team)
+	return filepath.Join(r.WorktreesDir, f.Slug, team)
 }
 
 // CurrentBranch returns the branch the project is on.
@@ -113,7 +112,11 @@ func (r Repo) Prepare(ctx context.Context, f Feature, teams []string) error {
 		return fmt.Errorf("%w: %s", ErrNotARepository, r.Dir)
 	}
 
-	if err := r.excludeWorkDir(ctx); err != nil {
+	if err := r.checkWorktreesDir(); err != nil {
+		return err
+	}
+
+	if err := r.dropLegacyExclude(ctx); err != nil {
 		return err
 	}
 
@@ -216,7 +219,11 @@ func (r Repo) prepareTeam(ctx context.Context, f Feature, team string) error {
 
 // mergeInto merges source into target in a throwaway worktree.
 func (r Repo) mergeInto(ctx context.Context, target, source string) error {
-	tmp := filepath.Join(r.Dir, worktreesDir, mergeDirName, strings.ReplaceAll(target, "/", "_"))
+	if err := r.checkWorktreesDir(); err != nil {
+		return err
+	}
+
+	tmp := filepath.Join(r.WorktreesDir, mergeDirName, strings.ReplaceAll(target, "/", "_"))
 	if _, err := r.git(ctx, r.Dir, "worktree", "add", tmp, target); err != nil {
 		return fmt.Errorf("prepare merge into %s: %w", target, err)
 	}
@@ -264,11 +271,19 @@ func (r Repo) branchExists(ctx context.Context, branch string) bool {
 	return err == nil
 }
 
-// excludeWorkDir keeps the worktrees out of the user's git status, without
-// touching their .gitignore. It also drops the line that projects set up
-// before ADR-0004 hid the whole .nobody/, which now holds configuration that
-// must be committed.
-func (r Repo) excludeWorkDir(ctx context.Context) error {
+// checkWorktreesDir refuses an empty or relative WorktreesDir: worktrees
+// would land in whatever the current directory is.
+func (r Repo) checkWorktreesDir() error {
+	if !filepath.IsAbs(r.WorktreesDir) {
+		return fmt.Errorf("%w: %q", errNoWorktreesDir, r.WorktreesDir)
+	}
+
+	return nil
+}
+
+// dropLegacyExclude removes the line earlier versions wrote in
+// .git/info/exclude, which hid the whole .nobody/ from git.
+func (r Repo) dropLegacyExclude(ctx context.Context) error {
 	path, err := r.git(ctx, r.Dir, "rev-parse", "--git-path", "info/exclude")
 	if err != nil {
 		return err
@@ -279,56 +294,31 @@ func (r Repo) excludeWorkDir(ctx context.Context) error {
 	}
 
 	existing, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-
-	updated, changed := withWorktreesExcluded(string(existing))
-	if !changed {
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), dirPerm); err != nil {
+	if err != nil {
 		return err
+	}
+
+	updated, changed := withoutLegacyExclude(string(existing))
+	if !changed {
+		return nil
 	}
 
 	return os.WriteFile(path, []byte(updated), filePerm) //nolint:gosec // path given by `git rev-parse --git-path`
 }
 
-// withWorktreesExcluded returns the exclude file content with the worktrees
-// line and without the legacy line, and whether it changed.
-func withWorktreesExcluded(content string) (string, bool) {
+// withoutLegacyExclude returns the exclude file content without the legacy
+// line, and whether it changed.
+func withoutLegacyExclude(content string) (string, bool) {
 	lines := strings.Split(content, "\n")
-	kept := lines[:0]
-	found, changed := false, false
+	kept := slices.DeleteFunc(slices.Clone(lines), func(line string) bool {
+		return strings.TrimSpace(line) == legacyExcludeLine
+	})
 
-	for _, line := range lines {
-		switch strings.TrimSpace(line) {
-		case legacyExcludeLine:
-			changed = true
-
-			continue
-		case excludeLine:
-			found = true
-		}
-
-		kept = append(kept, line)
-	}
-
-	content = strings.Join(kept, "\n")
-	if found {
-		return content, changed
-	}
-
-	if content != "" && !strings.HasSuffix(content, "\n") {
-		content += "\n"
-	}
-
-	if !strings.Contains(content, excludeComment) {
-		content += "\n" + excludeComment + "\n"
-	}
-
-	return content + excludeLine + "\n", true
+	return strings.Join(kept, "\n"), len(kept) != len(lines)
 }
 
 // git runs a git command in dir and returns its trimmed output.

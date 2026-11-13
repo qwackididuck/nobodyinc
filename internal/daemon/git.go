@@ -112,9 +112,10 @@ func (g *gitWorkspace) checkConfigChanges(ctx context.Context, f workspace.Featu
 		return files, nil
 	}
 
-	return nil, fmt.Errorf("%w:\n%s\nUndo these changes, then close the ticket again:\n"+
-		"  git checkout %s -- %s && git commit -m \"revert: leave .nobody alone\"",
-		workspace.ErrConfigChanged, strings.Join(files, "\n"), f.Branch(), workspace.ConfigDir)
+	return nil, fmt.Errorf("%w:\n%s\nPut %s back as it is on %s, commit, then close the ticket again:\n"+
+		"  git restore --source=%s --staged --worktree -- %s   (removes the files you added there too)\n"+
+		"  git commit -m \"revert: leave .nobody alone\"",
+		workspace.ErrConfigChanged, strings.Join(files, "\n"), workspace.ConfigDir, f.Branch(), f.Branch(), workspace.ConfigDir)
 }
 
 // activate records the feature agents now work on.

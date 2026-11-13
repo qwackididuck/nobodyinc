@@ -34,15 +34,18 @@ An agent (and a template) is one markdown file: a YAML front matter compatible w
 
 ### 3. Runtime state is per machine
 
-The SQLite database (mail, tickets, approvals history) and anything specific to one machine are neither versioned nor shared. They live in `~/.nobody/projects/<id>/`, where `<id>` is derived from the project's absolute path.
+The SQLite database (mail, tickets, approvals history) and anything specific to one machine are neither versioned nor shared. They live in `~/.nobody/projects/<id>/`, where `<id>` is derived from the project's absolute path. The teams' worktrees live there too (`worktrees/`), outside the project, so that the project's `.nobody/` can be protected by absolute path (§4). Claude Code's trust of the project still covers them: git ties a worktree to its repository (checked by experiment, 2.1.322).
 
 ### 4. Agents cannot change their own configuration
 
 `<project>/.nobody/` is in the repository, so it also appears in every team worktree. An agent able to edit it could widen its own permissions and deliver that change with its ticket. Therefore:
 
 - the daemon reads the configuration **only from the project's main checkout**, never from a worktree;
-- every agent is launched with `deny` rules on `Edit(.nobody/**)` and `Write(.nobody/**)`, whatever its profile;
-- a delivery (ticket closure) whose commits touch `.nobody/` is caught (deny rules do not cover every shell command, this is the backstop). The user's setting `config_protection` in `~/.nobody/settings.yaml` decides how: `block` (default) refuses the delivery until the agent undoes the change; `warn` delivers and warns the human, who must review the change before merging the feature. This only covers deliveries: without an active feature, agents work in the project's checkout itself, where the deny rules and the approval queue are the only protection.
+- every agent is launched with `deny` rules on `Edit` and `Write` of `.nobody/**` and `.claude/**`, whatever its profile, both relative to its working directory (`./`) and by absolute path to the project's main checkout (`//<project>/`). `.claude/` is included because agents load project settings (`--setting-sources project,local`): writing `.claude/settings.local.json` would widen their permissions at their next restart. The absolute rules are what protects the main checkout from an agent working in a worktree (checked by `task contract`);
+- the `allowlist` profile allows only the git commands needed to commit (`status`, `diff`, `log`, `show`, `add`, `commit`), not `git *`: `checkout`, `restore` or `apply` could write any path, the main checkout's `.nobody/` included;
+- a delivery (ticket closure) whose commits touch `.nobody/` is caught. The user's setting `config_protection` in `~/.nobody/settings.yaml` decides how: `block` (default) refuses the delivery until the agent undoes the change; `warn` delivers and warns the human, who must review the change before merging the feature.
+
+These rules make the change hard, not impossible: an agent allowed to run code it wrote (tests, scripts) can still do anything the user can. Only a sandbox closes that, which is why the `yolo` profile waits for one (§5). For the same reason, the daemon's API is only protected against requests a web page could send (another `Origin`, or a body that is not JSON); an authenticated API comes with the VPS mode.
 
 Only Nobody Inc itself (daemon, UI) writes `.nobody/`. The god session, when it exists, will change the configuration through office MCP tools, so the daemon remains the only writer.
 
@@ -53,10 +56,10 @@ Each agent has a permission profile that sets Claude Code's `--permission-mode` 
 | Profile | Launch | Meaning |
 |---|---|---|
 | `default` | `--permission-mode manual` | Every sensitive action goes to the approval queue. |
-| `allowlist` | `--permission-mode acceptEdits` + preset allow rules (git except push, usual test commands) | File edits in the working directory, git and tests run without asking; everything else goes to the approval queue. |
+| `allowlist` | `--permission-mode acceptEdits` + preset allow rules (`git status/diff/log/show/add/commit`, usual test commands; `git push` denied) | File edits in the working directory, committing and tests run without asking; everything else goes to the approval queue. |
 | `auto` | `--permission-mode auto` | Claude Code's classifier decides. Not available with Haiku (Claude Code silently falls back to `manual`), so this combination is refused. |
 
-The agent's own `allow` / `deny` rules are added on top, and the `.nobody/` deny rules always apply. A `yolo` profile (`--dangerously-skip-permissions`) is **postponed**: it will only exist together with Claude Code's sandbox, once a contract test proves that the sandbox keeps writes inside the worktree.
+The agent's own `allow` / `deny` rules are added on top, and the `.nobody/` and `.claude/` deny rules always apply. A `yolo` profile (`--dangerously-skip-permissions`) is **postponed**: it will only exist together with Claude Code's sandbox, once a contract test proves that the sandbox keeps writes inside the worktree.
 
 ### 6. MCP servers per agent
 
@@ -66,7 +69,7 @@ The project's MCP servers are declared in `<project>/.nobody/mcp.yaml`. Since th
 
 Editing an agent restarts it with `claude --resume <session>` and its new configuration as soon as it is idle, never in the middle of a turn. The same applies to putting it on leave or dismissing it. An explicit "restart from scratch" option starts a fresh session instead, and a "now" option does not wait for the end of the turn (for a stuck agent).
 
-Claude Code keeps the system prompt a session started with: on `--resume` it ignores a new `--append-system-prompt` (while the model, permission mode, tools and MCP servers do follow the new flags). The agent's current system prompt is therefore handed over in the first message of the resumed session, which states that it replaces the original one.
+Claude Code keeps the system prompt a session started with: on `--resume` it ignores a new `--append-system-prompt` (while the model, permission mode, tools and MCP servers do follow the new flags), and the model rightly refuses new instructions handed over in a message (checked by `task contract`). So a change of **role or instructions restarts the agent with a fresh session**; any other change (model, permissions, tools, MCP, leave and return) resumes it, with the current organisation handed over in its first message for information. A later option is to hand new instructions over through a `SessionStart` hook on resume, as system context, if losing the conversation turns out to matter.
 
 ## Consequences
 

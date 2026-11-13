@@ -36,7 +36,7 @@ func TestDeliveryChangingTheConfiguration(t *testing.T) {
 			var warned []string
 
 			g := &gitWorkspace{
-				repo:              workspace.Repo{Dir: newGitProject(t)},
+				repo:              workspace.Repo{Dir: newGitProject(t), WorktreesDir: t.TempDir()},
 				org:               &org.Org{Teams: []org.Team{{ID: "dev", Agents: []org.Agent{{Name: "dev1"}}}}},
 				configProtection:  tt.protection,
 				onConfigDelivered: func(_ string, _ work.Feature, files []string) { warned = files },

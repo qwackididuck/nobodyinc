@@ -80,7 +80,7 @@ func (s *server) startAgent(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	case errors.Is(err, runtime.ErrUnknownAgent):
 		s.writeError(w, http.StatusNotFound, err)
-	case errors.Is(err, runtime.ErrAlreadyRunning):
+	case errors.Is(err, runtime.ErrAlreadyRunning), errors.Is(err, runtime.ErrOnLeave), errors.Is(err, runtime.ErrStopping):
 		s.writeError(w, http.StatusConflict, err)
 	default:
 		s.Logger.Error("start agent", "err", err)

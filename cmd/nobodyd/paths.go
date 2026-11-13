@@ -72,25 +72,16 @@ func warnIfUntrusted(logger *slog.Logger, projectDir string) {
 	}
 }
 
-// resolveDBPath returns the database file: the -db flag, or the project's
-// state directory under ~/.nobody/projects/ (created if needed). The database
-// is per machine and never shared (ADR-0004).
-func resolveDBPath(flagValue, projectDir string) (string, error) {
-	if flagValue != "" {
-		return flagValue, nil
-	}
-
-	home, err := nobodyHome()
-	if err != nil {
-		return "", err
-	}
-
+// stateDir returns the project's state directory under ~/.nobody/projects/,
+// created if needed. It holds what is specific to this machine and never
+// shared (ADR-0004): the database and the teams' worktrees.
+func stateDir(home, projectDir string) (string, error) {
 	dir := projectStateDir(home, projectDir)
 	if err := os.MkdirAll(dir, stateDirPerm); err != nil {
 		return "", fmt.Errorf("create the project state directory: %w", err)
 	}
 
-	return filepath.Join(dir, "nobody.db"), nil
+	return dir, nil
 }
 
 // projectStateDir is ~/.nobody/projects/<name>-<hash>: the project's folder

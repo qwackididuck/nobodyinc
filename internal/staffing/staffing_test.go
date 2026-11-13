@@ -16,8 +16,9 @@ import (
 
 // applied records what the service asked the supervisor to apply.
 type applied struct {
-	mu    sync.Mutex
-	calls []string // "<address> fresh=<bool> now=<bool>"
+	mu      sync.Mutex
+	calls   []string // "<address>[ fresh][ now]"
+	pending map[string]bool
 }
 
 func (a *applied) Apply(_ context.Context, address string, opts runtime.ApplyOptions) error {
@@ -36,6 +37,14 @@ func (a *applied) Apply(_ context.Context, address string, opts runtime.ApplyOpt
 	a.calls = append(a.calls, call)
 
 	return nil
+}
+
+// Pending: tests mark addresses whose change still waits.
+func (a *applied) Pending(address string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.pending[address]
 }
 
 func (a *applied) last() string {
@@ -182,8 +191,8 @@ func TestEditKeepsOriginAndLeave(t *testing.T) {
 		t.Fatalf("saved = %+v", saved)
 	}
 
-	if a.last() != "dev1@dev now" {
-		t.Fatalf("applied %q, want dev1@dev resumed now", a.last())
+	if a.last() != "dev1@dev fresh now" {
+		t.Fatalf("applied %q, want dev1@dev restarted now with a fresh session (new role)", a.last())
 	}
 
 	if d, _ := s.Definition("dev1@dev"); d.Role != "Lead developer" {
@@ -238,7 +247,88 @@ func TestLeaveReturnDismiss(t *testing.T) {
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRecruitWaitsForAPendingDismissal(t *testing.T) {
+	t.Parallel()
+
+	s, a := newService(t)
+	a.pending = map[string]bool{"old@qa": true} // dismissed, still finishing its turn
+
+	if _, err := s.Recruit(context.Background(), "qa", "old", "dev"); !errors.Is(err, ErrExists) {
+		t.Fatalf("err = %v, want ErrExists while the dismissal is pending", err)
+	}
+}
+
+func TestRecruitRefusesAFileOnDisk(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newService(t)
+	writeFile(t, filepath.Join(s.Org.Current().ProjectDir, ".nobody", "teams", "qa", "tester.md"), "---\n---\n")
+
+	if _, err := s.Recruit(context.Background(), "qa", "tester", "dev"); !errors.Is(err, ErrExists) {
+		t.Fatalf("err = %v, want ErrExists: a file not loaded yet must not be overwritten", err)
+	}
+}
+
+func TestHandEditsAreAppliedWithTheNextChange(t *testing.T) {
+	t.Parallel()
+
+	s, a := newService(t)
+	dir := s.Org.Current().ProjectDir
+
+	// By hand: dev2 is added and dev1 is put on leave.
+	writeFile(t, filepath.Join(dir, ".nobody", "teams", "dev", "dev2.md"), "---\nrole: Developer\n---\n")
+	writeFile(t, filepath.Join(dir, ".nobody", "teams", "dev", "dev1.md"), "---\nrole: Developer\non_leave: true\n---\n")
+
+	if _, err := s.Recruit(context.Background(), "qa", "tester", "dev"); err != nil {
+		t.Fatal(err)
+	}
+
+	a.mu.Lock()
+	calls := strings.Join(a.calls, " | ")
+	a.mu.Unlock()
+
+	for _, want := range []string{"tester@qa fresh", "dev2@dev", "dev1@dev"} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("applied %q, want it to include %q", calls, want)
+		}
+	}
+}
+
+func TestEditStartsAFreshSessionOnlyForNewInstructions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		edit catalog.Definition
+		want string
+	}{
+		{name: "same role and prompt: resumed", edit: catalog.Definition{Role: "Developer", Model: "opus"}, want: "dev1@dev"},
+		{name: "new role: fresh", edit: catalog.Definition{Role: "Lead developer"}, want: "dev1@dev fresh"},
+		{name: "new instructions: fresh", edit: catalog.Definition{Role: "Developer", Prompt: "Write Rust."}, want: "dev1@dev fresh"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, a := newService(t)
+
+			if _, err := s.Edit(context.Background(), "dev1@dev", tt.edit, runtime.ApplyOptions{}); err != nil {
+				t.Fatal(err)
+			}
+
+			if a.last() != tt.want {
+				t.Fatalf("applied %q, want %q", a.last(), tt.want)
+			}
+		})
 	}
 }

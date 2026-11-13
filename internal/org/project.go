@@ -15,25 +15,19 @@ import (
 )
 
 // ConfigDirName is the directory, at the root of a project, that holds its
-// Nobody Inc configuration. It is committed with the project (ADR-0004);
-// only its worktrees/ subdirectory is ignored by git.
+// Nobody Inc configuration. It is committed with the project (ADR-0004).
 const ConfigDirName = ".nobody"
 
 // Files and directories inside ConfigDirName.
 const (
-	orgFile       = "org.yaml"
-	teamsDir      = "teams"
-	gitignoreFile = ".gitignore"
-	agentExt      = ".md"
+	orgFile  = "org.yaml"
+	teamsDir = "teams"
+	agentExt = ".md"
 )
 
 // orgFileHeader opens the org.yaml written by Nobody Inc.
 const orgFileHeader = "# Nobody Inc organization: teams and channels.\n" +
 	"# Each agent is a file in teams/<team>/<agent>.md.\n"
-
-// gitignoreContent keeps the team worktrees (docs/workspaces.md) out of the
-// project's history; everything else in .nobody/ is committed.
-const gitignoreContent = "# Team worktrees created by Nobody Inc\nworktrees/\n"
 
 // ErrNoConfig means the project has no .nobody/org.yaml yet.
 var ErrNoConfig = errors.New("no Nobody Inc configuration")
@@ -88,7 +82,7 @@ func LoadProject(projectDir string) (*Org, error) {
 }
 
 // WriteProject writes the whole organization into o.ProjectDir/.nobody/:
-// org.yaml, every agent file, and the .gitignore if there is none.
+// org.yaml and every agent file.
 // Agent files that are no longer part of the organization are left alone.
 func WriteProject(o *Org) error {
 	if err := o.Validate(); err != nil {
@@ -103,10 +97,6 @@ func WriteProject(o *Org) error {
 	dir := ConfigDir(o.ProjectDir)
 
 	if err := atomicfile.Write(filepath.Join(dir, orgFile), append([]byte(orgFileHeader), header...)); err != nil {
-		return err
-	}
-
-	if err := writeGitignore(dir); err != nil {
 		return err
 	}
 
@@ -129,6 +119,14 @@ func WriteAgent(projectDir, team string, a Agent) error {
 	}
 
 	return atomicfile.Write(agentPath(projectDir, team, a.Name), data)
+}
+
+// AgentFileExists reports whether an agent file is on disk, whether or not
+// the organization in memory knows it yet.
+func AgentFileExists(projectDir, team, name string) bool {
+	_, err := os.Stat(agentPath(projectDir, team, name))
+
+	return err == nil
 }
 
 // RemoveAgent deletes an agent file, e.g. when the agent is dismissed. Its
@@ -236,13 +234,4 @@ func checkTeamDirs(dir string, o *Org) error {
 	}
 
 	return errors.Join(errs...)
-}
-
-func writeGitignore(dir string) error {
-	path := filepath.Join(dir, gitignoreFile)
-	if _, err := os.Stat(path); err == nil {
-		return nil
-	}
-
-	return atomicfile.Write(path, []byte(gitignoreContent))
 }

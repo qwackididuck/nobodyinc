@@ -47,6 +47,10 @@ type Deps struct {
 	Catalog *catalog.Catalog
 	// Extra mounts additional handlers (MCP endpoint, terminals) by pattern.
 	Extra map[string]http.Handler
+	// Origins are the browser origins (host patterns, e.g. "localhost:3000")
+	// allowed to change things through the API besides the daemon itself
+	// (guard.go).
+	Origins []string
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits
@@ -105,7 +109,7 @@ func New(d Deps) http.Handler {
 		mux.Handle(pattern, h)
 	}
 
-	return mux
+	return guardCrossSite(d.Origins, mux)
 }
 
 func (s *server) health(w http.ResponseWriter, _ *http.Request) {

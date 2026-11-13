@@ -70,8 +70,11 @@ func newTestEnvWithWait(t *testing.T, approvalWait time.Duration) testEnv {
 func (e testEnv) do(t *testing.T, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	req := httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json") // as the control room sends it
+
 	rec := httptest.NewRecorder()
-	e.handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewBufferString(body)))
+	e.handler.ServeHTTP(rec, req)
 
 	return rec
 }

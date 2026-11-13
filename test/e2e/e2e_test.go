@@ -72,6 +72,14 @@ func testOrg(t *testing.T) *org.Org {
 func startDaemon(t *testing.T, o org.Source) *daemon.Daemon {
 	t.Helper()
 
+	return startDaemonWithDB(t, o, ":memory:")
+}
+
+// startDaemonWithDB is startDaemon on a given database file, e.g. one left by
+// a previous run.
+func startDaemonWithDB(t *testing.T, o org.Source, dbPath string) *daemon.Daemon {
+	t.Helper()
+
 	var lc net.ListenConfig
 
 	listener, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -83,13 +91,14 @@ func startDaemon(t *testing.T, o org.Source) *daemon.Daemon {
 	t.Cleanup(cancel)
 
 	d, err := daemon.New(ctx, daemon.Options{
-		Logger:     slog.New(slog.DiscardHandler),
-		Org:        o,
-		CatalogDir: t.TempDir(),
-		DBPath:     ":memory:",
-		ClaudePath: fakeClaude,
-		HookPath:   hookBinary,
-		DaemonURL:  "http://" + listener.Addr().String(),
+		Logger:       slog.New(slog.DiscardHandler),
+		Org:          o,
+		CatalogDir:   t.TempDir(),
+		WorktreesDir: t.TempDir(),
+		DBPath:       dbPath,
+		ClaudePath:   fakeClaude,
+		HookPath:     hookBinary,
+		DaemonURL:    "http://" + listener.Addr().String(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -448,7 +457,7 @@ func TestFeatureRelayThroughGit(t *testing.T) {
 		}
 	}
 
-	devDir := filepath.Join(o.ProjectDir, ".nobody", "worktrees", f.Slug, "dev")
+	devDir := d.WorkDir("dev1@dev")
 	if _, err := os.Stat(filepath.Join(devDir, specs.ID+".md")); err != nil {
 		t.Fatal("dev should have received the specs in its worktree when claiming")
 	}
