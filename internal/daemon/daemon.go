@@ -165,6 +165,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		staffService = &staffing.Service{Org: live, Catalog: cat, Agents: supervisor}
 	}
 
+	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
+
 	handler := server.New(server.Deps{
 		Version:   opts.Version,
 		Logger:    opts.Logger,
@@ -179,7 +181,9 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Catalog:   cat,
 		Origins:   opts.Origins,
 		Extra: map[string]http.Handler{
-			"/mcp/{address}":                     officemcp.Handler(opts.Org, messages, tickets, opts.Version),
+			"/mcp/{address}": officemcp.Handler(officemcp.Office{
+				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Version: opts.Version,
+			}),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),
 		},
 	})

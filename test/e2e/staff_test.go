@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -356,4 +358,105 @@ func TestStartupHandsOverWhatDepartedAgentsLeft(t *testing.T) {
 	eventually(t, "the sender told the message was not delivered", func() bool {
 		return hasNotice(t, d, org.HumanAddress, "Message not delivered: Never read")
 	})
+}
+
+// The director is recruited through the API and, having no team, talks to
+// any agent without a channel: asked by the human, it questions dev1@dev and
+// gets the answer. There can be only one.
+func TestDirector(t *testing.T) {
+	t.Parallel()
+
+	d := startDaemon(t, staffProject(t))
+
+	call(t, d, http.MethodPost, "/api/director", `{"name":"god","template":"god"}`, http.StatusCreated)
+	eventually(t, "god started", func() bool { return d.Statuses.Get("god") == runtime.StatusIdle })
+	call(t, d, http.MethodPost, "/api/director", `{"name":"boss","template":"god"}`, http.StatusConflict)
+
+	sendAsHuman(t, d, "god", "Check with dev", "ASK dev1@dev: Is the build green?")
+
+	eventually(t, "god asked dev1 and got the answer", func() bool {
+		lines := strings.Join(exchange(t, d), "\n")
+
+		return strings.Contains(lines, "god -> dev1@dev [query]") && strings.Contains(lines, "dev1@dev -> god")
+	})
+
+	if a := agentByAddress(t, d, "god"); a.Role != "Director" {
+		t.Fatalf("GET /api/agents shows the director as %+v", a)
+	}
+}
+
+// The director's office tools, called by a real MCP client as the director
+// would: recruit an agent, create a ticket for a team (no channel needed),
+// read the overview, dismiss the agent.
+func TestDirectorToolsThroughMCP(t *testing.T) {
+	t.Parallel()
+
+	d := startDaemon(t, staffProject(t))
+	call(t, d, http.MethodPost, "/api/director", `{"name":"god","template":"god"}`, http.StatusCreated)
+	eventually(t, "god started", func() bool { return d.Statuses.Get("god") == runtime.StatusIdle })
+
+	srv := httptest.NewServer(d.Handler)
+	t.Cleanup(srv.Close)
+
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "god-test"}, nil).
+		Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: srv.URL + "/mcp/god"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { session.Close() })
+
+	useTool(t, session, "agent_recruit", map[string]any{"team": "dev", "name": "rev", "template": "reviewer"})
+	eventually(t, "rev@dev started", func() bool { return d.Statuses.Get("rev@dev") == runtime.StatusIdle })
+
+	var tk struct {
+		ID string `json:"id"`
+	}
+	decodeBody(t, []byte(useTool(t, session, "ticket_create", map[string]any{"title": "Build the cart", "team": "dev"})), &tk)
+
+	if done := waitForDone(t, d, tk.ID); done.Ticket.CreatedBy != "god" {
+		t.Fatalf("ticket created by %q, want god", done.Ticket.CreatedBy)
+	}
+
+	var overview struct {
+		Teams []struct {
+			Team   string `json:"team"`
+			Agents []struct {
+				Address string `json:"address"`
+			} `json:"agents"`
+			Done int `json:"done"`
+		} `json:"teams"`
+	}
+	decodeBody(t, []byte(useTool(t, session, "org_overview", nil)), &overview)
+
+	if len(overview.Teams) != 1 || len(overview.Teams[0].Agents) != 3 || overview.Teams[0].Done != 1 {
+		t.Fatalf("overview = %+v, want team dev with dev1, dev2, rev and one ticket done", overview)
+	}
+
+	useTool(t, session, "agent_dismiss", map[string]any{"address": "rev@dev"})
+	eventually(t, "rev@dev dismissed", func() bool { return !hasAgent(t, d, "rev@dev") })
+}
+
+// useTool calls an MCP tool and returns its text result, failing on errors.
+func useTool(t *testing.T, session *mcp.ClientSession, name string, args map[string]any) string {
+	t.Helper()
+
+	res, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+
+	var text strings.Builder
+
+	for _, c := range res.Content {
+		if tc, ok := c.(*mcp.TextContent); ok {
+			text.WriteString(tc.Text)
+		}
+	}
+
+	if res.IsError {
+		t.Fatalf("%s failed: %s", name, text.String())
+	}
+
+	return text.String()
 }

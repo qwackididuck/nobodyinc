@@ -564,8 +564,10 @@ func (s *Service) mayCreateFor(by, team string) bool {
 	return myTeam == team || s.Org.Current().HasChannel(myTeam, team)
 }
 
+// isPrivileged reports whether address may act on any ticket of any team:
+// the human, the system, and the director, who leads the teams.
 func (s *Service) isPrivileged(address string) bool {
-	return address == org.HumanAddress || address == org.SystemAddress
+	return address == org.HumanAddress || address == org.SystemAddress || s.Org.Current().IsGod(address)
 }
 
 func (s *Service) teamExists(team string) bool {

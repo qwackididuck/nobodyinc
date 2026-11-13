@@ -86,6 +86,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/agents/{address}/return", s.returnAgentFromLeave)
 	mux.HandleFunc("GET /api/teams", s.listTeams)
 	mux.HandleFunc("POST /api/teams/{team}/agents", s.recruitAgent)
+	mux.HandleFunc("POST /api/director", s.recruitDirector)
 	mux.HandleFunc("GET /api/catalog", s.listTemplates)
 	mux.HandleFunc("GET /api/catalog/{name}", s.getTemplate)
 	mux.HandleFunc("PUT /api/catalog/{name}", s.saveTemplate)

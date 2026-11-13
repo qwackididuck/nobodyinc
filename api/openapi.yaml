@@ -199,6 +199,34 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/director:
+    post:
+      operationId: recruitDirector
+      summary: Recruit the director (god) from a template, or create it from a definition, and start it
+      description: |
+        The director has no team: its file is .nobody/director/<name>.md and
+        its address is its name. There is at most one (409 otherwise); rename
+        it by dismissing it and recruiting it again under another name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Recruitment"
+      responses:
+        "201":
+          description: Director recruited and starting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
   /api/catalog:
     get:
       operationId: listTemplates
@@ -648,8 +676,10 @@ components:
       properties:
         address:
           type: string
+          description: '"<agent>@<team>", or the name alone for the director.'
         team:
           type: string
+          description: Empty for the director, who has no team.
         name:
           type: string
         role:

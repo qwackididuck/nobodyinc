@@ -15,6 +15,7 @@ An **agent** is a member of a team that runs as a Claude Code session. A **templ
   org.yaml                                teams and channels
   mcp.yaml                                MCP servers agents may be given
   teams/<team>/<agent>.md                 recruited agents
+  director/<name>.md                      the director (god), at most one; its address is its name (docs/god.md)
 ```
 
 The project directory is the one containing `.nobody/`; agents work in it, or in their team's worktree when a feature is active (`docs/workspaces.md`). The daemon reads `.nobody/` from the main checkout only.

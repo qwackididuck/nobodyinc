@@ -53,6 +53,8 @@ type Service struct {
 }
 
 // Recruit copies a template into a team under a name, then starts the agent.
+// The team org.DirectorTeam ("") recruits the director (there is at most
+// one).
 //
 // ctx bounds the agent's process: it must outlive the caller's request.
 func (s *Service) Recruit(ctx context.Context, team, name, template string) (org.Member, error) {
@@ -203,6 +205,10 @@ func (s *Service) save(ctx context.Context, team string, a org.Agent, opts runti
 	candidate, err := current.WithAgent(team, a)
 	if errors.Is(err, org.ErrUnknownTeam) {
 		return fmt.Errorf("%w: %w", ErrNotFound, err)
+	}
+
+	if errors.Is(err, org.ErrDirectorExists) {
+		return fmt.Errorf("%w: %w", ErrExists, err)
 	}
 
 	if err != nil {

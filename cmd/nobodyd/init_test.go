@@ -25,6 +25,10 @@ func TestInitProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	if god, ok := o.Member("god"); !ok || !o.IsGod("god") || !strings.HasPrefix(god.Agent.From, "god@") {
+		t.Fatalf("director not recruited from the god template: %+v", god)
+	}
+
 	dev, ok := o.Member("dev1@dev")
 	if !ok || !strings.HasPrefix(dev.Agent.From, "dev@") || dev.Agent.Prompt == "" {
 		t.Fatalf("dev1@dev not recruited from the dev template: %+v", dev)

@@ -132,11 +132,14 @@ func (g *gitWorkspace) workDir(address string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if g.active == nil {
+	// Without a feature, everyone works in the project. The director (no
+	// team) always does: it reads and plans, it does not deliver code.
+	team := org.TeamOf(address)
+	if g.active == nil || team == "" {
 		return g.repo.Dir
 	}
 
-	return g.repo.TeamDir(toWorkspace(*g.active), org.TeamOf(address))
+	return g.repo.TeamDir(toWorkspace(*g.active), team)
 }
 
 func (g *gitWorkspace) teams() []string {

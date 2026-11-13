@@ -41,6 +41,9 @@ type Org struct {
 	// MCP is the project's MCP registry, read from .nobody/mcp.yaml: the
 	// servers agents may be given (see mcp.go).
 	MCP map[string]MCPServer `yaml:"-"`
+	// God is the director, the agent who talks with the human and leads the
+	// teams; nil when the project has none (see director.go).
+	God *Agent `yaml:"-"`
 }
 
 // Team is a group of agents sharing a goal.
@@ -75,6 +78,7 @@ type Member struct {
 // Validate checks names, uniqueness and that channels point to real teams.
 func (o *Org) Validate() error {
 	teams, errs := o.validateTeams()
+	errs = append(errs, o.validateGod()...)
 	errs = append(errs, o.validateChannels(teams)...)
 	errs = append(errs, o.validateMCP()...)
 
@@ -84,6 +88,10 @@ func (o *Org) Validate() error {
 // Members lists every agent of the organization.
 func (o *Org) Members() []Member {
 	var members []Member
+
+	if o.God != nil {
+		members = append(members, Member{Address: o.God.Name, Agent: *o.God})
+	}
 
 	for _, t := range o.Teams {
 		for _, a := range t.Agents {
@@ -125,6 +133,14 @@ var ErrUnknownTeam = errors.New("unknown team")
 func (o *Org) WithAgent(team string, a Agent) (*Org, error) {
 	c := o.copyTeams()
 
+	if team == DirectorTeam {
+		if err := c.setGod(a); err != nil {
+			return nil, err
+		}
+
+		return c, nil
+	}
+
 	for i := range c.Teams {
 		if c.Teams[i].ID != team {
 			continue
@@ -146,6 +162,10 @@ func (o *Org) WithAgent(team string, a Agent) (*Org, error) {
 // address. The receiver is left untouched.
 func (o *Org) WithoutAgent(address string) *Org {
 	c := o.copyTeams()
+
+	if c.IsGod(address) {
+		c.God = nil
+	}
 
 	for i := range c.Teams {
 		c.Teams[i].Agents = slices.DeleteFunc(c.Teams[i].Agents, func(a Agent) bool {
@@ -220,8 +240,13 @@ func (o *Org) validateChannels(teams map[string]bool) []error {
 	return errs
 }
 
-// Address builds the address of an agent: "<agent>@<team>".
+// Address builds the address of an agent: "<agent>@<team>", or just the
+// name for the director, who has no team (DirectorTeam).
 func Address(agent, team string) string {
+	if team == DirectorTeam {
+		return agent
+	}
+
 	return agent + "@" + team
 }
 
@@ -240,6 +265,11 @@ func TeamOf(address string) string {
 func (o *Org) copyTeams() *Org {
 	c := *o
 	c.Teams = make([]Team, len(o.Teams))
+
+	if o.God != nil {
+		god := *o.God
+		c.God = &god
+	}
 
 	for i, t := range o.Teams {
 		t.Agents = slices.Clone(t.Agents)

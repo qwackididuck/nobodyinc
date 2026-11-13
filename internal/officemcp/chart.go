@@ -13,6 +13,8 @@ const (
 	// ReachAnswerOnly: the agent can only answer their messages; to reach
 	// them otherwise, it goes through the human.
 	ReachAnswerOnly = "answer_only"
+	// ReachDirector: the director's view of every team; it writes to anyone.
+	ReachDirector = "director"
 )
 
 // TeamChart is one team of the organization, as one agent sees it.
@@ -53,6 +55,9 @@ func Chart(o *org.Org, address string) []TeamChart {
 		}
 
 		switch {
+		case o.IsGod(address):
+			chart.Reach = ReachDirector
+			reachable = append(reachable, chart)
 		case t.ID == myTeam:
 			chart.Reach = ReachOwnTeam
 			own = append(own, chart)
@@ -66,4 +71,14 @@ func Chart(o *org.Org, address string) []TeamChart {
 	}
 
 	return append(append(own, reachable...), others...)
+}
+
+// DirectorOf is the director as shown in the organization chart, or nil when
+// the project has none.
+func DirectorOf(o *org.Org) *ChartMember {
+	if o.God == nil {
+		return nil
+	}
+
+	return &ChartMember{Address: o.God.Name, Role: o.God.Role}
 }

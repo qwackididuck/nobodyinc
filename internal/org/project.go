@@ -60,10 +60,14 @@ func LoadProject(projectDir string) (*Org, error) {
 	}
 
 	for i := range o.Teams {
-		o.Teams[i].Agents, err = readTeamAgents(dir, o.Teams[i].ID)
+		o.Teams[i].Agents, err = readAgents(filepath.Join(ConfigDir(dir), teamsDir, o.Teams[i].ID))
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if o.God, err = readGod(dir); err != nil {
+		return nil, err
 	}
 
 	if err := checkTeamDirs(dir, o); err != nil {
@@ -108,6 +112,10 @@ func WriteProject(o *Org) error {
 		}
 	}
 
+	if o.God != nil {
+		return WriteAgent(o.ProjectDir, DirectorTeam, *o.God)
+	}
+
 	return nil
 }
 
@@ -139,8 +147,29 @@ func RemoveAgent(projectDir, team, name string) error {
 	return nil
 }
 
+// agentPath is the file of an agent: teams/<team>/<name>.md, or
+// director/<name>.md for the director (DirectorTeam).
 func agentPath(projectDir, team, name string) string {
+	if team == DirectorTeam {
+		return filepath.Join(ConfigDir(projectDir), directorDir, name+agentExt)
+	}
+
 	return filepath.Join(ConfigDir(projectDir), teamsDir, team, name+agentExt)
+}
+
+// readGod reads the director from director/: no file means no director, and
+// there can be only one.
+func readGod(dir string) (*Agent, error) {
+	agents, err := readAgents(filepath.Join(ConfigDir(dir), directorDir))
+	if err != nil || len(agents) == 0 {
+		return nil, err
+	}
+
+	if len(agents) > 1 {
+		return nil, fmt.Errorf("%s/: %w (%d files: keep only one)", directorDir, ErrDirectorExists, len(agents))
+	}
+
+	return &agents[0], nil
 }
 
 func readOrgFile(dir string) (*Org, error) {
@@ -168,11 +197,9 @@ func readOrgFile(dir string) (*Org, error) {
 	return o, nil
 }
 
-// readTeamAgents reads teams/<team>/*.md; a team without a directory has no
-// agents yet.
-func readTeamAgents(dir, team string) ([]Agent, error) {
-	teamDir := filepath.Join(ConfigDir(dir), teamsDir, team)
-
+// readAgents reads the agent files (*.md) of a directory; a missing
+// directory has no agents yet.
+func readAgents(teamDir string) ([]Agent, error) {
 	entries, err := os.ReadDir(teamDir)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
