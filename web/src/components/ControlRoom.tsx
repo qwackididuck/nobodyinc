@@ -9,10 +9,13 @@ import { ApprovalQueue } from "./ApprovalQueue";
 import { Composer } from "./Composer";
 import styles from "./ControlRoom.module.css";
 import { MessageFeed } from "./MessageFeed";
+import { RecruitmentView } from "./RecruitmentView";
 import { TerminalView } from "./TerminalView";
 import { TicketsView } from "./TicketsView";
 
 const REFRESH_MS = 2000;
+
+const VIEW_LABELS = { terminal: "Terminal", tickets: "Tickets", recruitment: "Recruitment" } as const;
 // Faster: an agent is blocked while its permission request waits.
 const APPROVALS_REFRESH_MS = 1000;
 
@@ -25,7 +28,7 @@ export function ControlRoom() {
   const [selected, setSelected] = useState<string | null>(null);
   const [focusMail, setFocusMail] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [view, setView] = useState<"terminal" | "tickets">("terminal");
+  const [view, setView] = useState<"terminal" | "tickets" | "recruitment">("terminal");
 
   const agentList = agents.data ?? [];
   const current = agentList.find((a) => a.address === selected) ?? null;
@@ -36,7 +39,7 @@ export function ControlRoom() {
     <main className={styles.room}>
       <AgentList agents={agentList} selected={selected} onSelect={setSelected} onChange={agents.refresh} />
 
-      <section className={styles.panel} aria-label={view === "terminal" ? "Terminal" : "Tickets"}>
+      <section className={styles.panel} aria-label={VIEW_LABELS[view]}>
         <div className={styles.tabs}>
           <button type="button" className={view === "terminal" ? styles.tabActive : styles.tab} onClick={() => setView("terminal")}>
             {current ? `Terminal — ${current.address}` : "Terminal"}
@@ -44,9 +47,13 @@ export function ControlRoom() {
           <button type="button" className={view === "tickets" ? styles.tabActive : styles.tab} onClick={() => setView("tickets")}>
             Tickets
           </button>
+          <button type="button" className={view === "recruitment" ? styles.tabActive : styles.tab} onClick={() => setView("recruitment")}>
+            Recruitment
+          </button>
         </div>
         {agents.error && <p className={styles.error}>Daemon unreachable: {agents.error}</p>}
         {view === "tickets" && <TicketsView teams={teams} />}
+        {view === "recruitment" && <RecruitmentView selected={current} onChanged={() => void agents.refresh()} />}
         {view === "terminal" && !current && <p className={styles.empty}>Select an agent to see its terminal.</p>}
         {view === "terminal" && current && !running && <p className={styles.empty}>This agent is not running.</p>}
         {view === "terminal" && current && running && <TerminalView key={current.address} address={current.address} />}

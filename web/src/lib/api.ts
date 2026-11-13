@@ -8,6 +8,118 @@ export interface Agent {
   name: string;
   role: string;
   status: AgentStatus;
+  on_leave: boolean;
+  // Template it was recruited from, "<template>@<version>" (information only).
+  from?: string;
+  // A change waits for the agent to end its turn before it restarts or stops.
+  pending_change: boolean;
+}
+
+// --- Agent definitions, templates and recruitment (see docs/agents.md) ---
+
+export interface Team {
+  id: string;
+  goal?: string;
+}
+
+export const PROFILES = ["default", "allowlist", "auto"] as const;
+export type PermissionProfile = (typeof PROFILES)[number];
+
+// Content of an agent or template file. description and version are used by
+// templates; from and on_leave by agents (read-only through the API).
+export interface AgentDefinition {
+  description?: string;
+  version?: number;
+  role?: string;
+  model?: string;
+  permissions?: { profile?: PermissionProfile; allow?: string[]; deny?: string[] };
+  tools?: string[];
+  mcp?: string[];
+  skills?: string[];
+  from?: string;
+  on_leave?: boolean;
+  prompt?: string;
+}
+
+export interface Template extends AgentDefinition {
+  name: string;
+  // Shipped with Nobody Inc and not overridden in ~/.nobody/catalog.
+  builtin: boolean;
+}
+
+// How a change reaches a running agent: fresh starts a new session instead of
+// resuming; now does not wait for the end of its current turn.
+export interface ApplyOptions {
+  fresh?: boolean;
+  now?: boolean;
+}
+
+export function listTeams(): Promise<Team[]> {
+  return getJSON<Team[]>("/api/teams");
+}
+
+export function listTemplates(): Promise<Template[]> {
+  return getJSON<Template[]>("/api/catalog");
+}
+
+export function saveTemplate(name: string, definition: AgentDefinition): Promise<Template> {
+  return sendJSON<Template>("PUT", `/api/catalog/${encodeURIComponent(name)}`, definition);
+}
+
+// recruitAgent hires from a template, or creates from a definition.
+export function recruitAgent(
+  team: string,
+  body: { name: string; template: string } | { name: string; definition: AgentDefinition },
+): Promise<Agent> {
+  return postJSON<Agent>(`/api/teams/${encodeURIComponent(team)}/agents`, body);
+}
+
+export function getDefinition(address: string): Promise<AgentDefinition> {
+  return getJSON<AgentDefinition>(`/api/agents/${encodeURIComponent(address)}/definition`);
+}
+
+export function editDefinition(address: string, definition: AgentDefinition, opts: ApplyOptions): Promise<AgentDefinition> {
+  return sendJSON<AgentDefinition>("PUT", `/api/agents/${encodeURIComponent(address)}/definition${query(opts)}`, definition);
+}
+
+export function putOnLeave(address: string, opts: ApplyOptions = {}): Promise<void> {
+  return send("POST", `/api/agents/${encodeURIComponent(address)}/leave${query(opts)}`);
+}
+
+export function returnFromLeave(address: string, opts: ApplyOptions = {}): Promise<void> {
+  return send("POST", `/api/agents/${encodeURIComponent(address)}/return${query(opts)}`);
+}
+
+export function dismissAgent(address: string, opts: ApplyOptions = {}): Promise<void> {
+  return send("DELETE", `/api/agents/${encodeURIComponent(address)}${query(opts)}`);
+}
+
+function query(opts: ApplyOptions): string {
+  const params = new URLSearchParams();
+  if (opts.fresh) params.set("fresh", "true");
+  if (opts.now) params.set("now", "true");
+  const q = params.toString();
+  return q ? `?${q}` : "";
+}
+
+async function sendJSON<T>(method: string, path: string, body: unknown): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+  return (await res.json()) as T;
+}
+
+// send makes a request whose answer has no body (202, 204).
+async function send(method: string, path: string): Promise<void> {
+  const res = await fetch(path, { method });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
 }
 
 export const ACTS = ["request", "query", "propose", "inform", "agree", "refuse", "done"] as const;

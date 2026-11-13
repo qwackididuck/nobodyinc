@@ -46,9 +46,18 @@ export function AgentList({ agents, selected, onSelect, onChange }: Props) {
                 >
                   <span className={styles.agentName}>{a.name}</span>
                   <span className={styles.agentRole}>{a.role}</span>
-                  <span className={`${styles.status} ${styles[`status_${a.status}`]}`}>{a.status}</span>
+                  {a.on_leave ? (
+                    <span className={`${styles.status} ${styles.status_on_leave}`}>on leave</span>
+                  ) : (
+                    <span className={`${styles.status} ${styles[`status_${a.status}`]}`}>{a.status}</span>
+                  )}
+                  {a.pending_change && (
+                    <span className={styles.agentRole} title="Restarts or stops once its current turn is over">
+                      change pending
+                    </span>
+                  )}
                 </button>
-                {(a.status === "stopped" || a.status === "exited") && (
+                {!a.on_leave && (a.status === "stopped" || a.status === "exited") && (
                   <button type="button" className={styles.smallButton} onClick={() => start(a.address)}>
                     Start
                   </button>

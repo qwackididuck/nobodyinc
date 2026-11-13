@@ -121,4 +121,6 @@ All of these go through the daemon's API (`api/openapi.yaml`, `internal/staffing
 | Leave / return | `POST /api/agents/{address}/leave`, `POST /api/agents/{address}/return` |
 | Dismiss | `DELETE /api/agents/{address}` |
 
+The control room's **Recruitment** tab drives these endpoints: the catalog (recruit a template into a team, or customize it as your own template), creating an agent from scratch, and editing the agent selected in the team list (save and restart, leave, return, dismiss). `GET /api/teams` lists the teams, including those without agents yet.
+
 Each change is validated against the whole organization before anything is written (unknown team, undeclared MCP server, invalid profile...). Files edited by hand are picked up at the next change made through the API, or when the daemon restarts.

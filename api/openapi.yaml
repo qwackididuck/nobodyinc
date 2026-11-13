@@ -147,6 +147,20 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/teams:
+    get:
+      operationId: listTeams
+      summary: Teams declared in the project's .nobody/org.yaml, including those without agents
+      responses:
+        "200":
+          description: Teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Team"
+
   /api/teams/{team}/agents:
     post:
       operationId: recruitAgent
@@ -621,6 +635,15 @@ components:
         pending_change:
           type: boolean
           description: A change waits for the agent to end its turn before it restarts or stops.
+
+    Team:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        goal:
+          type: string
 
     PermissionProfile:
       type: string

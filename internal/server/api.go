@@ -35,6 +35,25 @@ func (s *server) listAgents(w http.ResponseWriter, _ *http.Request) {
 	s.writeJSON(w, http.StatusOK, agents)
 }
 
+// teamView is a team as shown in the UI.
+type teamView struct {
+	ID   string `json:"id"`
+	Goal string `json:"goal,omitempty"`
+}
+
+// listTeams lists the declared teams, so that the UI can recruit into a team
+// that has no agent yet.
+func (s *server) listTeams(w http.ResponseWriter, _ *http.Request) {
+	teams := s.Org.Current().Teams
+
+	views := make([]teamView, 0, len(teams))
+	for _, t := range teams {
+		views = append(views, teamView{ID: t.ID, Goal: t.Goal})
+	}
+
+	s.writeJSON(w, http.StatusOK, views)
+}
+
 func (s *server) agentView(m org.Member) agentView {
 	return agentView{
 		Address:       m.Address,
