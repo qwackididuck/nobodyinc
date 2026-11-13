@@ -45,11 +45,224 @@ paths:
     post:
       operationId: startAgent
       summary: Launch (or relaunch) an agent's Claude Code session
+      description: 409 when the agent is already running, is on leave, or the daemon is shutting down.
       parameters:
         - $ref: "#/components/parameters/Address"
       responses:
         "202":
           description: Agent launched
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}:
+    delete:
+      operationId: dismissAgent
+      summary: Dismiss an agent
+      description: |
+        Deletes the agent's file. Once idle (or at once with now=true) the agent
+        stops; its ticket in progress goes back to its team's queue and its
+        undelivered mail is returned to the senders. History is kept.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Dismissal recorded; applied once the agent is idle
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}/definition:
+    get:
+      operationId: getAgentDefinition
+      summary: The agent's definition, as in its file
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      responses:
+        "200":
+          description: Definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDefinition"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: editAgentDefinition
+      summary: Replace the agent's definition and restart it with it
+      description: |
+        Rewrites the agent's file (from and on_leave are kept as they are). The
+        agent restarts once idle, resuming its session unless fresh=true. The
+        template it came from is never changed.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+        - $ref: "#/components/parameters/Fresh"
+        - $ref: "#/components/parameters/Now"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentDefinition"
+      responses:
+        "200":
+          description: Saved; the restart is applied once the agent is idle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDefinition"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}/leave:
+    post:
+      operationId: putAgentOnLeave
+      summary: Put an agent on leave
+      description: |
+        The agent stops once idle; its file and session are kept. Its ticket in
+        progress goes back to its team's queue, team addressing skips it, and
+        mail sent to it waits until it returns.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Leave recorded; applied once the agent is idle
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}/return:
+    post:
+      operationId: returnAgentFromLeave
+      summary: Bring an agent back from leave
+      description: The agent starts again, resuming its session; mail that waited is delivered.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+        - $ref: "#/components/parameters/Fresh"
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Agent restarting
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/teams:
+    get:
+      operationId: listTeams
+      summary: Teams declared in the project's .nobody/org.yaml, including those without agents
+      responses:
+        "200":
+          description: Teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Team"
+
+  /api/teams/{team}/agents:
+    post:
+      operationId: recruitAgent
+      summary: Recruit an agent from a template, or create one from a definition, and start it
+      parameters:
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Recruitment"
+      responses:
+        "201":
+          description: Agent recruited and starting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/catalog:
+    get:
+      operationId: listTemplates
+      summary: Agent templates, built-in and the user's (~/.nobody/catalog), by name
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Template"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /api/catalog/{name}:
+    get:
+      operationId: getTemplate
+      summary: One template
+      parameters:
+        - $ref: "#/components/parameters/TemplateName"
+      responses:
+        "200":
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: saveTemplate
+      summary: Create or replace a user template in ~/.nobody/catalog
+      description: Saving under the name of a built-in template overrides it. Agents already recruited are not changed.
+      parameters:
+        - $ref: "#/components/parameters/TemplateName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentDefinition"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTemplate
+      summary: Delete a user template from ~/.nobody/catalog
+      description: |
+        Deleting a template that overrides a built-in one brings the built-in
+        one back. Built-in templates cannot be deleted. Agents recruited from
+        the template are not changed.
+      parameters:
+        - $ref: "#/components/parameters/TemplateName"
+      responses:
+        "204":
+          description: Deleted
         "404":
           $ref: "#/components/responses/Error"
         "409":
@@ -363,6 +576,31 @@ components:
         type: string
         example: archi@specs
 
+    TemplateName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*$"
+        example: dev
+
+    Fresh:
+      name: fresh
+      in: query
+      description: Restart with a new Claude Code session instead of resuming the current one.
+      schema:
+        type: boolean
+        default: false
+
+    Now:
+      name: now
+      in: query
+      description: Apply at once instead of waiting for the end of the agent's current turn.
+      schema:
+        type: boolean
+        default: false
+
     TicketID:
       name: id
       in: path
@@ -374,7 +612,13 @@ components:
 
   responses:
     Error:
-      description: Request refused
+      description: |
+        Request refused. On every route that changes something (anything but
+        GET), a browser request from another origin than the control room is
+        refused with 403, and a body that is not application/json with 415.
+        Agent and catalog routes answer 501 when the organization cannot be
+        changed by this daemon, and 500 when a change was saved but could not
+        be reloaded or applied (the message says which).
       content:
         application/json:
           schema:
@@ -400,7 +644,7 @@ components:
 
     Agent:
       type: object
-      required: [address, team, name, role, status]
+      required: [address, team, name, role, status, on_leave, pending_change]
       properties:
         address:
           type: string
@@ -413,6 +657,106 @@ components:
         status:
           type: string
           enum: [stopped, starting, working, idle, exited, awaiting_approval]
+        on_leave:
+          type: boolean
+        from:
+          type: string
+          description: Template it was recruited from, "<template>@<version>" (information only).
+        pending_change:
+          type: boolean
+          description: A change waits for the agent to end its turn before it restarts or stops.
+
+    Team:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        goal:
+          type: string
+
+    PermissionProfile:
+      type: string
+      enum: [default, allowlist, auto]
+      description: See docs/agents.md. auto is not available with Haiku models.
+
+    AgentDefinition:
+      type: object
+      additionalProperties: false
+      description: |
+        Content of an agent or template file (docs/agents.md). description and
+        version are used by templates; from and on_leave by recruited agents,
+        and are read-only through the agent endpoints.
+      properties:
+        description:
+          type: string
+        version:
+          type: integer
+          minimum: 0
+        role:
+          type: string
+        model:
+          type: string
+          description: Claude model; empty for Claude Code's default.
+        permissions:
+          type: object
+          additionalProperties: false
+          properties:
+            profile:
+              $ref: "#/components/schemas/PermissionProfile"
+            allow:
+              type: array
+              items: {type: string}
+            deny:
+              type: array
+              items: {type: string}
+        tools:
+          type: array
+          items: {type: string}
+        mcp:
+          type: array
+          description: Servers of the project's .nobody/mcp.yaml.
+          items: {type: string}
+        skills:
+          type: array
+          items: {type: string}
+        from:
+          type: string
+        on_leave:
+          type: boolean
+        prompt:
+          type: string
+          description: The agent's own instructions (the markdown body of the file).
+
+    Template:
+      allOf:
+        - $ref: "#/components/schemas/AgentDefinition"
+        - type: object
+          required: [name, builtin]
+          properties:
+            name:
+              type: string
+            builtin:
+              type: boolean
+              description: Shipped with Nobody Inc and not overridden by a template in ~/.nobody/catalog.
+            overrides_builtin:
+              type: boolean
+              description: A user template replacing a built-in one; deleting it brings the built-in one back.
+
+    Recruitment:
+      type: object
+      additionalProperties: false
+      required: [name]
+      description: Exactly one of template (recruit) and definition (create directly).
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+        template:
+          type: string
+          description: Template to copy from the catalog.
+        definition:
+          $ref: "#/components/schemas/AgentDefinition"
 
     Act:
       type: string

@@ -1,13 +1,18 @@
-// Command nobodyd is the Nobody Inc daemon: it loads the organization, runs
-// one Claude Code session per agent, keeps the mailboxes, and serves the API
-// used by the web UI, by nobody-hook and by the agents' MCP clients.
+// Command nobodyd is the Nobody Inc daemon: it loads a project's
+// organization, runs one Claude Code session per agent, keeps the mailboxes,
+// and serves the API used by the web UI, by nobody-hook and by the agents'
+// MCP clients.
 //
 // Usage:
 //
-//	nobodyd -org nobody.yaml -db nobody.db
+//	nobodyd init [project-dir]       create <project>/.nobody/ with a first team
+//	nobodyd -project <project-dir>   run the organization of a project
+//	nobodyd -org nobody.yaml         migrate a former nobody.yaml, then run
 //
-// The listen address defaults to 127.0.0.1:7420 and can be changed with the
-// NOBODY_ADDR environment variable.
+// The organization lives in <project>/.nobody/ (docs/agents.md); the database
+// in ~/.nobody/projects/<id>/ unless -db is given. NOBODY_HOME replaces
+// ~/.nobody. The listen address defaults to 127.0.0.1:7420 and can be changed
+// with the NOBODY_ADDR environment variable.
 package main
 
 import (
@@ -25,6 +30,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
 )
 
 var version = "dev"
@@ -33,6 +39,7 @@ var version = "dev"
 const shutdownTimeout = 10 * time.Second
 
 type options struct {
+	projectDir string
 	orgPath    string
 	dbPath     string
 	start      bool
@@ -42,16 +49,28 @@ type options struct {
 }
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	if len(os.Args) > 1 && os.Args[1] == "init" {
+		if err := runInit(os.Args[2:]); err != nil {
+			logger.Error("nobodyd init failed", "err", err)
+			os.Exit(1)
+		}
+
+		return
+	}
+
 	var opts options
-	flag.StringVar(&opts.orgPath, "org", "nobody.yaml", "organization file")
-	flag.StringVar(&opts.dbPath, "db", "nobody.db", "SQLite database file")
+	flag.StringVar(&opts.projectDir, "project", ".", "project directory (holds .nobody/)")
+	flag.StringVar(&opts.orgPath, "org", "", "former nobody.yaml to migrate into its project's .nobody/")
+	flag.StringVar(&opts.dbPath, "db", "", "SQLite database file (default: ~/.nobody/projects/<id>/nobody.db)")
 	flag.BoolVar(&opts.start, "start", true, "launch every agent at startup")
 	flag.StringVar(&opts.claudePath, "claude", "claude", "claude executable")
 	flag.StringVar(&opts.hookPath, "hook", "", "nobody-hook binary (default: next to nobodyd)")
-	flag.StringVar(&opts.origins, "origins", "localhost:3000,127.0.0.1:3000", "extra browser origins allowed to open terminals")
+	flag.StringVar(&opts.origins, "origins", "localhost:3000,127.0.0.1:3000",
+		"browser origins (host patterns) allowed to open terminals and change things through the API")
 	flag.Parse()
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(logger, opts); err != nil {
 		logger.Error("nobodyd stopped", "err", err)
 		os.Exit(1)
@@ -62,28 +81,26 @@ func run(logger *slog.Logger, opts options) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	organization, err := org.Load(opts.orgPath)
+	projectDir, err := resolveProject(logger, opts)
 	if err != nil {
 		return err
 	}
 
-	hookPath, err := resolveHookPath(opts.hookPath)
+	organization, err := org.LoadProject(projectDir)
 	if err != nil {
 		return err
 	}
+
+	warnIfUntrusted(logger, organization.ProjectDir)
 
 	addr := listenAddr()
 
-	d, err := daemon.New(ctx, daemon.Options{
-		Version:    version,
-		Logger:     logger,
-		Org:        organization,
-		DBPath:     opts.dbPath,
-		ClaudePath: opts.claudePath,
-		HookPath:   hookPath,
-		DaemonURL:  "http://" + addr,
-		Origins:    strings.Split(opts.origins, ","),
-	})
+	daemonOpts, err := daemonOptions(logger, opts, organization, addr)
+	if err != nil {
+		return err
+	}
+
+	d, err := daemon.New(ctx, daemonOpts)
 	if err != nil {
 		return err
 	}
@@ -96,6 +113,50 @@ func run(logger *slog.Logger, opts options) error {
 	}
 
 	return serve(ctx, logger, addr, d.Handler)
+}
+
+// daemonOptions gathers what the daemon needs besides the organization: the
+// user's settings and templates in ~/.nobody, the project's state directory
+// there (database, worktrees), and the executables.
+func daemonOptions(logger *slog.Logger, opts options, organization *org.Org, addr string) (daemon.Options, error) {
+	home, err := nobodyHome()
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
+	state, err := stateDir(home, organization.ProjectDir)
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
+	dbPath := opts.dbPath
+	if dbPath == "" {
+		dbPath = filepath.Join(state, "nobody.db")
+	}
+
+	userSettings, err := settings.Load(home)
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
+	hookPath, err := resolveHookPath(opts.hookPath)
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
+	return daemon.Options{
+		Version:      version,
+		Logger:       logger,
+		Org:          org.NewLive(organization),
+		CatalogDir:   filepath.Join(home, "catalog"),
+		Settings:     userSettings,
+		DBPath:       dbPath,
+		WorktreesDir: filepath.Join(state, "worktrees"),
+		ClaudePath:   opts.claudePath,
+		HookPath:     hookPath,
+		DaemonURL:    "http://" + addr,
+		Origins:      strings.Split(opts.origins, ","),
+	}, nil
 }
 
 // resolveHookPath finds nobody-hook: the given path, or the binary installed

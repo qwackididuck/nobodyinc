@@ -18,23 +18,53 @@ type agentView struct {
 	Name    string `json:"name"`
 	Role    string `json:"role"`
 	Status  string `json:"status"`
+	OnLeave bool   `json:"on_leave"`
+	From    string `json:"from,omitempty"`
+	// PendingChange: a change waits for the agent to end its turn.
+	PendingChange bool `json:"pending_change"`
 }
 
 func (s *server) listAgents(w http.ResponseWriter, _ *http.Request) {
-	members := s.Org.Members()
+	members := s.Org.Current().Members()
 
 	agents := make([]agentView, 0, len(members))
 	for _, m := range members {
-		agents = append(agents, agentView{
-			Address: m.Address,
-			Team:    m.Team.ID,
-			Name:    m.Agent.Name,
-			Role:    m.Agent.Role,
-			Status:  string(s.Statuses.Get(m.Address)),
-		})
+		agents = append(agents, s.agentView(m))
 	}
 
 	s.writeJSON(w, http.StatusOK, agents)
+}
+
+// teamView is a team as shown in the UI.
+type teamView struct {
+	ID   string `json:"id"`
+	Goal string `json:"goal,omitempty"`
+}
+
+// listTeams lists the declared teams, so that the UI can recruit into a team
+// that has no agent yet.
+func (s *server) listTeams(w http.ResponseWriter, _ *http.Request) {
+	teams := s.Org.Current().Teams
+
+	views := make([]teamView, 0, len(teams))
+	for _, t := range teams {
+		views = append(views, teamView{ID: t.ID, Goal: t.Goal})
+	}
+
+	s.writeJSON(w, http.StatusOK, views)
+}
+
+func (s *server) agentView(m org.Member) agentView {
+	return agentView{
+		Address:       m.Address,
+		Team:          m.Team.ID,
+		Name:          m.Agent.Name,
+		Role:          m.Agent.Role,
+		Status:        string(s.Statuses.Get(m.Address)),
+		OnLeave:       m.Agent.OnLeave,
+		From:          m.Agent.From,
+		PendingChange: s.Agents != nil && s.Agents.Pending(m.Address),
+	}
 }
 
 func (s *server) startAgent(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +80,7 @@ func (s *server) startAgent(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	case errors.Is(err, runtime.ErrUnknownAgent):
 		s.writeError(w, http.StatusNotFound, err)
-	case errors.Is(err, runtime.ErrAlreadyRunning):
+	case errors.Is(err, runtime.ErrAlreadyRunning), errors.Is(err, runtime.ErrOnLeave), errors.Is(err, runtime.ErrStopping):
 		s.writeError(w, http.StatusConflict, err)
 	default:
 		s.Logger.Error("start agent", "err", err)

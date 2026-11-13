@@ -1,6 +1,6 @@
 # Workspaces: features, branches and team worktrees
 
-This page is about the **project the agents work on** (`project_dir` in `nobody.yaml`), not about the Nobody Inc repository itself. The project keeps its own branching model; Nobody Inc only adds branches prefixed with `nobody/` and never merges into any other branch.
+This page is about the **project the agents work on** (the directory holding `.nobody/`, see `agents.md`), not about the Nobody Inc repository itself. The project keeps its own branching model; Nobody Inc only adds branches prefixed with `nobody/` and never merges into any other branch.
 
 ## Features
 
@@ -10,20 +10,22 @@ A feature is a request, e.g. "Add the order API". Starting one (Feature panel in
 2. creates one **worktree per team**, on its own branch:
 
    ```
-   project/                                   ← the user's checkout, untouched
-   project/.nobody/worktrees/add-the-order-api/
+   project/                                        ← the user's checkout, untouched
+   ~/.nobody/projects/<id>/worktrees/add-the-order-api/
        specs/   branch nobody/add-the-order-api--specs
        dev/     branch nobody/add-the-order-api--dev
    ```
 
-   `.nobody/` is added to `.git/info/exclude`, so it never shows in the user's `git status`;
+   Worktrees live outside the project, next to its database, so they never show in the user's `git status` and agents can be denied any write to the project's `.nobody/` by absolute path (ADR-0004). Throwaway merge worktrees live in `worktrees/_merge/`. Earlier versions kept worktrees in `<project>/.nobody/worktrees/` and hid `.nobody/` in `.git/info/exclude`; that line is removed at the next feature (remove old worktrees with `git worktree remove`);
 3. restarts every agent in its team's worktree.
 
 New tickets belong to the active feature. Only one feature is active at a time; without one, agents work in the project directory itself and tickets have no branches.
 
 ## Prerequisite: trust the project once
 
-Claude Code asks whether to trust a new folder before it starts, and an agent waiting on that prompt never starts working. Since Claude Code 2.1.63, trust is shared across the worktrees of a repository: open the project once with `claude` in its main checkout and accept the prompt, and every team worktree is covered. Otherwise the prompt shows up in each agent's terminal (visible from the UI) after a feature starts.
+Claude Code asks whether to trust a new folder before it starts, and an agent waiting on that prompt never starts working. Opening the project once with `claude` in its main checkout and accepting the prompt covers every team worktree: git ties a worktree to its repository, wherever it lives (trusting a folder also covers its subfolders). Otherwise the prompt shows up in each agent's terminal (visible from the UI).
+
+`nobodyd` checks this when it starts (`runtime.ProjectTrusted`, which reads the trust flags of Claude Code's `~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`) and logs a warning if the project is not trusted yet; `nobodyd init` says so too. The rules it applies are checked against the real CLI by `task contract` (`TestTrustRules`).
 
 ## Moving work between teams
 
@@ -42,6 +44,7 @@ nobody/…--specs                               nobody/…--dev
 - **Closing a ticket** (done):
   - the agent commits its own work first, with conventional commits;
   - closing is refused while the team's worktree has uncommitted changes (the refusal lists them);
+  - work that changes the project's `.nobody/` (the agents' own configuration) is refused, or delivered with a warning to the human, depending on `config_protection` in `~/.nobody/settings.yaml` (`docs/agents.md`); the refusal tells the agent to put it back with `git restore --source=<feature branch> --staged --worktree -- .nobody`;
   - the team branch is then merged into the feature branch: a fast-forward when possible, otherwise a merge in a temporary worktree;
   - on a conflict nothing changes, and the refusal explains how to fix it (merge the feature branch into your branch, resolve, commit, close again);
   - the delivered commits are attached to the ticket as `commit` deliverables.

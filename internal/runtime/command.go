@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 )
@@ -27,6 +28,27 @@ var prompt = template.Must(template.New("prompt").Parse(promptTemplate))
 // not tell the agent to ignore it.
 const onboardingPrompt = `You just joined Nobody Inc. If mail is attached to this message, act on it now. ` +
 	`Otherwise reply only "Ready." and end your turn; your mail will reach you automatically.`
+
+// resumePrompt opens the first turn of a resumed session: the agent keeps its
+// memory and its system prompt (Claude Code ignores a new
+// --append-system-prompt on --resume), while its model, permissions, tools
+// and MCP servers follow the new launch flags. A new role or new instructions
+// never go through a resume: they restart the agent with a fresh session
+// (staffing.needsFreshSession).
+//
+// What may have changed is the organization (new colleagues, leaves): the
+// current organization travels in this message, as information (see
+// resumeMessage).
+const resumePrompt = `Nobody Inc restarted your session: your model, permissions or tools may have changed, ` +
+	`and the organization may have changed too; its current state is below, for your information. ` +
+	`If mail is attached to this message, act on it now. ` +
+	`Otherwise reply only "Ready." and end your turn; your mail will reach you automatically.`
+
+// resumeMessage is the first prompt of a resumed session: resumePrompt, then
+// the agent's current system prompt, for its up-to-date organization chart.
+func resumeMessage(systemPrompt string) string {
+	return resumePrompt + "\n\n<current_organization>\n" + systemPrompt + "\n</current_organization>"
+}
 
 // officeTools are the office MCP tools every agent may use without being
 // asked for permission.
@@ -52,28 +74,39 @@ type Launch struct {
 	WorkDir func(address string) string
 }
 
-// Command builds the claude command for one agent:
+// Command builds the claude command for one agent, from its definition
+// (docs/agents.md):
 //
-//   - its system prompt explains the organization, its role and how mail works;
+//   - its system prompt explains the organization, its role and how mail
+//     works, followed by the agent's own prompt;
 //   - its UserPromptSubmit, PostToolUse and Stop hooks run nobody-hook to
 //     receive mail (docs/hooks.md), and its PermissionRequest hook sends
 //     permission requests to the human's approval queue (docs/approvals.md);
-//   - the office MCP server is added at /mcp/{address} (the user's own MCP
-//     servers are not loaded, see ADR-0003);
+//   - its permission profile sets --permission-mode, and its allow and deny
+//     rules go into the generated settings, with .nobody/ always denied
+//     (permissions.go, ADR-0004);
+//   - its tools are allowed without asking, next to the office tools;
+//   - only the office MCP server (at /mcp/{address}) and the servers the
+//     agent lists from .nobody/mcp.yaml are loaded (--strict-mcp-config: no
+//     other MCP configuration applies, see ADR-0003 and ADR-0004);
 //   - NOBODY_AGENT and NOBODY_DAEMON_URL tell nobody-hook who and where it is;
 //   - a short onboarding turn brings the agent to the idle state.
-func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member) (*exec.Cmd, error) {
+//
+// With a non-empty resume session ID, the agent continues that Claude Code
+// session (claude --resume): it keeps its memory and system prompt, and gets
+// its current launch flags (see resumePrompt).
+func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, error) {
 	systemPrompt, err := SystemPrompt(o, m)
 	if err != nil {
 		return nil, err
 	}
 
-	settings, err := hookSettings(l.HookPath)
+	settings, err := agentSettings(l.HookPath, m.Agent.Permissions, o.ProjectDir)
 	if err != nil {
 		return nil, err
 	}
 
-	mcpConfig, err := officeMCPConfig(l.DaemonURL, m.Address)
+	mcpConfig, err := agentMCPConfig(l.DaemonURL, m.Address, o.MCP, m.Agent.MCP)
 	if err != nil {
 		return nil, err
 	}
@@ -84,14 +117,20 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member) (*exec.Cm
 		"--setting-sources", "project,local",
 		"--append-system-prompt", systemPrompt,
 		"--settings", settings,
+		"--permission-mode", permissionMode(m.Agent.Permissions),
 		"--mcp-config", mcpConfig,
-		"--allowedTools", officeTools,
+		"--strict-mcp-config",
+		"--allowedTools", allowedTools(m.Agent.Tools),
 	}
 	if m.Agent.Model != "" {
 		args = append(args, "--model", m.Agent.Model)
 	}
 
-	args = append(args, onboardingPrompt)
+	if resume != "" {
+		args = append(args, "--resume", resume, resumeMessage(systemPrompt))
+	} else {
+		args = append(args, onboardingPrompt)
+	}
 
 	claude := l.ClaudePath
 	if claude == "" {
@@ -174,10 +213,10 @@ func SystemPrompt(o *org.Org, m org.Member) (string, error) {
 	var b bytes.Buffer
 
 	err := prompt.Execute(&b, map[string]any{
-		"Address":  m.Address,
-		"Team":     m.Team,
-		"Agent":    m.Agent,
-		"Contacts": officemcp.Contacts(o, m.Address),
+		"Address": m.Address,
+		"Team":    m.Team,
+		"Agent":   m.Agent,
+		"Chart":   officemcp.Chart(o, m.Address),
 	})
 	if err != nil {
 		return "", fmt.Errorf("render system prompt of %s: %w", m.Address, err)
@@ -191,27 +230,59 @@ func SystemPrompt(o *org.Org, m org.Member) (string, error) {
 // server.defaultApprovalWait) so that it always answers before being cut off.
 const PermissionHookTimeout = 10 * time.Minute
 
-// hookSettings wires the mail hooks and the permission hook to nobody-hook
-// (see docs/hooks.md and docs/approvals.md).
-func hookSettings(hookPath string) (string, error) {
+// allowedTools is the --allowedTools value: the office tools, then the
+// agent's own tools. Claude Code reads it as a comma-separated list.
+func allowedTools(tools []string) string {
+	if len(tools) == 0 {
+		return officeTools
+	}
+
+	return officeTools + "," + strings.Join(tools, ",")
+}
+
+// agentSettings is the --settings value: the mail and permission hooks wired
+// to nobody-hook (docs/hooks.md, docs/approvals.md) and the agent's
+// permission rules (permissions.go).
+func agentSettings(hookPath string, p catalog.Permissions, projectDir string) (string, error) {
 	run := []map[string]any{{"hooks": []map[string]any{{"type": "command", "command": hookPath}}}}
 	permission := []map[string]any{{"hooks": []map[string]any{{
 		"type": "command", "command": hookPath, "timeout": int(PermissionHookTimeout.Seconds()),
 	}}}}
 
-	return toJSON(map[string]any{"hooks": map[string]any{
-		"UserPromptSubmit":  run,
-		"PostToolUse":       run,
-		"Stop":              run,
-		"PermissionRequest": permission,
-	}})
+	allow, deny := permissionRules(p, projectDir)
+
+	return toJSON(map[string]any{
+		"hooks": map[string]any{
+			"UserPromptSubmit":  run,
+			"PostToolUse":       run,
+			"Stop":              run,
+			"PermissionRequest": permission,
+		},
+		"permissions": map[string]any{"allow": allow, "deny": deny},
+	})
 }
 
-// officeMCPConfig declares the office MCP server of an agent.
-func officeMCPConfig(daemonURL, address string) (string, error) {
-	return toJSON(map[string]any{"mcpServers": map[string]any{
-		"nobody": map[string]string{"type": "http", "url": daemonURL + "/mcp/" + address},
-	}})
+// agentMCPConfig is the --mcp-config value: the office server of the agent,
+// plus the servers it lists, copied from the project's registry. ${VARIABLE}
+// references are left for Claude Code to expand, so secrets never appear on
+// the command line.
+func agentMCPConfig(daemonURL, address string, registry map[string]org.MCPServer, names []string) (string, error) {
+	servers := map[string]any{
+		org.OfficeServer: map[string]string{"type": "http", "url": daemonURL + "/mcp/" + address},
+	}
+
+	for _, name := range names {
+		server, ok := registry[name]
+		if !ok {
+			// org.Validate refuses this; checked again so that a bad name never
+			// silently starts an agent without the server it expects.
+			return "", fmt.Errorf("agent %s: MCP server %q is not declared in .nobody/mcp.yaml", address, name)
+		}
+
+		servers[name] = server
+	}
+
+	return toJSON(map[string]any{"mcpServers": servers})
 }
 
 func toJSON(v any) (string, error) {

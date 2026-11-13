@@ -154,6 +154,10 @@ func TestListContacts(t *testing.T) {
 	if len(got) != len(want) || got["archi@specs"] != "channel" || got["secu@specs"] != "channel" {
 		t.Fatalf("contacts = %v, want %v (no qa: no channel)", got, want)
 	}
+
+	if len(out.Organization) != 3 || out.Organization[2].Team != "qa" || out.Organization[2].Reach != ReachAnswerOnly {
+		t.Fatalf("organization = %+v, want every team, qa answer-only", out.Organization)
+	}
 }
 
 func TestContactsIncludeTeammates(t *testing.T) {
@@ -252,5 +256,31 @@ func TestTicketTools(t *testing.T) {
 
 	if text, isErr := call(t, dev, "ticket_create", map[string]any{"title": "x", "team": "qa"}); !isErr || !strings.Contains(text, "not allowed") {
 		t.Fatalf("creating a ticket for a team without channel should be refused: %s", text)
+	}
+}
+
+func TestChart(t *testing.T) {
+	t.Parallel()
+
+	o := testOrg()
+	o.Teams[0].Agents[1].OnLeave = true // secu@specs
+
+	chart := Chart(o, "dev1@dev")
+
+	var got []string
+	for _, team := range chart {
+		got = append(got, team.Team+":"+team.Reach)
+	}
+
+	if want := "dev:own_team specs:channel qa:answer_only"; strings.Join(got, " ") != want {
+		t.Fatalf("chart = %q, want %q (own team, then channels, then the others)", strings.Join(got, " "), want)
+	}
+
+	if len(chart[0].Members) != 0 {
+		t.Fatalf("the agent itself must not be listed: %+v", chart[0].Members)
+	}
+
+	if specs := chart[1].Members; len(specs) != 2 || specs[0].Address != "archi@specs" || specs[1].OnLeave != true {
+		t.Fatalf("specs members = %+v, want archi then secu on leave", specs)
 	}
 }

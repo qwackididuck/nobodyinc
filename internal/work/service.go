@@ -88,7 +88,7 @@ type Draft struct {
 // Service applies the ticket rules described in the package documentation.
 type Service struct {
 	Store Store
-	Org   *org.Org
+	Org   org.Source
 	// Workspace, when set, ties tickets to git branches (see feature.go).
 	Workspace Workspace
 	// OnEvent, when set, is called after a change is stored.
@@ -561,7 +561,7 @@ func (s *Service) mayCreateFor(by, team string) bool {
 
 	myTeam := org.TeamOf(by)
 
-	return myTeam == team || s.Org.HasChannel(myTeam, team)
+	return myTeam == team || s.Org.Current().HasChannel(myTeam, team)
 }
 
 func (s *Service) isPrivileged(address string) bool {
@@ -569,7 +569,7 @@ func (s *Service) isPrivileged(address string) bool {
 }
 
 func (s *Service) teamExists(team string) bool {
-	return slices.ContainsFunc(s.Org.Teams, func(t org.Team) bool { return t.ID == team })
+	return slices.ContainsFunc(s.Org.Current().Teams, func(t org.Team) bool { return t.ID == team })
 }
 
 func (s *Service) now() time.Time {

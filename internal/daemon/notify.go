@@ -24,7 +24,7 @@ import (
 // Only one member is told about a queued ticket, so a whole team is not
 // woken up for a single piece of work.
 type ticketNotifier struct {
-	org      *org.Org
+	org      org.Source
 	statuses *runtime.Statuses
 	messages *messaging.Service
 	tickets  *work.Service
@@ -72,7 +72,7 @@ func (n *ticketNotifier) notifyUnblocked(ctx context.Context, done work.Ticket) 
 
 // notifyTeam tells one member of the ticket's team, preferring idle ones.
 func (n *ticketNotifier) notifyTeam(ctx context.Context, t work.Ticket, exclude, subject, body string) {
-	if member := pickMember(n.org, n.statuses, t.Team, exclude); member != "" {
+	if member := pickMember(n.org.Current(), n.statuses, t.Team, exclude); member != "" {
 		n.notify(ctx, member, t, subject, body)
 	}
 }

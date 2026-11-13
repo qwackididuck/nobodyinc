@@ -57,6 +57,8 @@ On the office MCP server (`internal/officemcp/tickets.go`):
 
 A message to `@<team>` (e.g. `@specs`) goes to one member of that team, chosen the same way as for queued tickets: idle first, then any running member. Use it when any member can answer.
 
+Agents on leave are never chosen, neither for a queued ticket nor for `@<team>`. When an agent goes on leave or is dismissed, its ticket in progress goes back to its team's queue once it has stopped, with a comment from `nobody` (`docs/agents.md`, "Lifecycle").
+
 ## API and UI
 
 `/api/tickets*` (see `api/openapi.yaml`) lets the human list, create, comment and change the status of tickets. The control room has a **Tickets** tab: the list, a creation form, and the selected ticket with its deliverables, comments and messages.

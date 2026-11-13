@@ -12,7 +12,7 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 ┌──────────────────────────── nobodyd (cmd/nobodyd) ─────────────────────────────┐
 │ server     /api/* (UI), /internal/* (hooks)          officemcp  /mcp/{address} │
 │ messaging  sending rules, threads, hop cap           runtime    PTYs, statuses,│
-│ org        teams, agents, channels (nobody.yaml)                wake-up, terms │
+│ org        teams, agents, channels (<project>/.nobody/)         wake-up, terms │
 │ store      SQLite: messages, tickets, features (versioned migrations)          │
 └───────────────┬───────────────────────────────▲──────────────────▲─────────────┘
                 │ starts in a PTY               │ hooks (HTTP)     │ MCP (HTTP)
@@ -23,7 +23,8 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 
 | Package | Role |
 |---|---|
-| `internal/org` | Loads and validates `nobody.yaml`: teams, agents (`<agent>@<team>`), one-way channels. |
+| `internal/org` | Loads and validates the project's `.nobody/` (`agents.md`): teams, agents (`<agent>@<team>`), one-way channels. |
+| `internal/catalog` | Agent templates (built-in and `~/.nobody/catalog`) and the agent file format shared with recruits (`agents.md`). |
 | `internal/messaging` | The post office: validates a draft, attaches it to its thread, applies the sending rules (`policy.go`), files it in the recipient's tray. |
 | `internal/store` | SQLite (pure-Go driver), schema evolved by versioned migrations: messages (pending until delivered) and tickets. |
 | `internal/work` | Tickets and features: team queues, claims, dependencies, deliverables, comments, and who may do what (`tickets.md`). |

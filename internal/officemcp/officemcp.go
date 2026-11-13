@@ -2,7 +2,8 @@
 // organization. It exposes:
 //
 //   - send_message: write to a colleague (or answer the human);
-//   - list_contacts: who the agent may start a conversation with;
+//   - list_contacts: the current organization chart (chart.go), and who the
+//     agent may start a conversation with;
 //   - the ticket tools (tickets.go): ticket_list, ticket_get, ticket_claim,
 //     ticket_create, ticket_update, ticket_comment, deliverable_add.
 //
@@ -32,8 +33,12 @@ type Sender interface {
 
 // Handler returns the HTTP handler serving one MCP server per agent. It must be
 // mounted on a pattern with an {address} wildcard, e.g. "/mcp/{address}".
-func Handler(o *org.Org, sender Sender, tickets Tickets, version string) http.Handler {
+// The server is stateless and built for each request, from the organization
+// current at that moment.
+func Handler(source org.Source, sender Sender, tickets Tickets, version string) http.Handler {
 	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+		o := source.Current()
+
 		member, ok := o.Member(r.PathValue("address"))
 		if !ok {
 			return nil // the SDK answers 400 Bad Request
@@ -65,8 +70,10 @@ func NewServer(o *org.Org, sender Sender, tickets Tickets, address, version stri
 	}, t.sendMessage)
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_contacts",
-		Description: "List the colleagues you can start a conversation with, and why.",
+		Name: "list_contacts",
+		Description: "Show the current organization: every team with its members (role, on leave) and what you can do " +
+			"with it, and the colleagues you can start a conversation with. The organization changes over time " +
+			"(recruitments, leaves, departures): call this when someone is mentioned that you do not know.",
 	}, t.listContacts)
 
 	t.addTicketTools(server)
@@ -131,11 +138,15 @@ type Contact struct {
 	Team    string `json:"team"`
 	// Why says what allows the conversation: "teammate" or "channel".
 	Why string `json:"why"`
+	// OnLeave: mail waits until they return.
+	OnLeave bool `json:"on_leave,omitempty"`
 }
 
 // ListContactsOutput lists an agent's contacts.
 type ListContactsOutput struct {
-	Contacts []Contact `json:"contacts"`
+	// Organization is every team, as you see it (see Chart).
+	Organization []TeamChart `json:"organization"`
+	Contacts     []Contact   `json:"contacts"`
 	// Teams can be written to as "@<team>": an available member answers.
 	Teams []string `json:"teams"`
 	Note  string   `json:"note"`
@@ -143,10 +154,13 @@ type ListContactsOutput struct {
 
 func (t tools) listContacts(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, ListContactsOutput, error) {
 	return nil, ListContactsOutput{
-		Contacts: Contacts(t.org, t.self),
-		Teams:    teamAddresses(Contacts(t.org, t.self)),
+		Organization: Chart(t.org, t.self),
+		Contacts:     Contacts(t.org, t.self),
+		Teams:        teamAddresses(Contacts(t.org, t.self)),
 		Note: "Write to a team as @<team> when any member can answer. " +
-			"You can also answer any message you received, whoever sent it, by setting in_reply_to.",
+			"You can also answer any message you received, whoever sent it, by setting in_reply_to. " +
+			"Teams marked answer_only cannot be reached first: go through the human if you need them. " +
+			"Mail to a member on leave waits until they return.",
 	}, nil
 }
 
@@ -175,9 +189,9 @@ func Contacts(o *org.Org, address string) []Contact {
 		case m.Address == address:
 			continue
 		case m.Team.ID == myTeam:
-			contacts = append(contacts, Contact{Address: m.Address, Role: m.Agent.Role, Team: m.Team.ID, Why: "teammate"})
+			contacts = append(contacts, Contact{Address: m.Address, Role: m.Agent.Role, Team: m.Team.ID, Why: "teammate", OnLeave: m.Agent.OnLeave})
 		case o.HasChannel(myTeam, m.Team.ID):
-			contacts = append(contacts, Contact{Address: m.Address, Role: m.Agent.Role, Team: m.Team.ID, Why: "channel"})
+			contacts = append(contacts, Contact{Address: m.Address, Role: m.Agent.Role, Team: m.Team.ID, Why: "channel", OnLeave: m.Agent.OnLeave})
 		}
 	}
 

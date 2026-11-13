@@ -1,6 +1,7 @@
 // Package org describes who works in Nobody Inc and who may talk to whom.
 //
-// An organization is loaded from a YAML file (see nobody.example.yaml):
+// An organization belongs to a project and is stored in the project's
+// .nobody/ directory (docs/agents.md, ADR-0004):
 //
 //   - teams group agents around a common goal;
 //   - every agent has an address "<agent>@<team>", e.g. "archi@specs";
@@ -13,11 +14,10 @@ package org
 import (
 	"errors"
 	"fmt"
-	"os"
-	"regexp"
+	"slices"
 	"strings"
 
-	"go.yaml.in/yaml/v3"
+	"github.com/qwackididuck/nobodyinc/internal/catalog"
 )
 
 // HumanAddress is the address of the human operator. The human can write to
@@ -29,30 +29,34 @@ const HumanAddress = "human"
 const SystemAddress = "nobody"
 
 // Org is the whole organization.
+//
+// The YAML tags describe .nobody/org.yaml; agents are stored in their own
+// files (see project.go).
 type Org struct {
-	// ProjectDir is the repository the agents work in.
-	ProjectDir string    `yaml:"project_dir"`
+	// ProjectDir is the repository the agents work in: the directory holding
+	// .nobody/.
+	ProjectDir string    `yaml:"-"`
 	Teams      []Team    `yaml:"teams"`
-	Channels   []Channel `yaml:"channels"`
+	Channels   []Channel `yaml:"channels,omitempty"`
+	// MCP is the project's MCP registry, read from .nobody/mcp.yaml: the
+	// servers agents may be given (see mcp.go).
+	MCP map[string]MCPServer `yaml:"-"`
 }
 
 // Team is a group of agents sharing a goal.
 type Team struct {
-	ID     string  `yaml:"id"`
-	Goal   string  `yaml:"goal"`
-	Agents []Agent `yaml:"agents"`
+	ID   string `yaml:"id"`
+	Goal string `yaml:"goal,omitempty"`
+	// Agents are read from .nobody/teams/<id>/*.md.
+	Agents []Agent `yaml:"-"`
 }
 
-// Agent is one member of a team.
+// Agent is one member of a team: its name and its definition (role, prompt,
+// model, permissions...), as written in .nobody/teams/<team>/<name>.md.
 type Agent struct {
-	Name string `yaml:"name"`
-	// Role is a one-line description, e.g. "Software architect".
-	Role string `yaml:"role"`
-	// Prompt holds the agent's specific instructions.
-	Prompt string `yaml:"prompt"`
-	// Model is the Claude model to use (e.g. "sonnet"); empty means the
-	// Claude Code default.
-	Model string `yaml:"model,omitempty"`
+	catalog.Definition
+
+	Name string
 }
 
 // Channel allows team From to start conversations with team To.
@@ -68,31 +72,11 @@ type Member struct {
 	Agent   Agent
 }
 
-var validName = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-
-// Load reads and validates an organization file.
-func Load(path string) (*Org, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read org file: %w", err)
-	}
-
-	var o Org
-	if err := yaml.Unmarshal(data, &o); err != nil {
-		return nil, fmt.Errorf("parse org file %s: %w", path, err)
-	}
-
-	if err := o.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid org file %s: %w", path, err)
-	}
-
-	return &o, nil
-}
-
 // Validate checks names, uniqueness and that channels point to real teams.
 func (o *Org) Validate() error {
 	teams, errs := o.validateTeams()
 	errs = append(errs, o.validateChannels(teams)...)
+	errs = append(errs, o.validateMCP()...)
 
 	return errors.Join(errs...)
 }
@@ -132,6 +116,46 @@ func (o *Org) HasChannel(from, to string) bool {
 	return false
 }
 
+// ErrUnknownTeam is returned when a team is not declared in org.yaml.
+var ErrUnknownTeam = errors.New("unknown team")
+
+// WithAgent returns a copy of the organization where the team has agent a,
+// added or replacing the agent with the same name. The receiver, a snapshot
+// others may be reading, is left untouched (see Source).
+func (o *Org) WithAgent(team string, a Agent) (*Org, error) {
+	c := o.copyTeams()
+
+	for i := range c.Teams {
+		if c.Teams[i].ID != team {
+			continue
+		}
+
+		if j := slices.IndexFunc(c.Teams[i].Agents, func(x Agent) bool { return x.Name == a.Name }); j >= 0 {
+			c.Teams[i].Agents[j] = a
+		} else {
+			c.Teams[i].Agents = append(c.Teams[i].Agents, a)
+		}
+
+		return c, nil
+	}
+
+	return nil, fmt.Errorf("%w: %q (declare it in .nobody/%s)", ErrUnknownTeam, team, orgFile)
+}
+
+// WithoutAgent returns a copy of the organization without the agent at
+// address. The receiver is left untouched.
+func (o *Org) WithoutAgent(address string) *Org {
+	c := o.copyTeams()
+
+	for i := range c.Teams {
+		c.Teams[i].Agents = slices.DeleteFunc(c.Teams[i].Agents, func(a Agent) bool {
+			return Address(a.Name, c.Teams[i].ID) == address
+		})
+	}
+
+	return c
+}
+
 // validateTeams checks team and agent names, and returns the known team IDs.
 func (o *Org) validateTeams() (map[string]bool, []error) {
 	var errs []error
@@ -139,7 +163,7 @@ func (o *Org) validateTeams() (map[string]bool, []error) {
 	teams := map[string]bool{}
 
 	for _, t := range o.Teams {
-		if !validName.MatchString(t.ID) {
+		if !catalog.ValidName(t.ID) {
 			errs = append(errs, fmt.Errorf("team id %q: use lowercase letters, digits and dashes", t.ID))
 		}
 
@@ -161,7 +185,7 @@ func validateAgents(t Team) []error {
 	agents := map[string]bool{}
 
 	for _, a := range t.Agents {
-		if !validName.MatchString(a.Name) {
+		if !catalog.ValidName(a.Name) {
 			errs = append(errs, fmt.Errorf("agent name %q in team %q: use lowercase letters, digits and dashes", a.Name, t.ID))
 		}
 
@@ -170,6 +194,10 @@ func validateAgents(t Team) []error {
 		}
 
 		agents[a.Name] = true
+
+		if err := a.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("agent %s: %w", Address(a.Name, t.ID), err))
+		}
 	}
 
 	return errs
@@ -205,4 +233,18 @@ func TeamOf(address string) string {
 	}
 
 	return team
+}
+
+// copyTeams returns a copy whose team and agent slices can be changed
+// without touching the receiver's.
+func (o *Org) copyTeams() *Org {
+	c := *o
+	c.Teams = make([]Team, len(o.Teams))
+
+	for i, t := range o.Teams {
+		t.Agents = slices.Clone(t.Agents)
+		c.Teams[i] = t
+	}
+
+	return &c
 }

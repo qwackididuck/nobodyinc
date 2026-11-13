@@ -70,8 +70,11 @@ func newTestEnvWithWait(t *testing.T, approvalWait time.Duration) testEnv {
 func (e testEnv) do(t *testing.T, method, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	req := httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json") // as the control room sends it
+
 	rec := httptest.NewRecorder()
-	e.handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), method, path, bytes.NewBufferString(body)))
+	e.handler.ServeHTTP(rec, req)
 
 	return rec
 }
@@ -111,7 +114,7 @@ func TestSendMessageAsHuman(t *testing.T) {
 	}
 }
 
-func TestListAgentsAndMessages(t *testing.T) {
+func TestListAgentsTeamsAndMessages(t *testing.T) {
 	t.Parallel()
 
 	env := newTestEnv(t)
@@ -123,6 +126,13 @@ func TestListAgentsAndMessages(t *testing.T) {
 
 	if len(agents) != 2 || agents[0].Address != "archi@specs" || agents[0].Status != "idle" || agents[1].Status != "stopped" {
 		t.Fatalf("agents = %+v", agents)
+	}
+
+	var teams []teamView
+	decode(t, env.do(t, http.MethodGet, "/api/teams", ""), &teams)
+
+	if len(teams) != 2 || teams[0].ID != "specs" || teams[1].ID != "dev" {
+		t.Fatalf("teams = %+v", teams)
 	}
 
 	var messages []messaging.Message

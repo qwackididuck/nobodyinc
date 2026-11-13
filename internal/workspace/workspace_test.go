@@ -22,7 +22,7 @@ func newRepo(t *testing.T) Repo {
 	run(t, dir, "add", ".")
 	run(t, dir, append(identity, "commit", "-m", "chore: init")...)
 
-	return Repo{Dir: dir}
+	return Repo{Dir: dir, WorktreesDir: t.TempDir()}
 }
 
 func run(t *testing.T, dir string, args ...string) string {
@@ -224,6 +224,102 @@ func TestSlugify(t *testing.T) {
 	for in, want := range tests {
 		if got := Slugify(in); got != want {
 			t.Fatalf("Slugify(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestWithoutLegacyExclude(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		content     string
+		want        string
+		wantChanged bool
+	}{
+		{name: "empty file", content: "", want: ""},
+		{name: "user lines kept", content: "*.log\n", want: "*.log\n"},
+		{
+			name:        "legacy line dropped",
+			content:     "*.log\n\n# Nobody Inc worktrees\n/.nobody/\n",
+			want:        "*.log\n\n# Nobody Inc worktrees\n",
+			wantChanged: true,
+		},
+		{name: "worktrees line of a later version kept", content: "/.nobody/worktrees/\n", want: "/.nobody/worktrees/\n"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, changed := withoutLegacyExclude(tt.content)
+			if got != tt.want || changed != tt.wantChanged {
+				t.Fatalf("got %q (changed=%v), want %q (changed=%v)", got, changed, tt.want, tt.wantChanged)
+			}
+		})
+	}
+}
+
+func TestPrepareKeepsWorktreesOutOfTheProject(t *testing.T) {
+	t.Parallel()
+
+	r := newRepo(t)
+	if err := r.Prepare(context.Background(), feature, []string{"dev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	dev := r.TeamDir(feature, "dev")
+	if !strings.HasPrefix(dev, r.WorktreesDir) || strings.HasPrefix(dev, r.Dir) {
+		t.Fatalf("worktree %s should be under %s, outside the project %s", dev, r.WorktreesDir, r.Dir)
+	}
+}
+
+func TestConfigChanges(t *testing.T) {
+	t.Parallel()
+
+	r := newRepo(t)
+	ctx := context.Background()
+
+	// The project's committed configuration is there from the start: having
+	// it in the worktree is not a change.
+	if err := os.MkdirAll(filepath.Join(r.Dir, ".nobody"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	commitFile(t, r.Dir, ".nobody/org.yaml", "teams: [{id: dev}]\n", "chore: add nobody config")
+
+	if err := r.Prepare(ctx, feature, []string{"dev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	dev := r.TeamDir(feature, "dev")
+	commitFile(t, dev, "main.go", "package main\n", "feat: code")
+
+	if files, err := r.ConfigChanges(ctx, feature, "dev"); err != nil || len(files) != 0 {
+		t.Fatalf("code only: ConfigChanges = %v, %v; want none", files, err)
+	}
+
+	commitFile(t, dev, ".nobody/org.yaml", "teams: [{id: dev}, {id: ops}]\n", "chore: sneaky")
+
+	files, err := r.ConfigChanges(ctx, feature, "dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(files) != 1 || files[0] != ".nobody/org.yaml" {
+		t.Fatalf("ConfigChanges = %v, want [.nobody/org.yaml]", files)
+	}
+}
+
+func TestPrepareRefusesARelativeWorktreesDir(t *testing.T) {
+	t.Parallel()
+
+	for _, dir := range []string{"", "worktrees"} {
+		r := newRepo(t)
+		r.WorktreesDir = dir
+
+		if err := r.Prepare(context.Background(), feature, []string{"dev"}); !errors.Is(err, errNoWorktreesDir) {
+			t.Fatalf("WorktreesDir %q: err = %v, want errNoWorktreesDir", dir, err)
 		}
 	}
 }

@@ -10,14 +10,24 @@ Team goal: {{.Team.Goal}}
 
 {{.Agent.Prompt}}
 
-## Colleagues you can contact
+## The organisation
 
-{{range .Contacts -}}
-- {{.Address}} ({{.Role}}) — {{if eq .Why "teammate"}}your teammate{{else}}your team has a channel to their team{{end}}
+This is the organisation as it was when you started. It changes over time (recruitments, leaves, departures): when someone is mentioned that you do not see here, call `list_contacts` to get the current organisation before asking anyone.
+
+{{range .Chart -}}
+### Team {{.Team}}{{if eq .Reach "own_team"}} (your team){{end}}{{if .Goal}} — {{.Goal}}{{end}}
+
+{{if eq .Reach "own_team"}}You talk to your teammates freely.{{else if eq .Reach "channel"}}Your team has a channel to this team: you can start conversations with them.{{else}}You cannot start conversations with this team: answer their messages, or go through the human.{{end}}
+
+{{range .Members -}}
+- {{.Address}}{{if .Role}} ({{.Role}}){{end}}{{if .OnLeave}} — on leave: mail waits until they return{{end}}
 {{else -}}
-- Nobody: you can only answer the messages you receive.
+- {{if eq .Reach "own_team"}}No other member{{else}}No member yet{{end}}.
+{{end}}
 {{end -}}
-- human — the human operator in charge of the organisation.
+### The human operator
+
+- human — in charge of the organisation. Anyone can write to them.
 
 ## How communication works
 

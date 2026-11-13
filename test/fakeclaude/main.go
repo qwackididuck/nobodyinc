@@ -101,12 +101,15 @@ func parseArgs(args []string) (options, error) {
 		"--settings": true, "--mcp-config": true, "--append-system-prompt": true,
 		"--setting-sources": true, "--allowedTools": true, "--model": true,
 		"--resume": true, "--tools": true, "--output-format": true, "-p": true,
+		"--permission-mode": true,
 	}
+
+	flags := map[string]bool{"--fork-session": true, "--strict-mcp-config": true}
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if arg == "--fork-session" {
-			opts.fork = true
+		if flags[arg] {
+			opts.fork = opts.fork || arg == "--fork-session"
 
 			continue
 		}

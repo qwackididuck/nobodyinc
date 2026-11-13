@@ -85,6 +85,28 @@ func (s *Store) PendingMessages(ctx context.Context, recipient string, p messagi
 		ORDER BY sent_at, id`, recipient, p)
 }
 
+// PendingRecipients lists the recipients that have undelivered messages.
+func (s *Store) PendingRecipients(ctx context.Context) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT recipient FROM messages WHERE delivered_at IS NULL ORDER BY recipient`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var recipients []string
+
+	for rows.Next() {
+		var r string
+		if err := rows.Scan(&r); err != nil {
+			return nil, err
+		}
+
+		recipients = append(recipients, r)
+	}
+
+	return recipients, rows.Err()
+}
+
 // Tray is one recipient's view of the messages; it is what the hooks read.
 type Tray struct {
 	store     *Store

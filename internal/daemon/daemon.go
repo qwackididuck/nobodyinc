@@ -10,11 +10,14 @@ import (
 	"net/http"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/server"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
+	"github.com/qwackididuck/nobodyinc/internal/staffing"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 	"github.com/qwackididuck/nobodyinc/internal/work"
 	"github.com/qwackididuck/nobodyinc/internal/workspace"
@@ -24,15 +27,27 @@ import (
 type Options struct {
 	Version string
 	Logger  *slog.Logger
-	Org     *org.Org
+	// Org is the organization. With an *org.Live, agents can be recruited,
+	// edited, put on leave and dismissed through the API; a fixed *org.Org
+	// disables that.
+	Org org.Source
+	// CatalogDir holds the user's agent templates (~/.nobody/catalog).
+	CatalogDir string
+	// Settings are the user's global settings (~/.nobody/settings.yaml); the
+	// zero value means the defaults.
+	Settings settings.Settings
 	// DBPath is the SQLite file; ":memory:" for a throwaway database.
 	DBPath string
+	// WorktreesDir holds the teams' worktrees, outside the project
+	// (~/.nobody/projects/<id>/worktrees, see workspace.Repo).
+	WorktreesDir string
 	// ClaudePath and HookPath are the executables run for each agent.
 	ClaudePath string
 	HookPath   string
 	// DaemonURL is how agents reach this daemon, e.g. "http://127.0.0.1:7420".
 	DaemonURL string
-	// Origins are the extra browser origins allowed to open terminals.
+	// Origins are the browser origins (host patterns) allowed to open
+	// terminals and to change things through the API.
 	Origins []string
 }
 
@@ -45,6 +60,11 @@ type Daemon struct {
 	Statuses   *runtime.Statuses
 	Approvals  *approval.Queue
 	Supervisor *runtime.Supervisor
+	// Staff changes agents; nil when the organization is fixed.
+	Staff *staffing.Service
+	// WorkDir is the directory an agent works in: its team's worktree for the
+	// active feature, or the project.
+	WorkDir func(address string) string
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
@@ -56,7 +76,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
-	git := &gitWorkspace{repo: workspace.Repo{Dir: opts.Org.ProjectDir}, org: opts.Org}
+	git := &gitWorkspace{
+		repo:             workspace.Repo{Dir: opts.Org.Current().ProjectDir, WorktreesDir: opts.WorktreesDir},
+		org:              opts.Org,
+		configProtection: opts.Settings.ConfigProtection,
+	}
 	restoreActiveFeature(ctx, st, git, opts.Logger)
 
 	supervisor := &runtime.Supervisor{
@@ -78,9 +102,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Store:  st,
 		Policy: messaging.Policy{Org: opts.Org},
 		PickMember: func(team string) string {
-			return pickMember(opts.Org, statuses, team, "")
+			return pickMember(opts.Org.Current(), statuses, team, "")
 		},
 	}
+	staff := &staff{org: opts.Org, store: st, messages: messages, logger: opts.Logger}
+	git.onConfigDelivered = staff.onConfigDelivered
 	forker := &runtime.Forker{
 		Org:           opts.Org,
 		Statuses:      statuses,
@@ -99,6 +125,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	//     from its hooks.
 	// An agent going idle also checks for mail that arrived as its turn ended.
 	messages.OnSent = func(m messaging.Message) {
+		staff.onSent(context.WithoutCancel(ctx), m)
+
 		if forker.ShouldAnswer(m) {
 			go forker.Answer(context.WithoutCancel(ctx), m)
 
@@ -124,6 +152,19 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
 	tickets.OnEvent = notifier.onEvent
 
+	// Agents on leave or dismissed hand their tickets and mail over (staff.go),
+	// including what was still waiting when the daemon last stopped.
+	staff.tickets = tickets
+	supervisor.OnRetired = staff.onRetired
+	staff.reconcile(ctx)
+
+	cat := catalog.New(opts.CatalogDir)
+
+	var staffService *staffing.Service
+	if live, ok := opts.Org.(*org.Live); ok {
+		staffService = &staffing.Service{Org: live, Catalog: cat, Agents: supervisor}
+	}
+
 	handler := server.New(server.Deps{
 		Version:   opts.Version,
 		Logger:    opts.Logger,
@@ -134,6 +175,9 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Statuses:  statuses,
 		Approvals: approvals,
 		Agents:    supervisor,
+		Staff:     staffService,
+		Catalog:   cat,
+		Origins:   opts.Origins,
 		Extra: map[string]http.Handler{
 			"/mcp/{address}":                     officemcp.Handler(opts.Org, messages, tickets, opts.Version),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),
@@ -148,6 +192,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Statuses:   statuses,
 		Approvals:  approvals,
 		Supervisor: supervisor,
+		Staff:      staffService,
+		WorkDir:    git.workDir,
 	}, nil
 }
 

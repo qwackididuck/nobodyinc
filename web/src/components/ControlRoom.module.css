@@ -413,3 +413,15 @@
   color: #f87171;
   font-size: 12px;
 }
+
+/* --- recruitment --- */
+
+.status_on_leave {
+  color: var(--muted);
+  background: transparent;
+  border: 1px dashed var(--border-strong);
+}
+
+.narrow {
+  width: 64px;
+}

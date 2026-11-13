@@ -40,10 +40,12 @@ tasks:
       - pnpm --dir web install
 
   dev:daemon:
-    desc: Build and run the daemon with nobody.yaml
+    desc: Build and run the daemon on a project (PROJECT=<dir>, default ../nobody-sandbox)
     deps: [build]
+    vars:
+      PROJECT: '{{.PROJECT | default "../nobody-sandbox"}}'
     cmds:
-      - ./bin/nobodyd -org nobody.yaml -db nobody.db
+      - ./bin/nobodyd -project {{.PROJECT}}
 
   dev:web:
     desc: Run the Next.js dev server

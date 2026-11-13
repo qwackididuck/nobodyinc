@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
+	"github.com/qwackididuck/nobodyinc/internal/staffing"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 	"github.com/qwackididuck/nobodyinc/internal/work"
 )
@@ -27,7 +29,7 @@ import (
 type Deps struct {
 	Version  string
 	Logger   *slog.Logger
-	Org      *org.Org
+	Org      org.Source
 	Store    *store.Store
 	Messages *messaging.Service
 	Tickets  *work.Service
@@ -39,13 +41,23 @@ type Deps struct {
 	ApprovalWait time.Duration
 	// Agents starts agent sessions; nil disables POST /api/agents/{address}/start.
 	Agents AgentStarter
+	// Staff recruits, edits, puts on leave and dismisses agents; Catalog
+	// lists and saves templates. Nil disables those endpoints (staff.go).
+	Staff   *staffing.Service
+	Catalog *catalog.Catalog
 	// Extra mounts additional handlers (MCP endpoint, terminals) by pattern.
 	Extra map[string]http.Handler
+	// Origins are the browser origins (host patterns, e.g. "localhost:3000")
+	// allowed to change things through the API besides the daemon itself
+	// (guard.go).
+	Origins []string
 }
 
-// AgentStarter launches an agent's session (implemented by runtime.Supervisor).
+// AgentStarter launches an agent's session and tells whether a change waits
+// for it to end its turn (implemented by runtime.Supervisor).
 type AgentStarter interface {
 	Start(ctx context.Context, address string) error
+	Pending(address string) bool
 }
 
 // Health is the liveness payload returned by GET /healthz.
@@ -67,6 +79,17 @@ func New(d Deps) http.Handler {
 
 	mux.HandleFunc("GET /api/agents", s.listAgents)
 	mux.HandleFunc("POST /api/agents/{address}/start", s.startAgent)
+	mux.HandleFunc("DELETE /api/agents/{address}", s.dismissAgent)
+	mux.HandleFunc("GET /api/agents/{address}/definition", s.getAgentDefinition)
+	mux.HandleFunc("PUT /api/agents/{address}/definition", s.editAgentDefinition)
+	mux.HandleFunc("POST /api/agents/{address}/leave", s.putAgentOnLeave)
+	mux.HandleFunc("POST /api/agents/{address}/return", s.returnAgentFromLeave)
+	mux.HandleFunc("GET /api/teams", s.listTeams)
+	mux.HandleFunc("POST /api/teams/{team}/agents", s.recruitAgent)
+	mux.HandleFunc("GET /api/catalog", s.listTemplates)
+	mux.HandleFunc("GET /api/catalog/{name}", s.getTemplate)
+	mux.HandleFunc("PUT /api/catalog/{name}", s.saveTemplate)
+	mux.HandleFunc("DELETE /api/catalog/{name}", s.deleteTemplate)
 	mux.HandleFunc("GET /api/messages", s.listMessages)
 	mux.HandleFunc("POST /api/messages", s.sendMessageAsHuman)
 	mux.HandleFunc("GET /api/features", s.listFeatures)
@@ -86,7 +109,7 @@ func New(d Deps) http.Handler {
 		mux.Handle(pattern, h)
 	}
 
-	return mux
+	return guardCrossSite(d.Origins, mux)
 }
 
 func (s *server) health(w http.ResponseWriter, _ *http.Request) {

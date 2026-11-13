@@ -99,7 +99,7 @@ func (s *Service) resolveTeamAddress(d *Draft) error {
 	}
 
 	if member == "" {
-		return fmt.Errorf("%w: no team %q to write to", ErrUnknownAddress, team)
+		return fmt.Errorf("%w: no member of team %q can receive it (unknown team, or everyone is on leave)", ErrUnknownAddress, team)
 	}
 
 	d.To = member

@@ -31,21 +31,35 @@ var (
 	ErrUnknownAgent   = errors.New("unknown agent")
 	ErrNotRunning     = errors.New("agent is not running")
 	ErrAlreadyRunning = errors.New("agent is already running")
+	ErrOnLeave        = errors.New("agent is on leave")
+	ErrStopping       = errors.New("the daemon is shutting down")
 )
 
 // Supervisor runs one Claude Code session per agent, each in its own
 // pseudo-terminal, and wakes idle agents up when mail arrives.
 type Supervisor struct {
-	Org      *org.Org
+	Org      org.Source
 	Statuses *Statuses
 	Logger   *slog.Logger
-	// NewCommand builds the process of an agent; usually Launch.Command.
-	NewCommand func(ctx context.Context, o *org.Org, m org.Member) (*exec.Cmd, error)
+	// NewCommand builds the process of an agent; usually Launch.Command. A
+	// non-empty resume is the Claude Code session to continue.
+	NewCommand func(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, error)
 	// HasMail reports whether an agent has undelivered mail.
 	HasMail func(ctx context.Context, address string) (bool, error)
+	// OnRetired, when set, is called once an agent has stopped because it is
+	// on leave or no longer in the organization (apply.go), so that what it
+	// leaves behind (tickets, mail) can be handed over.
+	OnRetired func(address string)
 
 	mu     sync.Mutex
 	agents map[string]*agentProcess
+	// pending holds the changes waiting for an agent to end its turn (apply.go).
+	pending map[string]pendingChange
+	// stopping is set by StopAll: the daemon shuts down, nothing starts again.
+	stopping bool
+	// sessionDirs is the directory each agent's current session started in:
+	// a session is only resumed there (start).
+	sessionDirs map[string]string
 }
 
 type agentProcess struct {
@@ -59,11 +73,15 @@ type agentProcess struct {
 // stopTimeout bounds how long Stop waits for an agent's process to end.
 const stopTimeout = 10 * time.Second
 
-// StartAll starts every agent of the organization.
+// StartAll starts every agent of the organization, except those on leave.
 func (s *Supervisor) StartAll(ctx context.Context) error {
 	var errs []error
 
-	for _, m := range s.Org.Members() {
+	for _, m := range s.Org.Current().Members() {
+		if m.Agent.OnLeave {
+			continue
+		}
+
 		if err := s.Start(ctx, m.Address); err != nil {
 			errs = append(errs, err)
 		}
@@ -72,49 +90,26 @@ func (s *Supervisor) StartAll(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// Start launches an agent in a new pseudo-terminal. Its terminal output is
-// recorded and its status follows the process: starting, then exited.
+// Start launches an agent in a new pseudo-terminal, with a fresh session.
+// Its terminal output is recorded and its status follows the process:
+// starting, then exited. An agent on leave is not started.
+//
+// ctx bounds the agent's process: it must live as long as the agent should.
 func (s *Supervisor) Start(ctx context.Context, address string) error {
-	member, ok := s.Org.Member(address)
-	if !ok {
-		return fmt.Errorf("%w: %q", ErrUnknownAgent, address)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.agents == nil {
-		s.agents = map[string]*agentProcess{}
-	}
-
-	if _, running := s.agents[address]; running {
-		return fmt.Errorf("%w: %s", ErrAlreadyRunning, address)
-	}
-
-	cmd, err := s.NewCommand(ctx, s.Org, member)
-	if err != nil {
-		return err
-	}
-
-	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 120})
-	if err != nil {
-		return fmt.Errorf("start agent %s: %w", address, err)
-	}
-
-	p := &agentProcess{cmd: cmd, terminal: terminal, output: NewOutput(), exited: make(chan struct{})}
-	s.agents[address] = p
-	s.Statuses.Set(address, StatusStarting)
-	s.Logger.Info("agent started", "agent", address, "pid", cmd.Process.Pid)
-
-	go s.watch(address, p)
-
-	return nil
+	return s.start(ctx, address, "")
 }
 
 // StopAll terminates every running agent.
+//
+// Changes waiting for an agent to end its turn are dropped, and no agent can
+// start afterwards: the daemon is shutting down. A pending leave or dismissal
+// is handed over at the next start instead (daemon/staff.go, reconcile).
 func (s *Supervisor) StopAll() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	s.stopping = true
+	s.pending = nil
 
 	for address, p := range s.agents {
 		if err := p.cmd.Process.Kill(); err != nil {
@@ -143,14 +138,29 @@ func (s *Supervisor) Stop(address string) error {
 	}
 }
 
-// RestartAll stops every agent and starts it again, e.g. so that it works
-// in the worktree of a newly activated feature.
+// RestartAll stops every agent and starts it again with a fresh session,
+// e.g. so that it works in the worktree of a newly activated feature. Agents
+// on leave stay stopped.
+//
+// Changes waiting for these agents are taken over: the restart already uses
+// their current definition. An agent whose leave was waiting hands its work
+// over (OnRetired), as Apply would have done.
 func (s *Supervisor) RestartAll(ctx context.Context) error {
 	var errs []error
 
-	for _, m := range s.Org.Members() {
+	for _, m := range s.Org.Current().Members() {
+		hadPending := s.takePending(m.Address)
+
 		if err := s.Stop(m.Address); err != nil {
 			errs = append(errs, err)
+
+			continue
+		}
+
+		if m.Agent.OnLeave {
+			if hadPending && s.OnRetired != nil {
+				s.OnRetired(m.Address)
+			}
 
 			continue
 		}
@@ -215,9 +225,14 @@ func (s *Supervisor) NotifyMail(address string) {
 	}()
 }
 
-// OnIdle is called when an agent ends its turn. Mail that arrived just as the
-// turn was ending would otherwise wait until the next turn.
+// OnIdle is called when an agent ends its turn. A change waiting for this
+// moment is applied (apply.go). Otherwise, mail that arrived just as the turn
+// was ending would wait until the next turn: the agent is woken up for it.
 func (s *Supervisor) OnIdle(address string) {
+	if s.applyIfPending(address) {
+		return // the restarted agent gets its mail with its first prompt
+	}
+
 	hasMail, err := s.HasMail(context.Background(), address)
 	if err != nil {
 		s.Logger.Warn("check mail of idle agent", "agent", address, "err", err)
@@ -228,6 +243,97 @@ func (s *Supervisor) OnIdle(address string) {
 	if hasMail {
 		s.NotifyMail(address)
 	}
+}
+
+// start launches an agent, continuing the given session if resume is set.
+func (s *Supervisor) start(ctx context.Context, address, resume string) error {
+	// One snapshot for the whole start, so the member and the prompt's
+	// contacts come from the same organization.
+	o := s.Org.Current()
+
+	member, ok := o.Member(address)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownAgent, address)
+	}
+
+	if member.Agent.OnLeave {
+		return fmt.Errorf("%w: %s", ErrOnLeave, address)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.stopping {
+		return fmt.Errorf("%w: %s", ErrStopping, address)
+	}
+
+	if s.agents == nil {
+		s.agents = map[string]*agentProcess{}
+	}
+
+	if _, running := s.agents[address]; running {
+		return fmt.Errorf("%w: %s", ErrAlreadyRunning, address)
+	}
+
+	cmd, resumed, err := s.command(ctx, o, member, resume)
+	if err != nil {
+		return err
+	}
+
+	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 120})
+	if err != nil {
+		return fmt.Errorf("start agent %s: %w", address, err)
+	}
+
+	p := &agentProcess{cmd: cmd, terminal: terminal, output: NewOutput(), exited: make(chan struct{})}
+	s.agents[address] = p
+	s.Statuses.Set(address, StatusStarting)
+	s.Logger.Info("agent started", "agent", address, "pid", cmd.Process.Pid, "resumed", resumed)
+
+	go s.watch(address, p)
+
+	return nil
+}
+
+// command builds an agent's process, resuming the given session when it can,
+// and reports whether it does. Called with s.mu held.
+//
+// Claude Code keeps sessions per directory: a session started in another
+// directory (e.g. before a feature moved the agent into its worktree) cannot
+// be resumed, so the agent then starts afresh.
+func (s *Supervisor) command(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, bool, error) {
+	cmd, err := s.NewCommand(ctx, o, m, resume)
+	if err != nil || resume == "" {
+		s.recordSessionDir(m.Address, cmd)
+
+		return cmd, false, err
+	}
+
+	if cmd.Dir == s.sessionDirs[m.Address] {
+		return cmd, true, nil
+	}
+
+	s.Logger.Info("agent moved to another directory: fresh session instead of resuming",
+		"agent", m.Address, "from", s.sessionDirs[m.Address], "to", cmd.Dir)
+
+	cmd, err = s.NewCommand(ctx, o, m, "")
+	s.recordSessionDir(m.Address, cmd)
+
+	return cmd, false, err
+}
+
+// recordSessionDir remembers where a fresh session starts. Called with s.mu
+// held.
+func (s *Supervisor) recordSessionDir(address string, cmd *exec.Cmd) {
+	if cmd == nil {
+		return
+	}
+
+	if s.sessionDirs == nil {
+		s.sessionDirs = map[string]string{}
+	}
+
+	s.sessionDirs[address] = cmd.Dir
 }
 
 // watch copies the agent's terminal output until the process ends.
@@ -245,6 +351,10 @@ func (s *Supervisor) watch(address string, p *agentProcess) {
 	s.Statuses.Set(address, StatusExited)
 	s.Logger.Info("agent exited", "agent", address, "err", err)
 	close(p.exited)
+
+	// An agent that exits on its own (crash, /exit) while a change waits for
+	// the end of its turn will never be idle: the change is applied now.
+	s.applyIfPending(address)
 }
 
 // typePrompt types a prompt into an agent's terminal and presses Enter.
