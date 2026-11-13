@@ -10,6 +10,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
 )
 
@@ -106,10 +107,14 @@ func printNextSteps(out io.Writer, dir, userCatalog string) {
 		fmt.Fprintf(out, "Note: %s is not a git repository; features (branches and worktrees) need one.\n\n", dir)
 	}
 
-	fmt.Fprintf(out, "Next steps:\n"+
-		"  - commit .nobody/ so that others can run the same organization;\n"+
-		"  - trust the project once in Claude Code (run `claude` in %s);\n"+
-		"  - start the daemon: nobodyd -project %s\n"+
+	fmt.Fprintln(out, "Next steps:")
+	fmt.Fprintln(out, "  - commit .nobody/ so that others can run the same organization;")
+
+	if trusted, err := runtime.ProjectTrusted(dir); err != nil || !trusted {
+		fmt.Fprintf(out, "  - trust the project once in Claude Code (run `claude` in %s and accept);\n", dir)
+	}
+
+	fmt.Fprintf(out, "  - start the daemon: nobodyd -project %s\n"+
 		"Your own agent templates go in %s; your settings are in %s.\n",
-		dir, dir, userCatalog, filepath.Join(filepath.Dir(userCatalog), settings.FileName))
+		dir, userCatalog, filepath.Join(filepath.Dir(userCatalog), settings.FileName))
 }

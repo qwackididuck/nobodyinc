@@ -23,7 +23,9 @@ New tickets belong to the active feature. Only one feature is active at a time; 
 
 ## Prerequisite: trust the project once
 
-Claude Code asks whether to trust a new folder before it starts, and an agent waiting on that prompt never starts working. Since Claude Code 2.1.63, trust is shared across the worktrees of a repository: open the project once with `claude` in its main checkout and accept the prompt, and every team worktree is covered. Otherwise the prompt shows up in each agent's terminal (visible from the UI) after a feature starts.
+Claude Code asks whether to trust a new folder before it starts, and an agent waiting on that prompt never starts working. Trusting a folder covers its subfolders, so opening the project once with `claude` in its main checkout and accepting the prompt covers every team worktree (they live under `.nobody/worktrees/`). Otherwise the prompt shows up in each agent's terminal (visible from the UI).
+
+`nobodyd` checks this when it starts (`runtime.ProjectTrusted`, which reads the trust flags of Claude Code's `~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`) and logs a warning if the project is not trusted yet; `nobodyd init` says so too. The rules it applies are checked against the real CLI by `task contract` (`TestTrustRules`).
 
 ## Moving work between teams
 

@@ -90,6 +90,8 @@ func run(logger *slog.Logger, opts options) error {
 		return err
 	}
 
+	warnIfUntrusted(logger, organization.ProjectDir)
+
 	dbPath, err := resolveDBPath(opts.dbPath, organization.ProjectDir)
 	if err != nil {
 		return err

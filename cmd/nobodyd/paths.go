@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/runtime"
 )
 
 // stateDirPerm protects the runtime state: it holds the agents' mail.
@@ -51,6 +52,24 @@ func resolveProject(logger *slog.Logger, opts options) (string, error) {
 	}
 
 	return projectDir, nil
+}
+
+// warnIfUntrusted warns when Claude Code does not trust the project yet: each
+// agent would then stop on Claude Code's trust question in its terminal.
+// Agents still start, as the question can be answered from the UI.
+func warnIfUntrusted(logger *slog.Logger, projectDir string) {
+	trusted, err := runtime.ProjectTrusted(projectDir)
+	if err != nil {
+		logger.Warn("cannot check whether Claude Code trusts the project", "project", projectDir, "err", err)
+
+		return
+	}
+
+	if !trusted {
+		logger.Warn("Claude Code does not trust the project yet: every agent will wait on its trust question. "+
+			"Run `claude` once in the project and accept, or answer the question in each agent's terminal.",
+			"project", projectDir)
+	}
 }
 
 // resolveDBPath returns the database file: the -db flag, or the project's
