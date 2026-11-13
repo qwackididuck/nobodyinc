@@ -138,9 +138,10 @@ func (s *Supervisor) Stop(address string) error {
 	}
 }
 
-// RestartAll stops every agent and starts it again with a fresh session,
+// RestartAll stops every team agent and starts it again with a fresh session,
 // e.g. so that it works in the worktree of a newly activated feature. Agents
-// on leave stay stopped.
+// on leave stay stopped. The director is left alone: it always works in the
+// project, and must keep the conversation in which the feature was agreed.
 //
 // Changes waiting for these agents are taken over: the restart already uses
 // their current definition. An agent whose leave was waiting hands its work
@@ -148,7 +149,13 @@ func (s *Supervisor) Stop(address string) error {
 func (s *Supervisor) RestartAll(ctx context.Context) error {
 	var errs []error
 
-	for _, m := range s.Org.Current().Members() {
+	o := s.Org.Current()
+
+	for _, m := range o.Members() {
+		if o.IsGod(m.Address) {
+			continue
+		}
+
 		hadPending := s.takePending(m.Address)
 
 		if err := s.Stop(m.Address); err != nil {

@@ -149,6 +149,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		}()
 	}
 
+	// The director's feature proposals travel as messages (proposals.go).
+	featureProposals := &proposals{messages: messages, logger: opts.Logger}
+	tickets.OnFeatureProposed = featureProposals.onProposed
+	tickets.OnFeatureDecided = featureProposals.onDecided
+
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
 	tickets.OnEvent = notifier.onEvent
 

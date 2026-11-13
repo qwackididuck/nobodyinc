@@ -12,9 +12,9 @@ import (
 // InsertFeature stores a new feature and returns it with its ID.
 func (s *Store) InsertFeature(ctx context.Context, f work.Feature) (work.Feature, error) {
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO features (title, description, slug, base_branch, branch, created_by, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		f.Title, f.Description, f.Slug, f.BaseBranch, f.Branch, f.CreatedBy, formatTime(f.CreatedAt))
+		INSERT INTO features (title, description, acceptance_criteria, slug, base_branch, branch, status, created_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.Title, f.Description, f.AcceptanceCriteria, f.Slug, f.BaseBranch, f.Branch, f.Status, f.CreatedBy, formatTime(f.CreatedAt))
 	if err != nil {
 		return work.Feature{}, fmt.Errorf("insert feature: %w", err)
 	}
@@ -66,6 +66,26 @@ func (s *Store) ListFeatures(ctx context.Context) ([]work.Feature, error) {
 	return features, rows.Err()
 }
 
+// UpdateFeature saves the fields that change after a feature is created:
+// its branches and status when it starts, the reason it was refused, the
+// message that proposed it.
+func (s *Store) UpdateFeature(ctx context.Context, f work.Feature) error {
+	n, err := work.ParseFeatureID(f.ID)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE features SET slug = ?, base_branch = ?, branch = ?, status = ?, proposal_message = ?, refusal_reason = ?
+		WHERE id = ?`,
+		f.Slug, f.BaseBranch, f.Branch, f.Status, f.ProposalMessage, f.RefusalReason, n)
+	if err != nil {
+		return fmt.Errorf("update feature %s: %w", f.ID, err)
+	}
+
+	return nil
+}
+
 // ActivateFeature makes one feature the active one.
 func (s *Store) ActivateFeature(ctx context.Context, id string) error {
 	n, err := work.ParseFeatureID(id)
@@ -81,7 +101,8 @@ func (s *Store) ActivateFeature(ctx context.Context, id string) error {
 }
 
 const selectFeatures = `
-	SELECT id, title, description, slug, base_branch, branch, active, created_by, created_at
+	SELECT id, title, description, acceptance_criteria, slug, base_branch, branch, active, status,
+		proposal_message, refusal_reason, created_by, created_at
 	FROM features`
 
 func scanFeature(row scanner) (work.Feature, error) {
@@ -90,8 +111,8 @@ func scanFeature(row scanner) (work.Feature, error) {
 		n         int64
 		createdAt string
 	)
-	if err := row.Scan(&n, &f.Title, &f.Description, &f.Slug, &f.BaseBranch, &f.Branch, &f.Active,
-		&f.CreatedBy, &createdAt); err != nil {
+	if err := row.Scan(&n, &f.Title, &f.Description, &f.AcceptanceCriteria, &f.Slug, &f.BaseBranch, &f.Branch, &f.Active,
+		&f.Status, &f.ProposalMessage, &f.RefusalReason, &f.CreatedBy, &createdAt); err != nil {
 		return work.Feature{}, err
 	}
 

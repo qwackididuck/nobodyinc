@@ -9,6 +9,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/work"
 )
 
 // The director's tools (docs/god.md): following the organization's progress
@@ -17,7 +18,7 @@ import (
 
 // directorToolNames are the tools only the director gets.
 var directorToolNames = []string{
-	"org_overview", "template_list",
+	"feature_propose", "org_overview", "template_list",
 	"agent_get", "agent_recruit", "agent_create", "agent_edit", "agent_leave", "agent_return", "agent_dismiss",
 }
 
@@ -82,6 +83,20 @@ type TicketSummary struct {
 	BlockedBy []string `json:"blocked_by,omitempty"`
 }
 
+// FeatureProposeInput is a feature the director proposes.
+type FeatureProposeInput struct {
+	Title              string `json:"title"                 jsonschema:"short title, e.g. Add the order API"`
+	Need               string `json:"need"                  jsonschema:"what is wanted and why, as agreed with the human"`
+	AcceptanceCriteria string `json:"acceptance_criteria"   jsonschema:"how to know the feature is done, testable"`
+	BaseBranch         string `json:"base_branch,omitempty" jsonschema:"branch to start from; omit for the project's current branch"`
+}
+
+// FeatureProposeOutput confirms the proposal.
+type FeatureProposeOutput struct {
+	ID   string `json:"id"`
+	Note string `json:"note"`
+}
+
 // AddressInput names an agent.
 type AddressInput struct {
 	Address string `json:"address" jsonschema:"the agent's address, e.g. dev1@dev"`
@@ -127,6 +142,12 @@ type DoneOutput struct {
 // addDirectorTools registers the director's tools.
 func (t tools) addDirectorTools(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "feature_propose",
+		Description: "Propose a feature to the human: a title, the need and the acceptance criteria. Nothing starts " +
+			"until they agree: you then get an \"agree\" answer (split it into tickets for the teams), or a \"refuse\" " +
+			"answer with their reason.",
+	}, t.featurePropose)
+	mcp.AddTool(server, &mcp.Tool{
 		Name: "org_overview",
 		Description: "The state of the organization: the active feature, and for each team its agents (status, on leave) " +
 			"and its tickets (open, in progress, and how many are done or canceled).",
@@ -167,6 +188,19 @@ func (t tools) addDirectorTools(server *mcp.Server) {
 		Description: "Dismiss an agent: it stops once its turn is over, its ticket goes back to its team's queue, " +
 			"its undelivered mail is returned to the senders.",
 	}, t.agentDismiss)
+}
+
+func (t tools) featurePropose(ctx context.Context, _ *mcp.CallToolRequest, in FeatureProposeInput) (
+	*mcp.CallToolResult, FeatureProposeOutput, error,
+) {
+	f, err := t.tickets.ProposeFeature(ctx, t.self, work.FeatureDraft{
+		Title: in.Title, Description: in.Need, AcceptanceCriteria: in.AcceptanceCriteria, BaseBranch: in.BaseBranch,
+	})
+	if err != nil {
+		return nil, FeatureProposeOutput{}, err
+	}
+
+	return nil, FeatureProposeOutput{ID: f.ID, Note: "proposed to the human; wait for their answer"}, nil
 }
 
 func (t tools) orgOverview(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, Overview, error) {

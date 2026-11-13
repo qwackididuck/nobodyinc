@@ -46,6 +46,9 @@ type FeatureStore interface {
 	InsertFeature(ctx context.Context, f Feature) (Feature, error)
 	GetFeature(ctx context.Context, id string) (Feature, error)
 	ListFeatures(ctx context.Context) ([]Feature, error)
+	// UpdateFeature saves a feature's branches, status, proposal message and
+	// refusal reason.
+	UpdateFeature(ctx context.Context, f Feature) error
 	// ActivateFeature makes one feature the active one (the others are not).
 	ActivateFeature(ctx context.Context, id string) error
 }
@@ -95,6 +98,13 @@ type Service struct {
 	OnEvent func(Event)
 	// OnFeatureStarted, when set, is called once a new feature is active.
 	OnFeatureStarted func(Feature)
+	// OnFeatureProposed, when set, is called once the director's proposal is
+	// stored, e.g. to send it to the human. It returns the ID of the message
+	// carrying it, which the decision will answer ("" if none was sent).
+	OnFeatureProposed func(Feature) string
+	// OnFeatureDecided, when set, is called once the human started or refused
+	// a proposed feature, e.g. to answer the director.
+	OnFeatureDecided func(Feature)
 	Now              func() time.Time
 }
 

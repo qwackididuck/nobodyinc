@@ -460,3 +460,92 @@ func useTool(t *testing.T, session *mcp.ClientSession, name string, args map[str
 
 	return text.String()
 }
+
+// The director proposes a feature, the human starts it: the team agents move
+// into their worktrees, the director keeps its session, and gets an "agree"
+// answer to its proposal. A second proposal, refused, gets a "refuse" answer
+// with the reason.
+func TestFeatureProposal(t *testing.T) {
+	t.Parallel()
+
+	live := staffProject(t)
+	initGitProject(t, live.Current().ProjectDir)
+
+	d := startDaemon(t, live)
+	call(t, d, http.MethodPost, "/api/director", `{"name":"god","template":"god"}`, http.StatusCreated)
+	eventually(t, "god started", func() bool { return d.Statuses.Get("god") == runtime.StatusIdle })
+
+	srv := httptest.NewServer(d.Handler)
+	t.Cleanup(srv.Close)
+
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "god-test"}, nil).
+		Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: srv.URL + "/mcp/god"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Cleanup(func() { session.Close() })
+
+	var proposal struct {
+		ID string `json:"id"`
+	}
+	decodeBody(t, []byte(useTool(t, session, "feature_propose", map[string]any{
+		"title": "Orders", "need": "Customers can order", "acceptance_criteria": "An order can be placed",
+	})), &proposal)
+
+	proposed := messageFrom(t, d, "god", org.HumanAddress, messaging.ActPropose)
+	if proposed == nil || !strings.Contains(proposed.Body, "An order can be placed") {
+		t.Fatalf("the human should get the proposal as a propose message from god: %+v", proposed)
+	}
+
+	godBefore, _ := d.Supervisor.Output("god")
+	devBefore, _ := d.Supervisor.Output("dev1@dev")
+
+	call(t, d, http.MethodPost, "/api/features/"+proposal.ID+"/start", "", http.StatusOK)
+
+	eventually(t, "dev1 restarted in its worktree", func() bool {
+		after, running := d.Supervisor.Output("dev1@dev")
+
+		return running && after != devBefore && d.Statuses.Get("dev1@dev") == runtime.StatusIdle
+	})
+
+	if godAfter, _ := d.Supervisor.Output("god"); godAfter != godBefore {
+		t.Fatal("starting a feature must not restart the director: it would forget the conversation")
+	}
+
+	if agreed := messageFrom(t, d, org.HumanAddress, "god", messaging.ActAgree); agreed == nil || agreed.InReplyTo != proposed.ID {
+		t.Fatalf("god should get an agree answering its proposal: %+v", agreed)
+	}
+
+	call(t, d, http.MethodPost, "/api/features/"+proposal.ID+"/start", "", http.StatusConflict)
+
+	decodeBody(t, []byte(useTool(t, session, "feature_propose", map[string]any{
+		"title": "Rewrite in COBOL", "need": "Nostalgia", "acceptance_criteria": "It compiles",
+	})), &proposal)
+	call(t, d, http.MethodPost, "/api/features/"+proposal.ID+"/refuse", `{"reason":"too big for now"}`, http.StatusOK)
+
+	if refused := messageFrom(t, d, org.HumanAddress, "god", messaging.ActRefuse); refused == nil || !strings.Contains(refused.Body, "too big for now") {
+		t.Fatalf("god should get a refuse with the reason: %+v", refused)
+	}
+}
+
+// messageFrom returns a message from one address to another with an act, or
+// nil.
+func messageFrom(t *testing.T, d *daemon.Daemon, from, to string, act messaging.Act) *messaging.Message {
+	t.Helper()
+
+	messages, err := d.Store.RecentMessages(context.Background(), 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var found *messaging.Message
+
+	for i, m := range messages {
+		if m.From == from && m.To == to && m.Act == act {
+			found = &messages[i]
+		}
+	}
+
+	return found
+}
