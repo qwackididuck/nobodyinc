@@ -19,9 +19,9 @@ open ──claim──► in_progress ──done──► done
 
 | Action | Allowed for |
 |---|---|
-| Create | The human; an agent for its own team or for a team its team has a channel to (same rule as starting a conversation). |
+| Create | The human and the director (`docs/god.md`) for any team; an agent for its own team or for a team its team has a channel to (same rule as starting a conversation). |
 | Claim | A member of the owning team, once the ticket is open and unblocked. |
-| Done / release / cancel | The assignee, or the human. |
+| Done / release / cancel | The assignee, the human or the director. |
 | Comment, attach a deliverable | Anyone in the organisation. |
 
 Refusals come back to the agent as readable tool errors that say what to do instead.

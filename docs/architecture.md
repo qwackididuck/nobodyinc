@@ -41,8 +41,8 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 
 Applied by `messaging.Policy`, in this order:
 
-1. the human, and the system address `nobody` (notices written by Nobody Inc itself), may write to anyone; nobody can write to `nobody`;
-2. any agent may write to the human (to answer or escalate);
+1. the human, the director (`docs/god.md`) and the system address `nobody` (notices written by Nobody Inc itself) may write to anyone; nobody can write to `nobody`;
+2. any agent may write to the human or the director (to answer or escalate);
 3. any agent may answer a message it received (`in_reply_to`);
 4. a team can always talk to itself;
 5. otherwise, a channel must be declared from the sender's team to the recipient's team.

@@ -60,7 +60,7 @@ A recruited agent has the same fields, plus the ones that only make sense in a t
 | `on_leave` | `true` while the agent is on leave. | not started |
 | body | The agent's instructions. | appended to the system prompt, after the office protocol |
 
-The agent's name is the file name, its team the directory name: `teams/dev/dev1.md` is `dev1@dev`.
+The agent's name is the file name, its team the directory name: `teams/dev/dev1.md` is `dev1@dev`. The director's file is `director/<name>.md` and its address is its name alone (`docs/god.md`).
 
 ### Permission profiles
 

@@ -2,7 +2,7 @@
 
 Run teams of Claude Code agents that talk to each other (normal and urgent mailboxes, one-way channels between teams), supervised from a web control room.
 
-> Early stage project. Architecture: [`docs/architecture.md`](docs/architecture.md) · Hooks: [`docs/hooks.md`](docs/hooks.md) · Approvals: [`docs/approvals.md`](docs/approvals.md) · Tickets: [`docs/tickets.md`](docs/tickets.md) · Agents: [`docs/agents.md`](docs/agents.md) · Workspaces: [`docs/workspaces.md`](docs/workspaces.md) · Decisions: [`docs/adr/`](docs/adr/).
+> Early stage project. Architecture: [`docs/architecture.md`](docs/architecture.md) · Hooks: [`docs/hooks.md`](docs/hooks.md) · Approvals: [`docs/approvals.md`](docs/approvals.md) · Tickets: [`docs/tickets.md`](docs/tickets.md) · Agents: [`docs/agents.md`](docs/agents.md) · Director: [`docs/god.md`](docs/god.md) · Workspaces: [`docs/workspaces.md`](docs/workspaces.md) · Decisions: [`docs/adr/`](docs/adr/).
 
 ## Requirements
 
