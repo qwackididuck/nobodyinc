@@ -8,6 +8,7 @@ import { AgentList } from "./AgentList";
 import { ApprovalQueue } from "./ApprovalQueue";
 import { Composer } from "./Composer";
 import styles from "./ControlRoom.module.css";
+import { GodView } from "./GodView";
 import { MessageFeed } from "./MessageFeed";
 import { RecruitmentView } from "./RecruitmentView";
 import { TerminalView } from "./TerminalView";
@@ -15,7 +16,7 @@ import { TicketsView } from "./TicketsView";
 
 const REFRESH_MS = 2000;
 
-const VIEW_LABELS = { terminal: "Terminal", tickets: "Tickets", recruitment: "Recruitment" } as const;
+const VIEW_LABELS = { terminal: "Terminal", tickets: "Tickets", recruitment: "Recruitment", god: "Director" } as const;
 // Faster: an agent is blocked while its permission request waits.
 const APPROVALS_REFRESH_MS = 1000;
 
@@ -28,12 +29,13 @@ export function ControlRoom() {
   const [selected, setSelected] = useState<string | null>(null);
   const [focusMail, setFocusMail] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [view, setView] = useState<"terminal" | "tickets" | "recruitment">("terminal");
+  const [view, setView] = useState<"terminal" | "tickets" | "recruitment" | "god">("terminal");
 
   const agentList = agents.data ?? [];
   const current = agentList.find((a) => a.address === selected) ?? null;
   const running = current && current.status !== "stopped" && current.status !== "exited";
-  const teams = [...new Set(agentList.map((a) => a.team))];
+  const teams = [...new Set(agentList.map((a) => a.team).filter(Boolean))];
+  const director = agentList.find((a) => a.team === "") ?? null;
 
   return (
     <main className={styles.room}>
@@ -41,6 +43,9 @@ export function ControlRoom() {
 
       <section className={styles.panel} aria-label={VIEW_LABELS[view]}>
         <div className={styles.tabs}>
+          <button type="button" className={view === "god" ? styles.tabActive : styles.tab} onClick={() => setView("god")}>
+            {director ? director.address : "Director"}
+          </button>
           <button type="button" className={view === "terminal" ? styles.tabActive : styles.tab} onClick={() => setView("terminal")}>
             {current ? `Terminal — ${current.address}` : "Terminal"}
           </button>
@@ -53,7 +58,19 @@ export function ControlRoom() {
         </div>
         {agents.error && <p className={styles.error}>Daemon unreachable: {agents.error}</p>}
         {view === "tickets" && <TicketsView teams={teams} />}
-        {view === "recruitment" && <RecruitmentView selected={current} onChanged={() => void agents.refresh()} />}
+        {view === "recruitment" && (
+          <RecruitmentView selected={current} hasDirector={director !== null} onChanged={() => void agents.refresh()} />
+        )}
+        {view === "god" && (
+          <GodView
+            director={director}
+            messages={messages.data ?? []}
+            onChanged={() => {
+              void messages.refresh();
+              void agents.refresh();
+            }}
+          />
+        )}
         {view === "terminal" && !current && <p className={styles.empty}>Select an agent to see its terminal.</p>}
         {view === "terminal" && current && !running && <p className={styles.empty}>This agent is not running.</p>}
         {view === "terminal" && current && running && <TerminalView key={current.address} address={current.address} />}

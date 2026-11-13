@@ -34,7 +34,7 @@ export function AgentList({ agents, selected, onSelect, onChange }: Props) {
       <h2 className={styles.panelTitle}>Teams</h2>
       {[...teams].map(([team, members]) => (
         <section key={team} className={styles.team}>
-          <h3 className={styles.teamName}>{team}</h3>
+          <h3 className={styles.teamName}>{team || "director"}</h3>
           <ul className={styles.agentList}>
             {members.map((a) => (
               <li key={a.address}>
@@ -72,9 +72,12 @@ export function AgentList({ agents, selected, onSelect, onChange }: Props) {
   );
 }
 
+// groupByTeam groups agents by team, the director (no team) first.
 function groupByTeam(agents: Agent[]): Map<string, Agent[]> {
   const teams = new Map<string, Agent[]>();
-  for (const a of agents) {
+  const director = agents.filter((a) => a.team === "");
+  if (director.length > 0) teams.set("", director);
+  for (const a of agents.filter((a) => a.team !== "")) {
     teams.set(a.team, [...(teams.get(a.team) ?? []), a]);
   }
   return teams;

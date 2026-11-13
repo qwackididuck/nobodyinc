@@ -5,16 +5,19 @@ import { type FormEvent, useState } from "react";
 import { listFeatures, startFeature } from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 import styles from "./ControlRoom.module.css";
+import { ProposalCard } from "./ProposalCard";
 
 const REFRESH_MS = 5000;
 
-// FeaturePanel shows the active feature and its git branch, and lets the
-// human start a new one. Starting a feature restarts every agent in its
-// team's worktree (see docs/workspaces.md).
+// FeaturePanel shows the active feature and its git branch, the director's
+// proposals waiting for a decision, and lets the human start a feature
+// directly. Starting a feature restarts the team agents in their worktrees
+// (see docs/workspaces.md).
 export function FeaturePanel() {
   const features = usePolling(listFeatures, REFRESH_MS);
   const [open, setOpen] = useState(false);
   const active = (features.data ?? []).find((f) => f.active);
+  const proposals = (features.data ?? []).filter((f) => f.status === "proposed");
 
   return (
     <section className={styles.featurePanel}>
@@ -31,6 +34,9 @@ export function FeaturePanel() {
       ) : (
         <p className={styles.empty}>No active feature: agents work in the project directory.</p>
       )}
+      {proposals.map((f) => (
+        <ProposalCard key={f.id} feature={f} onDecided={() => void features.refresh()} />
+      ))}
       {open ? (
         <NewFeatureForm
           onDone={() => {
