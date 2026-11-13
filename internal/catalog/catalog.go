@@ -30,8 +30,11 @@ import (
 //go:embed builtin/*.md
 var builtinFiles embed.FS
 
-// ErrNotFound is returned when no template has the requested name.
-var ErrNotFound = errors.New("template not found")
+// Errors returned by the catalog.
+var (
+	ErrNotFound = errors.New("template not found")
+	ErrBuiltin  = errors.New("built-in templates cannot be deleted")
+)
 
 const fileExt = ".md"
 
@@ -43,6 +46,9 @@ type Template struct {
 	// Builtin is true for a template shipped with Nobody Inc and not
 	// replaced by a user template.
 	Builtin bool `json:"builtin"`
+	// OverridesBuiltin is true for a user template that replaces a built-in
+	// one: deleting it brings the built-in template back.
+	OverridesBuiltin bool `json:"overrides_builtin,omitempty"`
 }
 
 // Recruit returns the definition of a new agent hired from this template: a
@@ -96,8 +102,13 @@ func (c *Catalog) List() ([]Template, error) {
 	}
 
 	byName := map[string]Template{}
-	for _, t := range append(builtin, user...) {
-		byName[t.Name] = t // user templates come last and win
+	for _, t := range builtin {
+		byName[t.Name] = t
+	}
+
+	for _, t := range user {
+		_, t.OverridesBuiltin = byName[t.Name]
+		byName[t.Name] = t // user templates win
 	}
 
 	templates := make([]Template, 0, len(byName))
@@ -142,6 +153,30 @@ func (c *Catalog) Save(name string, d Definition) error {
 	}
 
 	return atomicfile.Write(filepath.Join(c.userDir, name+fileExt), data)
+}
+
+// Delete removes a user template. Deleting one that overrides a built-in
+// template brings the built-in one back; built-in templates themselves
+// cannot be deleted (ErrBuiltin). Agents recruited from it are not changed.
+func (c *Catalog) Delete(name string) error {
+	if !ValidName(name) {
+		return fmt.Errorf("%w: %q", ErrNotFound, name)
+	}
+
+	err := os.Remove(filepath.Join(c.userDir, name+fileExt))
+	if err == nil {
+		return nil
+	}
+
+	if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("delete template %q: %w", name, err)
+	}
+
+	if _, statErr := fs.Stat(c.builtin, name+fileExt); statErr == nil {
+		return fmt.Errorf("%w: %q", ErrBuiltin, name)
+	}
+
+	return fmt.Errorf("%w: %q", ErrNotFound, name)
 }
 
 // userTemplates reads the user directory; a missing directory is empty.

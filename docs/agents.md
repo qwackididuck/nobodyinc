@@ -115,7 +115,7 @@ All of these go through the daemon's API (`api/openapi.yaml`, `internal/staffing
 
 | Action | Endpoint |
 |---|---|
-| Templates | `GET /api/catalog`, `GET /api/catalog/{name}`, `PUT /api/catalog/{name}` |
+| Templates | `GET /api/catalog`, `GET /api/catalog/{name}`, `PUT /api/catalog/{name}`, `DELETE /api/catalog/{name}` (user templates only; deleting an override brings the built-in one back) |
 | Recruit / create | `POST /api/teams/{team}/agents` with `{"name", "template"}` or `{"name", "definition"}` |
 | Read / edit | `GET` / `PUT /api/agents/{address}/definition` (`?fresh=true` for a new session, `?now=true` not to wait for the end of the turn) |
 | Leave / return | `POST /api/agents/{address}/leave`, `POST /api/agents/{address}/return` |

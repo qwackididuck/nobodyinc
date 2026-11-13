@@ -2,7 +2,16 @@
 
 import { type FormEvent, useState } from "react";
 
-import { type Agent, type AgentDefinition, type Template, listTeams, listTemplates, recruitAgent, saveTemplate } from "@/lib/api";
+import {
+  type Agent,
+  type AgentDefinition,
+  type Template,
+  deleteTemplate,
+  listTeams,
+  listTemplates,
+  recruitAgent,
+  saveTemplate,
+} from "@/lib/api";
 import { usePolling } from "@/lib/usePolling";
 import { AgentEditor } from "./AgentEditor";
 import styles from "./ControlRoom.module.css";
@@ -63,14 +72,26 @@ export function RecruitmentView({ selected, onChanged }: Props) {
               <td>{t.role}</td>
               <td>{t.description}</td>
               <td>{t.permissions?.profile ?? "default"}</td>
-              <td>{t.builtin ? "built-in" : "mine"}</td>
+              <td>{t.builtin ? "built-in" : t.overrides_builtin ? "mine (replaces built-in)" : "mine"}</td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className={styles.muted}>Your own templates are the .md files in ~/.nobody/catalog; one named like a built-in template replaces it.</p>
 
-      {template && <TemplateDetail key={template.name} template={template} teams={teamIDs} onRecruited={onChanged} onSaved={() => void templates.refresh()} />}
+      {template && (
+        <TemplateDetail
+          key={template.name}
+          template={template}
+          teams={teamIDs}
+          onRecruited={onChanged}
+          onSaved={() => void templates.refresh()}
+          onDeleted={() => {
+            setChosen(null);
+            void templates.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -82,11 +103,13 @@ function TemplateDetail({
   teams,
   onRecruited,
   onSaved,
+  onDeleted,
 }: {
   template: Template;
   teams: string[];
   onRecruited: () => void;
   onSaved: () => void;
+  onDeleted: () => void;
 }) {
   const [name, setName] = useState("");
   const [team, setTeam] = useState("");
@@ -141,6 +164,20 @@ function TemplateDetail({
         <button type="button" className={styles.linkButton} onClick={() => setCustomizing(!customizing)}>
           {customizing ? "Close" : "Customize as my template"}
         </button>
+        {!template.builtin && (
+          <button
+            type="button"
+            className={styles.denyButton}
+            onClick={() => {
+              const what = template.overrides_builtin ? "The built-in template comes back." : "It is removed from ~/.nobody/catalog.";
+              if (window.confirm(`Delete your template ${template.name}? ${what} Agents recruited from it are not changed.`)) {
+                void act(() => deleteTemplate(template.name), `${template.name} deleted.`, onDeleted);
+              }
+            }}
+          >
+            {template.overrides_builtin ? "Delete (restore built-in)" : "Delete template"}
+          </button>
+        )}
       </form>
 
       {customizing && (

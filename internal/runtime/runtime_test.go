@@ -38,7 +38,10 @@ func TestSystemPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"dev1@dev", "Build it", "Developer", "archi@specs (Architect)", "send_message", "legitimate"} {
+	for _, want := range []string{
+		"dev1@dev", "Build it", "Developer", "archi@specs (Architect)", "send_message", "legitimate",
+		"### Team dev (your team)", "you can start conversations with them", "call `list_contacts`",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("system prompt misses %q:\n%s", want, got)
 		}

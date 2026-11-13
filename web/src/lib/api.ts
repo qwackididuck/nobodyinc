@@ -45,6 +45,8 @@ export interface Template extends AgentDefinition {
   name: string;
   // Shipped with Nobody Inc and not overridden in ~/.nobody/catalog.
   builtin: boolean;
+  // A user template replacing a built-in one: deleting it brings it back.
+  overrides_builtin?: boolean;
 }
 
 // How a change reaches a running agent: fresh starts a new session instead of
@@ -64,6 +66,11 @@ export function listTemplates(): Promise<Template[]> {
 
 export function saveTemplate(name: string, definition: AgentDefinition): Promise<Template> {
   return sendJSON<Template>("PUT", `/api/catalog/${encodeURIComponent(name)}`, definition);
+}
+
+// deleteTemplate removes a user template (built-in ones cannot be deleted).
+export function deleteTemplate(name: string): Promise<void> {
+  return send("DELETE", `/api/catalog/${encodeURIComponent(name)}`);
 }
 
 // recruitAgent hires from a template, or creates from a definition.

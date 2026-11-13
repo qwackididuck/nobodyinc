@@ -243,6 +243,22 @@ paths:
                 $ref: "#/components/schemas/Template"
         "400":
           $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTemplate
+      summary: Delete a user template from ~/.nobody/catalog
+      description: |
+        Deleting a template that overrides a built-in one brings the built-in
+        one back. Built-in templates cannot be deleted. Agents recruited from
+        the template are not changed.
+      parameters:
+        - $ref: "#/components/parameters/TemplateName"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
 
   /api/agents/{address}/terminal:
     get:
@@ -709,6 +725,9 @@ components:
             builtin:
               type: boolean
               description: Shipped with Nobody Inc and not overridden by a template in ~/.nobody/catalog.
+            overrides_builtin:
+              type: boolean
+              description: A user template replacing a built-in one; deleting it brings the built-in one back.
 
     Recruitment:
       type: object

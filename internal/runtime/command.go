@@ -213,10 +213,10 @@ func SystemPrompt(o *org.Org, m org.Member) (string, error) {
 	var b bytes.Buffer
 
 	err := prompt.Execute(&b, map[string]any{
-		"Address":  m.Address,
-		"Team":     m.Team,
-		"Agent":    m.Agent,
-		"Contacts": officemcp.Contacts(o, m.Address),
+		"Address": m.Address,
+		"Team":    m.Team,
+		"Agent":   m.Agent,
+		"Chart":   officemcp.Chart(o, m.Address),
 	})
 	if err != nil {
 		return "", fmt.Errorf("render system prompt of %s: %w", m.Address, err)

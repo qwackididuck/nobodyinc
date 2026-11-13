@@ -242,6 +242,12 @@ func TestAgentLifecycleThroughTheAPI(t *testing.T) {
 	})
 
 	call(t, d, http.MethodDelete, "/api/agents/rev@dev", "", http.StatusNotFound)
+
+	// User templates: saved, then deleted; built-in ones cannot be deleted.
+	call(t, d, http.MethodPut, "/api/catalog/my-reviewer", `{"description":"Mine","version":1,"role":"Reviewer"}`, http.StatusOK)
+	call(t, d, http.MethodDelete, "/api/catalog/my-reviewer", "", http.StatusNoContent)
+	call(t, d, http.MethodGet, "/api/catalog/my-reviewer", "", http.StatusNotFound)
+	call(t, d, http.MethodDelete, "/api/catalog/reviewer", "", http.StatusConflict)
 }
 
 type apiAgent struct {

@@ -42,7 +42,7 @@ func TestUserTemplatesExtendAndOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if dev.Builtin || dev.Version != 7 || dev.Prompt != "Mine." || dev.Role != "" {
+	if dev.Builtin || !dev.OverridesBuiltin || dev.Version != 7 || dev.Prompt != "Mine." || dev.Role != "" {
 		t.Fatalf("user dev.md should replace the built-in one entirely, got %+v", dev)
 	}
 
@@ -126,5 +126,40 @@ func TestRecruit(t *testing.T) {
 
 	if tmpl.Tools[0] != "Read" || tmpl.Permissions.Allow[0] != "Edit" {
 		t.Fatal("editing the recruit changed the template")
+	}
+}
+
+func TestDelete(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "dev.md"), "---\ndescription: My dev\n---\n")
+	writeFile(t, filepath.Join(dir, "pentester.md"), "---\ndescription: Breaks things\n---\n")
+
+	c := New(dir)
+
+	if err := c.Delete("pentester"); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.Get("pentester"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted template still there: %v", err)
+	}
+
+	// Deleting an override brings the built-in template back.
+	if err := c.Delete("dev"); err != nil {
+		t.Fatal(err)
+	}
+
+	if dev, err := c.Get("dev"); err != nil || !dev.Builtin {
+		t.Fatalf("the built-in dev should be back: %+v, %v", dev, err)
+	}
+
+	if err := c.Delete("dev"); !errors.Is(err, ErrBuiltin) {
+		t.Fatalf("deleting a built-in template: err = %v, want ErrBuiltin", err)
+	}
+
+	if err := c.Delete("ghost"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleting an unknown template: err = %v, want ErrNotFound", err)
 	}
 }

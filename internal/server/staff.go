@@ -205,6 +205,22 @@ func (s *server) saveTemplate(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, t)
 }
 
+func (s *server) deleteTemplate(w http.ResponseWriter, r *http.Request) {
+	if !s.hasStaff(w) {
+		return
+	}
+
+	err := s.Catalog.Delete(r.PathValue("name"))
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusNoContent)
+	case errors.Is(err, catalog.ErrBuiltin):
+		s.writeError(w, http.StatusConflict, err)
+	default:
+		s.templateError(w, err)
+	}
+}
+
 // applyOptions reads the fresh and now query parameters.
 func (s *server) applyOptions(w http.ResponseWriter, r *http.Request) (runtime.ApplyOptions, bool) {
 	var opts runtime.ApplyOptions

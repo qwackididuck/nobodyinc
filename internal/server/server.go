@@ -85,6 +85,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/catalog", s.listTemplates)
 	mux.HandleFunc("GET /api/catalog/{name}", s.getTemplate)
 	mux.HandleFunc("PUT /api/catalog/{name}", s.saveTemplate)
+	mux.HandleFunc("DELETE /api/catalog/{name}", s.deleteTemplate)
 	mux.HandleFunc("GET /api/messages", s.listMessages)
 	mux.HandleFunc("POST /api/messages", s.sendMessageAsHuman)
 	mux.HandleFunc("GET /api/features", s.listFeatures)
