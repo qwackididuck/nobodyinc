@@ -99,6 +99,35 @@ func (g *gitWorkspace) BeforeDone(ctx context.Context, f work.Feature, agent str
 	return deliverables, nil
 }
 
+// maxReviewDiff is where the diff of a feature review is cut.
+const maxReviewDiff = 400 << 10
+
+// ReviewFeature describes what the feature branch brings to its base.
+func (g *gitWorkspace) ReviewFeature(ctx context.Context, f work.Feature) (work.Changes, error) {
+	r, err := g.repo.Review(ctx, toWorkspace(f), maxReviewDiff)
+	if err != nil {
+		return work.Changes{}, err
+	}
+
+	changes := work.Changes{Diff: r.Diff, DiffTruncated: r.Truncated, Commits: []work.ReviewCommit{}, Files: []work.FileChange{}}
+	for _, c := range r.Commits {
+		changes.Commits = append(changes.Commits, work.ReviewCommit(c))
+	}
+
+	for _, fc := range r.Files {
+		changes.Files = append(changes.Files, work.FileChange(fc))
+	}
+
+	return changes, nil
+}
+
+// FinishFeature merges the feature branch into its base branch (ADR-0007).
+// The teams' worktrees are removed later, once the agents left them
+// (cleanup).
+func (g *gitWorkspace) FinishFeature(ctx context.Context, f work.Feature) (string, error) {
+	return g.repo.Finish(ctx, toWorkspace(f), fmt.Sprintf("Merge feature %s: %s", f.ID, f.Title))
+}
+
 // checkConfigChanges looks for changes to the project's .nobody/ in the
 // team's work (ADR-0004). In block mode they refuse the delivery, with the
 // way to undo them; in warn mode they are returned, to warn the human once
@@ -117,6 +146,20 @@ func (g *gitWorkspace) checkConfigChanges(ctx context.Context, f workspace.Featu
 		"  git restore --source=%s --staged --worktree -- %s   (removes the files you added there too)\n"+
 		"  git commit -m \"revert: leave .nobody alone\"",
 		workspace.ErrConfigChanged, strings.Join(files, "\n"), workspace.ConfigDir, f.Branch(), f.Branch(), workspace.ConfigDir)
+}
+
+// deactivate sends agents back to the project directory: no feature is
+// active any more.
+func (g *gitWorkspace) deactivate() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.active = nil
+}
+
+// cleanup removes the teams' worktrees and branches of a finished feature.
+func (g *gitWorkspace) cleanup(ctx context.Context, f work.Feature) error {
+	return g.repo.Cleanup(ctx, toWorkspace(f), g.teams())
 }
 
 // activate records the feature agents now work on.

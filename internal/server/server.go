@@ -116,6 +116,8 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/features", s.startFeature)
 	mux.HandleFunc("POST /api/features/{id}/start", s.startProposedFeature)
 	mux.HandleFunc("POST /api/features/{id}/refuse", s.refuseProposedFeature)
+	mux.HandleFunc("GET /api/features/{id}/review", s.reviewFeature)
+	mux.HandleFunc("POST /api/features/{id}/finish", s.finishFeature)
 	mux.HandleFunc("GET /api/tickets", s.listTickets)
 	mux.HandleFunc("POST /api/tickets", s.createTicketAsHuman)
 	mux.HandleFunc("GET /api/tickets/{id}", s.getTicket)

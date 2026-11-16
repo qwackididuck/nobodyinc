@@ -80,6 +80,15 @@ func (a announcingWorkStore) ActivateFeature(ctx context.Context, id string) err
 	return err
 }
 
+func (a announcingWorkStore) DeactivateFeature(ctx context.Context, id string) error {
+	err := a.Store.DeactivateFeature(ctx, id)
+	if err == nil {
+		a.featureChanged(id)
+	}
+
+	return err
+}
+
 func (a announcingWorkStore) ticketChanged(id string) {
 	a.bus.Publish(events.Event{Type: events.TicketsChanged, Data: events.ChangedData{ID: id}})
 }

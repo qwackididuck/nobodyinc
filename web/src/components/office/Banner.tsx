@@ -8,12 +8,13 @@ import styles from "./office.module.css";
 
 interface Props {
   onOpenDirector: () => void;
+  onReview: () => void;
 }
 
 // Banner sits above the office: the active feature, its branch and how many
 // of its tickets are done, and the director's proposal waiting for the human.
 // Without an active feature, the human can start one directly (docs/workspaces.md).
-export function Banner({ onOpenDirector }: Props) {
+export function Banner({ onOpenDirector, onReview }: Props) {
   const { features, tickets } = useLive();
   const active = features.find((f) => f.active);
   const proposals = features.filter((f) => f.status === "proposed");
@@ -34,6 +35,12 @@ export function Banner({ onOpenDirector }: Props) {
             <span style={{ width: own.length ? `${(done / own.length) * 100}%` : 0 }} />
           </span>
         </div>
+      ) : null}
+      {active ? (
+        <button type="button" className={styles.bannerReview} onClick={onReview}>
+          <span className={styles.kicker}>{own.length > 0 && done === own.length ? "All tickets done" : "When the work is done"}</span>
+          <span>Review &amp; finish</span>
+        </button>
       ) : (
         <StartFeature />
       )}

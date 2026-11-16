@@ -1,0 +1,205 @@
+/* The review of the active feature, before finishing it (ADR-0007). */
+
+.panel {
+  position: absolute;
+  inset: 0 0 0 auto;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  border-left: 3px solid var(--ink-px);
+  background: var(--panel);
+  box-shadow: -6px 0 0 rgba(0, 0, 0, 0.35);
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.head code,
+.actions code {
+  font: 16px var(--font-mono);
+  color: var(--text);
+}
+
+.kicker {
+  margin: 0;
+  font: 10px var(--font-label);
+  color: var(--muted);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: 16px 20px;
+}
+
+.section {
+  display: grid;
+  gap: 8px;
+  padding: 16px 20px;
+}
+
+.body .section {
+  padding: 0;
+}
+
+.warning {
+  padding: 10px 12px;
+  border: 2px solid var(--warn);
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.warning ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text);
+}
+
+.commits,
+.files {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.commits code {
+  font: 16px var(--font-mono);
+  color: var(--accent);
+}
+
+.by {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.files li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.files a {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font: 16px var(--font-mono);
+}
+
+.status {
+  flex: none;
+  width: 18px;
+  text-align: center;
+  font: 11px var(--font-label);
+  color: var(--ink-px);
+  background: var(--idle);
+}
+
+.status[data-status="A"] {
+  background: var(--ok);
+}
+
+.status[data-status="D"] {
+  background: var(--danger);
+}
+
+.status[data-status="M"],
+.status[data-status="R"] {
+  background: var(--warn);
+}
+
+.counts {
+  margin-left: auto;
+  font: 16px var(--font-mono);
+  white-space: nowrap;
+}
+
+.plus {
+  color: var(--ok);
+}
+
+.minus {
+  color: var(--danger);
+}
+
+.diffFile {
+  border: 2px solid var(--line);
+}
+
+.diffFile summary {
+  padding: 6px 10px;
+  background: var(--panel-2);
+  font: 16px var(--font-mono);
+  cursor: pointer;
+}
+
+.diff {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 8px 10px;
+  background: var(--term-bg);
+  color: #d6d0e6;
+  font: 15px/1.2 var(--font-mono);
+}
+
+.meta {
+  color: var(--muted);
+}
+
+.hunk {
+  color: #7fb4ff;
+}
+
+.add {
+  color: var(--ok);
+}
+
+.del {
+  color: var(--danger);
+}
+
+.foot {
+  display: grid;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.force {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--warn);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 2px solid var(--danger);
+  color: var(--danger);
+  font: 15px/1.25 var(--font-mono);
+  white-space: pre-wrap;
+}

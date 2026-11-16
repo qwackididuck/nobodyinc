@@ -190,7 +190,7 @@ export async function decideApproval(id: string, allow: boolean, message = ""): 
 }
 
 // A request the organization works on, with its own git branch (see docs/workspaces.md).
-export type FeatureStatus = "proposed" | "started" | "refused";
+export type FeatureStatus = "proposed" | "started" | "refused" | "finished";
 
 export interface Feature {
   id: string;
@@ -207,6 +207,8 @@ export interface Feature {
   // The "propose" message the director's proposal sent to the human.
   proposal_message?: string;
   refusal_reason?: string;
+  // The merge commit on the base branch, once finished (ADR-0007).
+  merge_commit?: string;
   created_by: string;
   created_at: string;
 }
@@ -217,6 +219,27 @@ export function startProposedFeature(id: string): Promise<Feature> {
 
 export function refuseProposedFeature(id: string, reason: string): Promise<Feature> {
   return postJSON<Feature>(`/api/features/${encodeURIComponent(id)}/refuse`, { reason });
+}
+
+// What a started feature brings to its base branch (GET /api/features/{id}/review).
+export interface FeatureReview {
+  feature: Feature;
+  commits: { hash: string; author: string; date: string; subject: string }[];
+  // status: A added, M modified, D deleted, R renamed; added is -1 for a binary file.
+  files: { path: string; status: string; added: number; deleted: number }[];
+  diff: string;
+  diff_truncated: boolean;
+  unfinished_tickets: Ticket[];
+}
+
+export function reviewFeature(id: string): Promise<FeatureReview> {
+  return getJSON<FeatureReview>(`/api/features/${encodeURIComponent(id)}/review`);
+}
+
+// finishFeature merges the active feature into its base branch, locally, and
+// ends it; force finishes it although some tickets are not done.
+export function finishFeature(id: string, force: boolean): Promise<Feature> {
+  return postJSON<Feature>(`/api/features/${encodeURIComponent(id)}/finish`, { force });
 }
 
 export function listFeatures(): Promise<Feature[]> {

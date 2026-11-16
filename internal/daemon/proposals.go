@@ -23,7 +23,7 @@ type proposals struct {
 // onProposed sends the proposal to the human and returns the message's ID.
 func (p *proposals) onProposed(f work.Feature) string {
 	body := fmt.Sprintf("I propose the feature %s: %s.\n\nNeed:\n%s\n\nAcceptance criteria:\n%s\n\n"+
-		"Start it or refuse it from the control room (Feature panel).",
+		"Start it or refuse it from the control room (this chat, or the banner above the office).",
 		f.ID, f.Title, orNone(f.Description), orNone(f.AcceptanceCriteria))
 
 	msg, err := p.messages.Send(context.Background(), messaging.Draft{
@@ -60,6 +60,39 @@ func (p *proposals) onDecided(f work.Feature) {
 	if _, err := p.messages.Send(context.Background(), d); err != nil {
 		p.logger.Error("answer feature proposal", "feature", f.ID, "err", err)
 	}
+}
+
+// onFinished tells the director that the human finished a feature: it is
+// merged into its base branch and the teams are back in the project.
+func (p *proposals) onFinished(ctx context.Context, director string, f work.Feature) {
+	if director == "" {
+		return
+	}
+
+	merged := "There was nothing to merge."
+	if f.MergeCommit != "" {
+		merged = fmt.Sprintf("It is merged into %s (commit %s).", f.BaseBranch, shortHash(f.MergeCommit))
+	}
+
+	_, err := p.messages.Send(ctx, messaging.Draft{
+		From: org.SystemAddress, To: director, Act: messaging.ActInform, Priority: messaging.Normal,
+		Subject: "Feature " + f.ID + " finished: " + f.Title,
+		Body:    "The human finished the feature " + f.ID + ". " + merged + " The teams work in the project again; no feature is active.",
+	})
+	if err != nil {
+		p.logger.Error("tell the director a feature is finished", "feature", f.ID, "err", err)
+	}
+}
+
+// shortHashLength is how much of a commit hash messages show.
+const shortHashLength = 10
+
+func shortHash(h string) string {
+	if len(h) > shortHashLength {
+		return h[:shortHashLength]
+	}
+
+	return h
 }
 
 func orNone(s string) string {

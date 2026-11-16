@@ -68,7 +68,7 @@ func (s *Store) ListFeatures(ctx context.Context) ([]work.Feature, error) {
 
 // UpdateFeature saves the fields that change after a feature is created:
 // its branches and status when it starts, the reason it was refused, the
-// message that proposed it.
+// message that proposed it, the merge commit when it is finished.
 func (s *Store) UpdateFeature(ctx context.Context, f work.Feature) error {
 	n, err := work.ParseFeatureID(f.ID)
 	if err != nil {
@@ -76,9 +76,9 @@ func (s *Store) UpdateFeature(ctx context.Context, f work.Feature) error {
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE features SET slug = ?, base_branch = ?, branch = ?, status = ?, proposal_message = ?, refusal_reason = ?
+		UPDATE features SET slug = ?, base_branch = ?, branch = ?, status = ?, proposal_message = ?, refusal_reason = ?, merge_commit = ?
 		WHERE id = ?`,
-		f.Slug, f.BaseBranch, f.Branch, f.Status, f.ProposalMessage, f.RefusalReason, n)
+		f.Slug, f.BaseBranch, f.Branch, f.Status, f.ProposalMessage, f.RefusalReason, f.MergeCommit, n)
 	if err != nil {
 		return fmt.Errorf("update feature %s: %w", f.ID, err)
 	}
@@ -100,9 +100,23 @@ func (s *Store) ActivateFeature(ctx context.Context, id string) error {
 	return nil
 }
 
+// DeactivateFeature leaves no feature active, if id is the active one.
+func (s *Store) DeactivateFeature(ctx context.Context, id string) error {
+	n, err := work.ParseFeatureID(id)
+	if err != nil {
+		return err
+	}
+
+	if _, err := s.db.ExecContext(ctx, `UPDATE features SET active = 0 WHERE id = ?`, n); err != nil {
+		return fmt.Errorf("deactivate feature %s: %w", id, err)
+	}
+
+	return nil
+}
+
 const selectFeatures = `
 	SELECT id, title, description, acceptance_criteria, slug, base_branch, branch, active, status,
-		proposal_message, refusal_reason, created_by, created_at
+		proposal_message, refusal_reason, merge_commit, created_by, created_at
 	FROM features`
 
 func scanFeature(row scanner) (work.Feature, error) {
@@ -112,7 +126,7 @@ func scanFeature(row scanner) (work.Feature, error) {
 		createdAt string
 	)
 	if err := row.Scan(&n, &f.Title, &f.Description, &f.AcceptanceCriteria, &f.Slug, &f.BaseBranch, &f.Branch, &f.Active,
-		&f.Status, &f.ProposalMessage, &f.RefusalReason, &f.CreatedBy, &createdAt); err != nil {
+		&f.Status, &f.ProposalMessage, &f.RefusalReason, &f.MergeCommit, &f.CreatedBy, &createdAt); err != nil {
 		return work.Feature{}, err
 	}
 

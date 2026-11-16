@@ -15,13 +15,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { type Agent, type Team } from "@/lib/api";
+import { type Agent, type Feature, type Team } from "@/lib/api";
 import { useAppearance } from "@/lib/appearance";
 import { useDaemonEvents, useLive } from "@/lib/live";
 import { lookOf, teamColors } from "@/lib/look";
 import { betweenAgents, isDirector } from "../chat/agents";
 import { Banner } from "./Banner";
 import { Desk } from "./Desk";
+import { FeatureReview } from "./FeatureReview";
 import { addWalker, celebrate, dismantle, flyPlane, walk, works } from "./effects";
 import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
 import styles from "./office.module.css";
@@ -76,6 +77,9 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
   const [building, setBuilding] = useState<Set<string>>(new Set());
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [seen, setSeen] = useState<Seen | null>(null);
+  // The feature under review stays shown after it is finished (and no
+  // longer active), so that the panel can say how it went.
+  const [reviewing, setReviewing] = useState<Feature | null>(null);
 
   // Compare with what was shown before (React's "adjust state when props
   // change" pattern: no effect, no flash of the new desk).
@@ -208,7 +212,8 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
 
   return (
     <section className={styles.office} aria-label="Office">
-      <Banner onOpenDirector={() => (director ? onSelectAgent(director.address) : onHireDirector())} />
+      <Banner onOpenDirector={() => (director ? onSelectAgent(director.address) : onHireDirector())} onReview={() => setReviewing(active ?? null)} />
+      {reviewing && <FeatureReview feature={reviewing} onClose={() => setReviewing(null)} />}
       <div className={styles.wrap}>
         <div className={styles.scene} style={{ width: SCENE_WIDTH, height: Math.max(layout.height, full.height) }}>
           <Wall binUnread={binUnread} onOpenBin={onOpenBin} />

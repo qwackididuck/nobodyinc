@@ -183,6 +183,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	tickets.OnFeatureProposed = featureProposals.onProposed
 	tickets.OnFeatureDecided = featureProposals.onDecided
 
+	tickets.OnFeatureFinished = onFeatureFinished(ctx, opts, git, supervisor, featureProposals)
+
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
 	tickets.OnEvent = notifier.onEvent
 
@@ -246,6 +248,35 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Staff:      staffService,
 		WorkDir:    git.workDir,
 	}, nil
+}
+
+// onFeatureFinished sends the team agents back to the project once a feature
+// is finished, then removes its worktrees when nobody works in them any more,
+// and tells the director (ADR-0007).
+func onFeatureFinished(
+	ctx context.Context, opts Options, git *gitWorkspace, supervisor *runtime.Supervisor, p *proposals,
+) func(work.Feature) {
+	return func(f work.Feature) {
+		git.deactivate()
+
+		director := ""
+		if god := opts.Org.Current().God; god != nil {
+			director = god.Name
+		}
+
+		ctx := context.WithoutCancel(ctx)
+		p.onFinished(ctx, director, f)
+
+		go func() {
+			if err := supervisor.RestartAll(ctx); err != nil {
+				opts.Logger.Error("restart agents after the feature", "feature", f.ID, "err", err)
+			}
+
+			if err := git.cleanup(ctx, f); err != nil {
+				opts.Logger.Error("remove the feature's worktrees", "feature", f.ID, "err", err)
+			}
+		}()
+	}
 }
 
 // announce publishes on the bus the changes the services report through

@@ -1,6 +1,7 @@
 /* The pixel office. Design reference: docs/mockups/ui-design/c-pixel-office.html. */
 
 .office {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -68,6 +69,19 @@
   border: 2px dashed var(--accent);
   background: none;
   text-align: left;
+}
+
+.bannerReview {
+  display: grid;
+  gap: 2px;
+  padding: 8px 14px;
+  border: 2px solid var(--ok);
+  background: none;
+  text-align: left;
+}
+
+.bannerReview .kicker {
+  color: var(--ok);
 }
 
 .bannerProposal .kicker {

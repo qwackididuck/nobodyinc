@@ -129,7 +129,8 @@ func (s *server) ticketError(w http.ResponseWriter, err error) {
 		s.writeError(w, http.StatusBadRequest, err)
 	case errors.Is(err, work.ErrForbidden):
 		s.writeError(w, http.StatusForbidden, err)
-	case errors.Is(err, work.ErrBlocked), errors.Is(err, work.ErrConflict), errors.Is(err, work.ErrNoTicket):
+	case errors.Is(err, work.ErrBlocked), errors.Is(err, work.ErrConflict), errors.Is(err, work.ErrNoTicket),
+		errors.Is(err, work.ErrUnfinished), isFinishRefusal(err):
 		s.writeError(w, http.StatusConflict, err)
 	default:
 		s.Logger.Error("ticket request", "err", err)

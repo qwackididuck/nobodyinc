@@ -578,6 +578,76 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/features/{id}/review:
+    get:
+      operationId: reviewFeature
+      summary: What a started feature brings compared with its base branch
+      description: |
+        The commits of the feature branch that the base branch does not have,
+        the files they change (with lines added and deleted), the diff (cut
+        at 400 KB, then `diff_truncated` is true), and the feature's tickets
+        that are not done or canceled yet. Read-only (docs/workspaces.md).
+      parameters:
+        - $ref: "#/components/parameters/FeatureID"
+      responses:
+        "200":
+          description: The review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureReview"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/features/{id}/finish:
+    post:
+      operationId: finishFeature
+      summary: Merge the active feature into its base branch, locally, and end it
+      description: |
+        Only the human finishes a feature (ADR-0007). The feature branch is
+        merged into the base branch with a merge commit, in the project's
+        checkout when the base branch is checked out there (it must have no
+        uncommitted changes to tracked files), or in a temporary worktree
+        otherwise. Nothing is pushed. Then the feature is finished and no
+        longer active: team agents restart in the project directory, and the
+        teams' worktrees and branches are removed (the feature branch is
+        kept). On a conflict nothing changes.
+
+        While some of its tickets are not done or canceled, the finish is
+        refused unless `force` is true; work not delivered by then is lost.
+      parameters:
+        - $ref: "#/components/parameters/FeatureID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                force:
+                  type: boolean
+                  description: Finish even though some tickets are not done.
+      responses:
+        "200":
+          description: Feature finished
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Not active, unfinished tickets, uncommitted changes on the base branch, or a merge conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/tickets:
     get:
       operationId: listTickets
@@ -1150,6 +1220,53 @@ components:
         ticket:
           type: string
 
+    FeatureReview:
+      type: object
+      required: [feature, commits, files, diff, diff_truncated, unfinished_tickets]
+      properties:
+        feature:
+          $ref: "#/components/schemas/Feature"
+        commits:
+          type: array
+          items:
+            type: object
+            required: [hash, author, date, subject]
+            properties:
+              hash:
+                type: string
+              author:
+                type: string
+              date:
+                type: string
+                format: date-time
+              subject:
+                type: string
+        files:
+          type: array
+          items:
+            type: object
+            required: [path, status, added, deleted]
+            properties:
+              path:
+                type: string
+              status:
+                type: string
+                description: A added, M modified, D deleted, R renamed.
+              added:
+                type: integer
+                description: Lines added; -1 for a binary file.
+              deleted:
+                type: integer
+        diff:
+          type: string
+          description: Unified diff of the feature branch against the base branch (since they diverged).
+        diff_truncated:
+          type: boolean
+        unfinished_tickets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Ticket"
+
     Feature:
       type: object
       required: [id, title, slug, base_branch, branch, active, status, created_by, created_at]
@@ -1166,8 +1283,11 @@ components:
           type: string
         status:
           type: string
-          enum: [proposed, started, refused]
-          description: The director proposes, the human starts or refuses; a feature the human creates starts at once.
+          enum: [proposed, started, refused, finished]
+          description: The director proposes, the human starts or refuses; a feature the human creates starts at once; the human finishes it by merging it into its base branch.
+        merge_commit:
+          type: string
+          description: The merge commit on the base branch, once finished ("" when there was nothing to merge).
         proposal_message:
           type: string
           description: ID of the "propose" message the director's proposal sent to the human.

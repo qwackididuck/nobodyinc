@@ -48,7 +48,10 @@ nobody/…--specs                               nobody/…--dev
   - the team branch is then merged into the feature branch: a fast-forward when possible, otherwise a merge in a temporary worktree;
   - on a conflict nothing changes, and the refusal explains how to fix it (merge the feature branch into your branch, resolve, commit, close again);
   - the delivered commits are attached to the ticket as `commit` deliverables.
-- **Finishing the feature** is up to the user: `nobody/<slug>` holds all the work, to review and merge wherever they want. Nobody Inc does not push.
+- **Finishing the feature** is the human's decision (ADR-0007). "Review & finish" in the banner above the office (`GET /api/features/{id}/review`) shows the commits, the files changed and the diff against the base branch, and the tickets not done yet. "Merge and finish" (`POST /api/features/{id}/finish`):
+  - merges `nobody/<slug>` into the base branch with a merge commit signed by Nobody Inc: in the project's checkout when the base branch is checked out there (refused while a tracked file has uncommitted changes), in a throwaway worktree when it is checked out nowhere, refused when another worktree has it. On a conflict nothing changes, and the refusal gives the commands to merge it by hand. **Nothing is pushed**;
+  - is refused while some of the feature's tickets are not done or canceled, unless the human finishes anyway (their undelivered work is lost);
+  - ends the feature: it is `finished` and no longer active, team agents restart in the project, then the teams' worktrees and branches are removed. The feature branch is kept. The director gets a notice from `nobody`.
 
 ## One ticket at a time
 
