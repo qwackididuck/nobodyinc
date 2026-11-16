@@ -52,6 +52,12 @@ export function betweenAgents(m: Message): boolean {
   return !outside(m.from) && !outside(m.to);
 }
 
+// unreadInBin counts the messages between agents delivered since the
+// wastebasket was last opened (seen: ISO time, or undefined for never).
+export function unreadInBin(messages: Message[], seen: string | undefined): number {
+  return messages.filter((m) => betweenAgents(m) && m.delivered_at && m.sent_at > (seen ?? "")).length;
+}
+
 // isAnswered tells whether the human answered a message.
 export function isAnswered(m: Message, messages: Message[]): boolean {
   return messages.some((r) => r.in_reply_to === m.id && r.from === HUMAN);

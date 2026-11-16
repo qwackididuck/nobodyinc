@@ -7,19 +7,20 @@ import { AvatarRail, BIN_KEY } from "./AvatarRail";
 import { Bin } from "./Bin";
 import { HireDirector } from "./HireDirector";
 import styles from "./chat.module.css";
-import { useReadMarks } from "./readMarks";
+import type { ReadMarks } from "./readMarks";
 import { Thread } from "./Thread";
 
 interface Props {
   target: ChatTarget | null;
   onTarget: (t: ChatTarget) => void;
+  marks: ReadMarks;
+  markSeen: (chat: string, at: string) => void;
 }
 
 // ChatPanel is the left side of the control room: the avatar rail and the
 // selected chat (the director's by default) or the wastebasket.
-export function ChatPanel({ target, onTarget }: Props) {
-  const { agents, teams, settings } = useLive();
-  const { marks, markSeen } = useReadMarks(settings?.project_id);
+export function ChatPanel({ target, onTarget, marks, markSeen }: Props) {
+  const { agents, teams } = useLive();
   const sorted = sortAgents(agents, teams);
 
   // Until the human picks a chat, show the first one (the director's). Once

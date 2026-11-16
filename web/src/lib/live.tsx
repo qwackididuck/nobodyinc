@@ -77,6 +77,9 @@ export interface Live extends Resources {
   connected: boolean;
   // The last load error, if any.
   error: string | null;
+  // Which resources were loaded at least once (an empty list before that
+  // means "not known yet", not "none").
+  loaded: Partial<Record<Resource, true>>;
   // reload reads a resource again now, e.g. right after a change made here.
   reload: (resource: Resource) => void;
   subscribe: (listener: (e: DaemonEvent) => void) => () => void;
@@ -88,6 +91,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<Resources>(EMPTY);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<Partial<Record<Resource, true>>>({});
   const listeners = useRef(new Set<(e: DaemonEvent) => void>());
   const timers = useRef(new Map<Resource, ReturnType<typeof setTimeout>>());
 
@@ -95,6 +99,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     try {
       const value = await LOADERS[resource]();
       setData((d) => ({ ...d, [resource]: value }));
+      setLoaded((l) => (l[resource] ? l : { ...l, [resource]: true }));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -173,7 +178,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   const reload = useCallback((resource: Resource) => void load(resource), [load]);
 
-  const value = useMemo<Live>(() => ({ ...data, connected, error, reload, subscribe }), [data, connected, error, reload, subscribe]);
+  const value = useMemo<Live>(
+    () => ({ ...data, connected, error, loaded, reload, subscribe }),
+    [data, connected, error, loaded, reload, subscribe],
+  );
 
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;
 }

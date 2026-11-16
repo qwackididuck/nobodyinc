@@ -1,9 +1,9 @@
 "use client";
 
-import { type Agent, HUMAN, type Message } from "@/lib/api";
+import { type Agent, HUMAN } from "@/lib/api";
 import { useLive } from "@/lib/live";
 import type { ChatTarget } from "../App";
-import { betweenAgents, isAnswered, isDirector, statusKey, statusLabel } from "./agents";
+import { isAnswered, isDirector, statusKey, statusLabel, unreadInBin } from "./agents";
 import { Avatar, BinIcon } from "./Avatar";
 import styles from "./chat.module.css";
 import type { ReadMarks } from "./readMarks";
@@ -38,7 +38,7 @@ export function AvatarRail({ agents, target, marks, onTarget }: Props) {
     return unread > 0 ? { kind: "count", text: String(unread) } : null;
   }
 
-  const binUnread = messages.filter((m: Message) => betweenAgents(m) && m.delivered_at && m.sent_at > (marks[BIN_KEY] ?? "")).length;
+  const binUnread = unreadInBin(messages, marks[BIN_KEY]);
 
   const hasDirector = agents.some(isDirector);
 

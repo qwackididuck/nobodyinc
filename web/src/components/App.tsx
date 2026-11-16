@@ -2,8 +2,12 @@
 
 import { useState } from "react";
 
-import { LiveProvider } from "@/lib/live";
+import { LiveProvider, useLive } from "@/lib/live";
+import { unreadInBin } from "./chat/agents";
+import { BIN_KEY } from "./chat/AvatarRail";
 import { ChatPanel } from "./chat/ChatPanel";
+import { useReadMarks } from "./chat/readMarks";
+import { Office } from "./office/Office";
 import styles from "./shell/shell.module.css";
 import { type Tab, TopBar } from "./shell/TopBar";
 
@@ -23,15 +27,27 @@ export function App() {
 }
 
 function ControlRoom() {
+  const { settings, messages } = useLive();
   const [tab, setTab] = useState<Tab>("office");
   const [target, setTarget] = useState<ChatTarget | null>(null);
+  const { marks, markSeen } = useReadMarks(settings?.project_id);
 
   return (
     <div className={styles.app}>
       <TopBar tab={tab} onTab={setTab} />
-      <ChatPanel target={target} onTarget={setTarget} />
+      <ChatPanel target={target} onTarget={setTarget} marks={marks} markSeen={markSeen} />
       <main className={styles.main}>
-        <ComingSoon tab={tab} />
+        {tab === "office" ? (
+          <Office
+            selected={target?.kind === "agent" ? target.address : null}
+            binUnread={unreadInBin(messages, marks[BIN_KEY])}
+            onSelectAgent={(address) => setTarget({ kind: "agent", address })}
+            onOpenBin={() => setTarget({ kind: "bin" })}
+            onHireDirector={() => setTarget({ kind: "hire-director" })}
+          />
+        ) : (
+          <ComingSoon tab={tab} />
+        )}
       </main>
     </div>
   );
