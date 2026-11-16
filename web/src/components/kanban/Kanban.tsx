@@ -100,57 +100,61 @@ export function Kanban({ onOpenChat }: Props) {
   }
 
   return (
-    <div className={styles.board}>
-      <div className={styles.bar}>
-        <h2 className={`${ui.title} ${styles.boardTitle}`}>Tickets</h2>
-        {active && (
-          <button type="button" className={`${ui.chip} ${onlyActive ? ui.chipOn : ""}`} aria-pressed={onlyActive} onClick={() => setOnlyActive(!onlyActive)}>
-            {onlyActive ? `Feature: ${active.title}` : "All features"}
+    // The frame does not scroll: the shredder and the drawers stay put while
+    // the board scrolls under them.
+    <div className={styles.frame}>
+      <div className={styles.board}>
+        <div className={styles.bar}>
+          <h2 className={`${ui.title} ${styles.boardTitle}`}>Tickets</h2>
+          {active && (
+            <button type="button" className={`${ui.chip} ${onlyActive ? ui.chipOn : ""}`} aria-pressed={onlyActive} onClick={() => setOnlyActive(!onlyActive)}>
+              {onlyActive ? `Feature: ${active.title}` : "All features"}
+            </button>
+          )}
+          <span className={styles.sep} />
+          {[null, ...teams.map((t) => t.id)].map((id) => (
+            <button key={id ?? "all"} type="button" className={`${ui.chip} ${team === id ? ui.chipOn : ""}`} aria-pressed={team === id} onClick={() => setTeam(id)}>
+              {id ?? "All teams"}
+            </button>
+          ))}
+          <span className={styles.spacer} />
+          <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
+            + New ticket
           </button>
+        </div>
+        {error && (
+          <p className={`${ui.error} ${styles.boardError}`}>
+            {error}{" "}
+            <button type="button" className={ui.link} onClick={() => setError(null)}>
+              Dismiss
+            </button>
+          </p>
         )}
-        <span className={styles.sep} />
-        {[null, ...teams.map((t) => t.id)].map((id) => (
-          <button key={id ?? "all"} type="button" className={`${ui.chip} ${team === id ? ui.chipOn : ""}`} aria-pressed={team === id} onClick={() => setTeam(id)}>
-            {id ?? "All teams"}
-          </button>
-        ))}
-        <span className={styles.spacer} />
-        <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
-          + New ticket
-        </button>
-      </div>
-      {error && (
-        <p className={`${ui.error} ${styles.boardError}`}>
-          {error}{" "}
-          <button type="button" className={ui.link} onClick={() => setError(null)}>
-            Dismiss
-          </button>
-        </p>
-      )}
-      <div className={styles.columns}>
-        {COLUMNS.map((c) => {
-          const items = shown.filter((t) => t.status === c.status);
-          return (
-            <section
-              key={c.status}
-              className={styles.column}
-              data-status={c.status}
-              data-over={over === c.status}
-              aria-label={c.label}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setOver(c.status);
-              }}
-              onDragLeave={() => setOver(null)}
-              onDrop={(e) => void drop(e, c.status)}
-            >
-              <h3 className={styles.columnHead}>
-                {c.label} <b>{items.length}</b>
-              </h3>
-              <ol className={styles.cards}>{items.map(card)}</ol>
-            </section>
-          );
-        })}
+        <div className={styles.columns}>
+          {COLUMNS.map((c) => {
+            const items = shown.filter((t) => t.status === c.status);
+            return (
+              <section
+                key={c.status}
+                className={styles.column}
+                data-status={c.status}
+                data-over={over === c.status}
+                aria-label={c.label}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setOver(c.status);
+                }}
+                onDragLeave={() => setOver(null)}
+                onDrop={(e) => void drop(e, c.status)}
+              >
+                <h3 className={styles.columnHead}>
+                  {c.label} <b>{items.length}</b>
+                </h3>
+                <ol className={styles.cards}>{items.map(card)}</ol>
+              </section>
+            );
+          })}
+        </div>
       </div>
       <Shredder tickets={tickets} onShredded={(ids) => ids.includes(open ?? "") && setOpen(null)} />
       {open && <TicketDrawer id={open} onClose={() => setOpen(null)} onOpenChat={onOpenChat} />}
