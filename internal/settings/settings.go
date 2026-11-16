@@ -3,7 +3,8 @@
 // project's own configuration lives in its .nobody/ (ADR-0004).
 //
 // A missing file means the defaults. Settings are read when the daemon
-// starts: restart it after a change.
+// starts: restart it after changing the file by hand. The control room can
+// also change them while the daemon runs (Live), which rewrites the file.
 package settings
 
 import (
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"go.yaml.in/yaml/v3"
 
@@ -45,17 +47,23 @@ func Defaults() Settings {
 	return Settings{ConfigProtection: ProtectBlock}
 }
 
-// defaultFile is written by `nobodyd init`, so that the settings are easy to
-// find and to change.
-const defaultFile = `# Nobody Inc settings for this user, used by every project.
-# Restart the daemon after a change.
+// fileTemplate is the settings file: written with the defaults by
+// `nobodyd init`, so that the settings are easy to find and to change, and
+// rewritten when the control room changes a setting.
+const fileTemplate = `# Nobody Inc settings for this user, used by every project.
+# Restart the daemon after changing this file by hand.
 
 # What happens when an agent delivers (closes a ticket with) changes to the
 # project's .nobody/ directory, i.e. to the agents' own configuration:
 #   block: the delivery is refused until the agent undoes the change;
 #   warn:  the delivery goes through and the human is warned.
-config_protection: block
+config_protection: %s
 `
+
+// render returns the content of the settings file for s.
+func render(s Settings) []byte {
+	return fmt.Appendf(nil, fileTemplate, s.ConfigProtection)
+}
 
 // Load reads home/settings.yaml. Unset values keep their default; unknown
 // keys and invalid values are refused, so that a typo is noticed.
@@ -95,7 +103,53 @@ func WriteDefaultIfMissing(home string) (bool, error) {
 		return false, nil
 	}
 
-	return true, atomicfile.Write(path, []byte(defaultFile))
+	return true, atomicfile.Write(path, render(Defaults()))
+}
+
+// Live holds the settings while the daemon runs. It is safe for concurrent
+// use.
+type Live struct {
+	mu   sync.Mutex
+	home string // where settings.yaml is saved; "" keeps changes in memory
+	s    Settings
+}
+
+// NewLive returns the running settings s, saved to home/settings.yaml when
+// they change ("" for no file, e.g. in tests).
+func NewLive(home string, s Settings) *Live {
+	return &Live{home: home, s: s}
+}
+
+// Current returns the settings in force.
+func (l *Live) Current() Settings {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	return l.s
+}
+
+// SetConfigProtection changes ConfigProtection (ProtectBlock or ProtectWarn)
+// and saves the settings file. It applies at once.
+func (l *Live) SetConfigProtection(value string) (Settings, error) {
+	if value != ProtectBlock && value != ProtectWarn {
+		return Settings{}, fmt.Errorf("config_protection %q: use %s or %s", value, ProtectBlock, ProtectWarn)
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	next := l.s
+	next.ConfigProtection = value
+
+	if l.home != "" {
+		if err := atomicfile.Write(filepath.Join(l.home, FileName), render(next)); err != nil {
+			return Settings{}, fmt.Errorf("save the settings: %w", err)
+		}
+	}
+
+	l.s = next
+
+	return next, nil
 }
 
 func stripComments(s string) string {

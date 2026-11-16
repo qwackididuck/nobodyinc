@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/events"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/staffing"
@@ -210,6 +211,8 @@ func (s *server) saveTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.Events.Publish(events.Event{Type: events.CatalogChanged, Data: events.Empty{}})
+
 	t, err := s.Catalog.Get(name)
 	if err != nil {
 		s.templateError(w, err)
@@ -228,6 +231,7 @@ func (s *server) deleteTemplate(w http.ResponseWriter, r *http.Request) {
 	err := s.Catalog.Delete(r.PathValue("name"))
 	switch {
 	case err == nil:
+		s.Events.Publish(events.Event{Type: events.CatalogChanged, Data: events.Empty{}})
 		w.WriteHeader(http.StatusNoContent)
 	case errors.Is(err, catalog.ErrBuiltin):
 		s.writeError(w, http.StatusConflict, err)

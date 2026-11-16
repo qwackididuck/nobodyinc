@@ -19,8 +19,9 @@ type gitWorkspace struct {
 	repo workspace.Repo
 	org  org.Source
 	// configProtection says what to do with a delivery that changes the
-	// project's .nobody/ (settings.ProtectBlock or ProtectWarn).
-	configProtection string
+	// project's .nobody/ (settings.ProtectBlock or ProtectWarn). It is read on
+	// every delivery: the control room can change it while the daemon runs.
+	configProtection func() string
 	// onConfigDelivered is told about such a delivery in warn mode.
 	onConfigDelivered func(agent string, f work.Feature, files []string)
 
@@ -108,7 +109,7 @@ func (g *gitWorkspace) checkConfigChanges(ctx context.Context, f workspace.Featu
 		return nil, err
 	}
 
-	if g.configProtection == settings.ProtectWarn {
+	if g.configProtection != nil && g.configProtection() == settings.ProtectWarn {
 		return files, nil
 	}
 

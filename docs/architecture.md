@@ -7,7 +7,7 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 ```
             Browser: Next.js UI (web/)
             teams · xterm.js terminal · mail · composer
-                 │ REST (proxied /api)        │ terminal WebSocket
+                 │ REST + SSE events (/api)   │ terminal WebSocket
                  ▼                            ▼
 ┌──────────────────────────── nobodyd (cmd/nobodyd) ─────────────────────────────┐
 │ server     /api/* (UI), /internal/* (hooks)          officemcp  /mcp/{address} │
@@ -78,6 +78,10 @@ Agents see neither the user's global settings nor the environment of a parent Cl
 - Unit tests next to each package.
 - `test/e2e`: whole scenarios (wake-up, delivery, MCP, channel refusals) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
 - `test/contract` (`task contract`): the Claude Code behaviours we rely on, against the real CLI.
+
+## Changes pushed to the browser
+
+The control room does not poll: `GET /api/events` streams every change as Server-Sent Events (agent statuses, messages sent and delivered, approvals, tickets, features, the organization, the catalog), and the UI reads the changed resource again through the REST API. See `docs/events.md` and ADR-0006.
 
 ## The terminal in the browser
 

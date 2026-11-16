@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -107,7 +108,13 @@ func (s *server) listMessages(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 
-	messages, err := s.Store.RecentMessages(r.Context(), limit)
+	messages, err := s.queryMessages(r, limit)
+	if errors.Is(err, errBadFilter) {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
 	if err != nil {
 		s.Logger.Error("list messages", "err", err)
 		s.writeError(w, http.StatusInternalServerError, errors.New("cannot list messages"))
@@ -120,6 +127,30 @@ func (s *server) listMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, http.StatusOK, messages)
+}
+
+// errBadFilter is returned for an invalid combination of message filters.
+var errBadFilter = errors.New("invalid filter")
+
+// queryMessages applies the filters of GET /api/messages: with=<address>
+// (the human's conversation with that address, the chat of the control room)
+// or scope=agents (delivered messages between agents, its wastebasket).
+func (s *server) queryMessages(r *http.Request, limit int) ([]messaging.Message, error) {
+	q := r.URL.Query()
+	with, scope := q.Get("with"), q.Get("scope")
+
+	switch {
+	case with != "" && scope != "":
+		return nil, fmt.Errorf("%w: use either with or scope", errBadFilter)
+	case with != "":
+		return s.Store.ConversationMessages(r.Context(), org.HumanAddress, with, limit)
+	case scope == "agents":
+		return s.Store.DeliveredMessagesAmong(r.Context(), []string{org.HumanAddress, org.SystemAddress}, limit)
+	case scope != "":
+		return nil, fmt.Errorf("%w: scope must be agents", errBadFilter)
+	default:
+		return s.Store.RecentMessages(r.Context(), limit)
+	}
 }
 
 // humanDraft is the body of POST /api/messages.

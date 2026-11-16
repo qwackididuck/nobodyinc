@@ -10,6 +10,8 @@ info:
     - `/mcp/{address}` (not described here) is the MCP endpoint (streamable
       HTTP, stateless) of the agent with that address: tools send_message and
       list_contacts, see internal/officemcp.
+    Changes are pushed to the UI by `GET /api/events` (Server-Sent Events,
+    docs/events.md); the UI then reads the changed resource again.
     The daemon listens on loopback only by default.
 servers:
   - url: http://127.0.0.1:7420
@@ -316,7 +318,10 @@ paths:
   /api/messages:
     get:
       operationId: listMessages
-      summary: Latest messages of the whole organisation, oldest first
+      summary: Latest messages, oldest first
+      description: |
+        Without filter: the latest messages of the whole organisation.
+        `with` and `scope` narrow the list; they cannot be combined.
       parameters:
         - name: limit
           in: query
@@ -325,6 +330,22 @@ paths:
             minimum: 1
             maximum: 500
             default: 100
+        - name: with
+          in: query
+          description: |
+            Only the conversation between the human and this address (both
+            directions): what the control room shows as the agent's chat.
+          schema:
+            type: string
+        - name: scope
+          in: query
+          description: |
+            `agents`: only delivered messages between agents (the director
+            included), neither from nor to the human or the system address
+            `nobody`. The control room shows them in its wastebasket.
+          schema:
+            type: string
+            enum: [agents]
       responses:
         "200":
           description: Messages
@@ -354,6 +375,92 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+
+  /api/events:
+    get:
+      operationId: streamEvents
+      summary: Server-Sent Events announcing changes
+      description: |
+        A long-lived `text/event-stream` (docs/events.md). Each event names
+        what changed; the UI reads that resource again through the REST API,
+        which stays the source of truth. A few events carry data for the
+        office animations (`agent.status`, `message.sent`).
+
+        There is no replay: the first event of every connection is `hello`,
+        after which the client reloads everything. A comment line (`: ping`)
+        is sent every 15 seconds so that idle proxies keep the connection.
+
+        Event types and their `data` (JSON):
+        - `hello`: `{}`
+        - `agent.status`: AgentStatusEvent
+        - `message.sent`: Message
+        - `message.delivered`: MessagesDeliveredEvent
+        - `approvals.changed`: `{}`
+        - `tickets.changed`: ChangedEvent (ticket ID)
+        - `features.changed`: ChangedEvent (feature ID)
+        - `org.changed`: `{}` (an agent was recruited, edited, put on leave, brought back or dismissed)
+        - `catalog.changed`: `{}`
+      responses:
+        "200":
+          description: The event stream, until the client or the daemon closes it
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/settings:
+    get:
+      operationId: getSettings
+      summary: How this daemon runs, and the user's settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    put:
+      operationId: updateSettings
+      summary: Change the user's settings (~/.nobody/settings.yaml)
+      description: |
+        Only `config_protection` can be changed; it applies to the next
+        deliveries at once. The other values are launch options of the daemon.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsUpdate"
+      responses:
+        "200":
+          description: Settings after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        "400":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+
+  /api/mcp:
+    get:
+      operationId: listMCPServers
+      summary: MCP servers declared in the project's .nobody/mcp.yaml
+      description: |
+        Read-only. Secrets are never returned: only the names of the
+        environment variables a server refers to (`${NAME}`), and whether the
+        daemon's environment sets them. The office server `nobody` is not
+        listed: every agent gets it.
+      responses:
+        "200":
+          description: Servers, by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
 
   /api/features:
     get:
@@ -890,6 +997,102 @@ components:
         delivered_at:
           type: string
           format: date-time
+
+    AgentStatusEvent:
+      type: object
+      required: [address, status]
+      properties:
+        address:
+          type: string
+        status:
+          type: string
+          enum: [stopped, starting, working, idle, exited, awaiting_approval]
+
+    MessagesDeliveredEvent:
+      type: object
+      required: [recipient, ids]
+      properties:
+        recipient:
+          type: string
+        ids:
+          type: array
+          items:
+            type: string
+
+    ChangedEvent:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+
+    Settings:
+      type: object
+      required: [project_dir, project_id, state_dir, address, origins, claude_path, start_agents, config_protection]
+      properties:
+        project_dir:
+          type: string
+          description: The project, the directory holding .nobody/.
+        project_id:
+          type: string
+        state_dir:
+          type: string
+          description: This project's data on this machine (database, worktrees); never committed.
+        address:
+          type: string
+          description: Where the daemon listens (NOBODY_ADDR).
+        origins:
+          type: array
+          items:
+            type: string
+          description: Browser origins allowed to change things through the API (-origins).
+        claude_path:
+          type: string
+        start_agents:
+          type: boolean
+          description: Whether every agent starts with the daemon (-start).
+        config_protection:
+          type: string
+          enum: [block, warn]
+          description: What happens when a delivery changes the project's .nobody/.
+
+    SettingsUpdate:
+      type: object
+      required: [config_protection]
+      additionalProperties: false
+      properties:
+        config_protection:
+          type: string
+          enum: [block, warn]
+
+    MCPServer:
+      type: object
+      required: [name, type, target, env, used_by]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          description: stdio, http or sse.
+        target:
+          type: string
+          description: The command and its arguments (stdio), or the URL.
+        env:
+          type: array
+          description: Environment variables the server refers to as ${NAME}.
+          items:
+            type: object
+            required: [name, set]
+            properties:
+              name:
+                type: string
+              set:
+                type: boolean
+        used_by:
+          type: array
+          description: Addresses of the agents given this server.
+          items:
+            type: string
 
     HumanDraft:
       type: object
