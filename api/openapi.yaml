@@ -132,7 +132,8 @@ paths:
       description: |
         The agent stops once idle; its file and session are kept. Its ticket in
         progress goes back to its team's queue, team addressing skips it, and
-        mail sent to it waits until it returns.
+        mail sent to it waits until it returns. The director cannot go on
+        leave: it is always present (409).
       parameters:
         - $ref: "#/components/parameters/Address"
         - $ref: "#/components/parameters/Now"
@@ -142,6 +143,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
 
   /api/agents/{address}/return:

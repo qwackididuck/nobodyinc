@@ -359,6 +359,10 @@ func TestTheDirectorIsAlwaysPresent(t *testing.T) {
 		t.Fatalf("dismissing the director: err = %v, want ErrRefused", err)
 	}
 
+	if err := s.Leave(context.Background(), "god", runtime.ApplyOptions{}); !errors.Is(err, ErrRefused) {
+		t.Fatalf("putting the director on leave: err = %v, want ErrRefused", err)
+	}
+
 	if _, err := s.Edit(context.Background(), "god", catalog.Definition{Role: "Director", Model: "opus"}, runtime.ApplyOptions{}); err != nil {
 		t.Fatalf("editing the director: %v", err)
 	}

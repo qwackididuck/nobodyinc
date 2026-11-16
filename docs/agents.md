@@ -188,7 +188,7 @@ All of these go through the daemon's API (`api/openapi.yaml`, `internal/staffing
 | Recruit / create | `POST /api/teams/{team}/agents` with `{"name", "template"}` or `{"name", "definition"}` |
 | Read / edit | `GET` / `PUT /api/agents/{address}/definition` (`?fresh=true` for a new session, `?now=true` not to wait for the end of the turn) |
 | Leave / return | `POST /api/agents/{address}/leave`, `POST /api/agents/{address}/return` |
-| Dismiss | `DELETE /api/agents/{address}` (refused for the director) |
+| Dismiss | `DELETE /api/agents/{address}` (refused for the director, as is leave) |
 
 The control room's **Recruitment** tab drives these endpoints: the catalog (recruit a template into a team, customize it as your own template, delete your own), the staff (chat, edit, leave, return, dismiss), and creating an agent from scratch. Recruits walk into the office through its door, and dismissed agents walk out. `GET /api/teams` lists the teams, including those without agents yet.
 

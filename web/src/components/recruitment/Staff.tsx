@@ -17,7 +17,8 @@ interface Props {
 
 // Staff lists everyone in the office, team by team, with what can be done
 // to them: open their chat, edit their file, put them on leave or bring them
-// back, dismiss them. A dismissed agent walks out of the office.
+// back, dismiss them. A dismissed agent walks out of the office. The director
+// can only be edited.
 export function Staff({ onOpenChat, onEdit }: Props) {
   const { agents, teams } = useLive();
   const [now, setNow] = useState(false);
@@ -54,6 +55,8 @@ function Member({ agent: a, now, onOpenChat, onEdit }: { agent: Agent; now: bool
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const when = now ? "now" : "once its turn is over";
+  // The director is always present: it can be edited, never sent away.
+  const director = isDirector(a);
 
   async function act(action: () => Promise<unknown>, done: string) {
     setBusy(true);
@@ -99,13 +102,17 @@ function Member({ agent: a, now, onOpenChat, onEdit }: { agent: Agent; now: bool
             Return
           </button>
         ) : (
-          <button type="button" className={ui.btn} disabled={busy} onClick={() => void act(() => putOnLeave(a.address, { now }), `${a.name} goes on leave ${when}.`)}>
-            Leave
+          !director && (
+            <button type="button" className={ui.btn} disabled={busy} onClick={() => void act(() => putOnLeave(a.address, { now }), `${a.name} goes on leave ${when}.`)}>
+              Leave
+            </button>
+          )
+        )}
+        {!director && (
+          <button type="button" className={ui.btnDanger} disabled={busy} onClick={() => setConfirming(true)}>
+            Dismiss
           </button>
         )}
-        <button type="button" className={ui.btnDanger} disabled={busy} onClick={() => setConfirming(true)}>
-          Dismiss
-        </button>
       </div>
       {confirming && (
         <div className={styles.confirm}>

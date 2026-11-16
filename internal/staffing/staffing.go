@@ -143,7 +143,7 @@ func (s *Service) Dismiss(ctx context.Context, address string, opts runtime.Appl
 
 	o := s.Org.Current()
 	if o.IsGod(address) {
-		return fmt.Errorf("%w: the director is always present: edit it, or put it on leave, instead", ErrRefused)
+		return fmt.Errorf("%w: the director is always present: edit it instead", ErrRefused)
 	}
 
 	if err := org.RemoveAgent(o.ProjectDir, m.Team.ID, m.Agent.Name); err != nil {
@@ -164,6 +164,11 @@ func (s *Service) setLeave(ctx context.Context, address string, onLeave bool, op
 
 	if m.Agent.OnLeave == onLeave {
 		return nil
+	}
+
+	// A director put on leave by hand (in its file) can still come back.
+	if onLeave && s.Org.Current().IsGod(address) {
+		return fmt.Errorf("%w: the director is always present: edit it instead", ErrRefused)
 	}
 
 	a := m.Agent
