@@ -55,6 +55,9 @@ type Ticket struct {
 	CreatedBy          string    `json:"created_by"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
+	// Archived: the ticket of a finished feature, kept for the record and no
+	// longer worked on (ADR-0007).
+	Archived bool `json:"archived,omitempty"`
 }
 
 // Deliverable is something produced for a ticket.

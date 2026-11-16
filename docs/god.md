@@ -5,13 +5,13 @@ The director talks with you, turns your requests into features and tickets, and 
 ## Setting it up
 
 - A new project gets one from `nobodyd init` (recruited from the built-in `god` template).
-- An existing project: Recruitment tab, template `god`, team "the director (no team)" (or `POST /api/director` with `{"name": "god", "template": "god"}`).
+- An existing project: "+ director" at the top of the chat's avatar rail, or the Recruitment tab with team "Director (no team)" (or `POST /api/director` with `{"name": "god", "template": "god"}`).
 
-Its file is `.nobody/director/<name>.md`, and its address is that name: name the file `boss.md` and everyone writes to `boss`. There is at most one. Edit it like any agent (Recruitment tab, select it in the team list); its template uses Sonnet and the `default` permission profile.
+Its file is `.nobody/director/<name>.md`, and its address is that name: name the file `boss.md` and everyone writes to `boss`. There is at most one. Edit it like any agent (Recruitment tab, Staff); its template uses Sonnet and the `default` permission profile.
 
 ## Working with it
 
-The control room has a tab named after the director: your conversation with it, and a box to write to it. While its latest question waits for an answer, what you write answers it.
+The director's chat comes first in the control room's avatar rail: your conversation with it, and a box to write to it. Its urgent questions show as cards you answer in place, and its proposals as cards with **Start** and **Refuse**.
 
 A typical request goes like this:
 
@@ -27,7 +27,7 @@ you ──── request ──────────────────�
 ```
 
 1. **The need.** It clarifies your request until the need and its acceptance criteria are clear and testable, reading the project and the documentation MCP servers it was given (add them to its definition, e.g. `mcp: [ragflow, gitlab]`, once declared in `.nobody/mcp.yaml`).
-2. **The proposal.** It proposes a feature with `feature_propose`. Nothing happens yet: the proposal shows in its tab and in the Feature panel, with **Start** and **Refuse**.
+2. **The proposal.** It proposes a feature with `feature_propose`. Nothing happens yet: the proposal shows in its chat, with **Start** and **Refuse**, and in the banner above the office.
    - **Start** creates the feature branch and the teams' worktrees, makes it the active feature, restarts the team agents there (not the director, which keeps the conversation), and answers `agree` to the director.
    - **Refuse** answers `refuse` with your reason; it can work on it with you and propose again.
 3. **The work.** It splits the feature into tickets for the teams (dependencies, acceptance criteria, assignee when obvious), follows them with `org_overview`, unblocks and arbitrates, and brings you the decisions that are yours.
@@ -65,4 +65,4 @@ Changes to agents are written by the daemon (`internal/staffing`), as when you m
 | `internal/officemcp/director.go` | Its office tools, exposed at its address only. |
 | `internal/daemon/director.go`, `proposals.go` | The tools' backing (staffing, overview); proposals and decisions as messages. |
 | `internal/catalog/builtin/god.md` | Its template. |
-| `web/src/components/GodView.tsx`, `ProposalCard.tsx` | Its tab; proposals with Start / Refuse. |
+| `web/src/components/chat/` (`cards.tsx`, `HireDirector.tsx`) | Its chat; proposals with Start / Refuse; recruiting it when the project has none. |

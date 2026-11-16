@@ -77,3 +77,28 @@ func TestOnIdle(t *testing.T) {
 		t.Fatalf("OnIdle calls = %v", idle)
 	}
 }
+
+func TestOnChangeOnlyForRealChanges(t *testing.T) {
+	t.Parallel()
+
+	s := NewStatuses()
+
+	var changes []Status
+
+	s.OnChange = func(_ string, st Status) { changes = append(changes, st) }
+
+	for _, st := range []Status{StatusStopped, StatusStarting, StatusWorking, StatusWorking, StatusIdle, StatusIdle} {
+		s.Set("dev1@dev", st)
+	}
+
+	want := []Status{StatusStarting, StatusWorking, StatusIdle}
+	if len(changes) != len(want) {
+		t.Fatalf("changes = %v, want %v (an unknown agent is stopped; repeats are not changes)", changes, want)
+	}
+
+	for i := range want {
+		if changes[i] != want[i] {
+			t.Fatalf("changes = %v, want %v", changes, want)
+		}
+	}
+}

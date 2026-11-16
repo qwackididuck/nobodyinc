@@ -14,8 +14,9 @@
 //   - when it closes the ticket, its team's branch is merged into the feature
 //     branch (Deliver), so the next team gets it.
 //
-// Nobody Inc never touches any other branch: merging the feature branch where
-// they want is the user's decision. All git work goes through the git CLI.
+// Nobody Inc touches no other branch, with one exception the human asks for:
+// finishing a feature merges its branch into its base branch, locally, and
+// never pushes (finish.go, ADR-0007). All git work goes through the git CLI.
 package workspace
 
 import (

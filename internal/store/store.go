@@ -25,6 +25,9 @@ var ErrNotFound = errors.New("not found")
 // Store is the SQLite-backed state of the daemon.
 type Store struct {
 	db *sql.DB
+	// OnDelivered, when set, is called after messages are marked delivered,
+	// with the IDs of those that were not delivered yet.
+	OnDelivered func(recipient string, ids []string)
 }
 
 // Open opens (or creates) the database at path and brings its schema up to date.
@@ -136,6 +139,62 @@ func (s *Store) RecentMessages(ctx context.Context, limit int) ([]messaging.Mess
 	return s.queryMessages(ctx, `SELECT `+messageColumns+` FROM (`+latest+`) ORDER BY sent_at, id`, limit)
 }
 
+// ConversationMessages returns the latest messages exchanged between a and
+// b, in both directions, oldest first.
+func (s *Store) ConversationMessages(ctx context.Context, a, b string, limit int) ([]messaging.Message, error) {
+	latest := selectMessages + `
+		WHERE (sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)
+		ORDER BY sent_at DESC, id DESC LIMIT ?`
+
+	return s.queryMessages(ctx, `SELECT `+messageColumns+` FROM (`+latest+`) ORDER BY sent_at, id`, a, b, b, a, limit)
+}
+
+// DeliveredMessagesAmong returns the latest delivered messages whose sender
+// and recipient are both outside excluded (e.g. the human and the system
+// address: what agents said to each other), oldest first.
+func (s *Store) DeliveredMessagesAmong(ctx context.Context, excluded []string, limit int) ([]messaging.Message, error) {
+	in, args := inClause(excluded)
+	latest := selectMessages + `
+		WHERE delivered_at IS NOT NULL AND sender NOT IN ` + in + ` AND recipient NOT IN ` + in + `
+		ORDER BY sent_at DESC, id DESC LIMIT ?`
+
+	args = append(append(args, args...), limit)
+
+	return s.queryMessages(ctx, `SELECT `+messageColumns+` FROM (`+latest+`) ORDER BY sent_at, id`, args...)
+}
+
+// DeleteFinishedConversations deletes for good the conversations exchanged
+// only among addresses outside excluded (what agents said to each other)
+// that are finished: every message is delivered and the last one has none of
+// the openActs (it expects no answer). It returns the IDs of the deleted
+// messages.
+func (s *Store) DeleteFinishedConversations(ctx context.Context, excluded []string, openActs []messaging.Act) ([]string, error) {
+	outside, outsideArgs := inClause(excluded)
+
+	acts := make([]string, len(openActs))
+	for i, a := range openActs {
+		acts[i] = string(a)
+	}
+
+	open, openArgs := inClause(acts)
+
+	// The last message of a conversation: the latest sent (ties: highest ID).
+	finished := `SELECT m.conversation FROM messages m GROUP BY m.conversation
+		HAVING SUM(m.delivered_at IS NULL) = 0
+		AND SUM(m.sender IN ` + outside + ` OR m.recipient IN ` + outside + `) = 0
+		AND (SELECT l.act FROM messages l WHERE l.conversation = m.conversation
+			ORDER BY l.sent_at DESC, l.id DESC LIMIT 1) NOT IN ` + open
+
+	args := append(append(append([]any{}, outsideArgs...), outsideArgs...), openArgs...)
+
+	ids, err := s.queryIDs(ctx, `DELETE FROM messages WHERE conversation IN (`+finished+`) RETURNING id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("delete finished conversations: %w", err)
+	}
+
+	return ids, nil
+}
+
 // MarkDelivered records that messages have been handed to their recipient.
 // IDs addressed to someone else are ignored, and already delivered messages
 // keep their original delivery time.
@@ -147,13 +206,17 @@ func (s *Store) MarkDelivered(ctx context.Context, recipient string, ids []strin
 	const update = "UPDATE messages SET delivered_at = ? WHERE recipient = ? AND delivered_at IS NULL AND id IN "
 
 	in, idArgs := inClause(ids)
-	query := update + in //nolint:gosec // in holds only placeholders
+	query := update + in + " RETURNING id"
 
 	args := append([]any{formatTime(at), recipient}, idArgs...)
 
-	_, err := s.db.ExecContext(ctx, query, args...)
+	delivered, err := s.queryIDs(ctx, query, args...)
 	if err != nil {
 		return fmt.Errorf("mark messages delivered: %w", err)
+	}
+
+	if len(delivered) > 0 && s.OnDelivered != nil {
+		s.OnDelivered(recipient, delivered)
 	}
 
 	return nil
@@ -260,4 +323,26 @@ func parseTime(s string) (time.Time, error) {
 	}
 
 	return t, nil
+}
+
+// queryIDs runs a query returning one string column.
+func (s *Store) queryIDs(ctx context.Context, query string, args ...any) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+
+		ids = append(ids, id)
+	}
+
+	return ids, rows.Err()
 }

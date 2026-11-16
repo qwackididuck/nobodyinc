@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Night Shift Office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Variant A, "Night shift": a dark, quiet floor plan seen from above.
+   Rooms are outlined like a drawing, agents sit at desks with a status ring,
+   messages fly as small envelopes along a fading arc. */
+:root {
+  color-scheme: dark;
+  --bg: #0e1320;
+  --panel: #121a2b;
+  --panel-2: #172036;
+  --line: #253150;
+  --text: #e7eaf3;
+  --muted: #8f99b5;
+  --accent: #8aa4ff;
+  --accent-ink: #0b1230;
+  --ok: #3ad6b2;
+  --warn: #f2b544;
+  --danger: #ff6b6b;
+  --idle: #56627f;
+  --off: #343d58;
+  --bubble-in: #1f2944;
+  --bubble-out: #8aa4ff;
+  --bubble-out-text: #0b1230;
+  --term-bg: #090d17;
+  --term-fg: #cfd6ea;
+  --radius: 10px;
+  --font-ui: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --av-0: #e3a13b; --av-1: #b77fe0; --av-2: #3eb3dc; --av-3: #e06c84;
+  --av-4: #5fc48c; --av-5: #8a90a8; --av-6: #e58a5a;
+  --floor-dot: #1b2440;
+  --wall: #34426a;
+}
+
+.office-wrap {
+  background-color: var(--bg);
+  background-image: radial-gradient(var(--floor-dot) 1px, transparent 1.2px);
+  background-size: 18px 18px;
+}
+#office {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(230px, 1fr));
+  grid-template-areas: "dir dir dir" "specs dev review";
+  gap: 22px;
+  padding: 24px;
+  min-width: 760px;
+}
+.room {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px 14px 26px;
+  border: 2px solid var(--wall);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+.room-dir { grid-area: dir; grid-template-columns: auto 1fr; align-items: center; column-gap: 24px; }
+.room-head { display: flex; align-items: baseline; gap: 8px; }
+.room-dir .room-head { grid-column: 1 / -1; }
+.room-name { font: 600 12px/1 var(--font-display); letter-spacing: .14em; text-transform: uppercase; color: var(--text); }
+.room-goal { font-size: 12px; color: var(--muted); }
+.room-queue { margin-left: auto; font: 600 11px var(--font-mono); color: var(--muted); }
+/* A gap in the bottom wall is the door; newcomers walk in through it. */
+.door { position: absolute; bottom: -2px; left: 50%; width: 46px; height: 2px; transform: translateX(-50%); background: var(--bg); }
+.door::before, .door::after { content: ""; position: absolute; top: -5px; width: 2px; height: 7px; background: var(--wall); }
+.door::before { left: 0; } .door::after { right: 0; }
+
+.desk {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  text-align: left;
+  transition: border-color .2s, transform .2s;
+}
+.desk:hover { border-color: var(--muted); }
+.desk[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.desk[data-status="stopped"] { opacity: .55; border-style: dashed; }
+.desk-empty { place-items: center; grid-template-columns: 1fr; min-height: 66px; border-style: dashed; color: var(--muted); font-size: 12px; background: none; }
+.desk-info { display: grid; min-width: 0; }
+.desk-info strong { font: 600 14px var(--font-display); }
+.desk-role { font-size: 11px; color: var(--muted); }
+.desk-task { margin-top: 3px; font: 12px var(--font-mono); color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.desk[data-status="awaiting_approval"] .desk-task { color: var(--warn); }
+
+.token { position: relative; display: grid; place-items: center; width: 52px; height: 52px; }
+.ring { position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--idle); }
+[data-status="working"] .ring {
+  border: 0;
+  background: conic-gradient(var(--ok) 0 70%, transparent 70%);
+  -webkit-mask: radial-gradient(circle, transparent 23px, #000 24px);
+          mask: radial-gradient(circle, transparent 23px, #000 24px);
+  animation: spin 2.4s linear infinite;
+}
+[data-status="awaiting_approval"] .ring { border-color: var(--warn); animation: glow 1.4s ease-in-out infinite; }
+[data-status="stopped"] .ring { border-style: dashed; border-color: var(--off); }
+@keyframes spin { to { transform: rotate(1turn); } }
+@keyframes glow { 50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--warn) 25%, transparent); } }
+.typing { position: absolute; right: 10px; top: 10px; display: flex; gap: 3px; }
+.typing i { width: 4px; height: 4px; border-radius: 50%; background: var(--ok); animation: blink 1.2s infinite; }
+.typing i:nth-child(2) { animation-delay: .2s; } .typing i:nth-child(3) { animation-delay: .4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .2; } 40% { opacity: 1; } }
+.flag { position: absolute; right: 10px; top: 8px; font: 700 10px var(--font-mono); color: var(--warn); letter-spacing: .06em; }
+
+.dir-notes { display: grid; gap: 6px; font-size: 12px; color: var(--muted); }
+.dir-notes b { color: var(--text); font-weight: 600; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 24px 24px; font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 50%; }
+
+/* Flights */
+.flights { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.flight-path { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 4 6; opacity: .7; }
+.flight-env { fill: var(--accent); }
+.flight-label {
+  position: absolute; pointer-events: none; transform: translate(-50%, -140%);
+  padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+  font: 600 11px var(--font-mono); color: var(--accent-ink); background: var(--accent);
+  animation: label 2.2s ease forwards;
+}
+@keyframes label { 0% { opacity: 0; } 15%, 75% { opacity: 1; } 100% { opacity: 0; } }
+.got { animation: got .5s ease; }
+@keyframes got { 40% { transform: scale(1.04); border-color: var(--accent); } }
+
+.toast {
+  position: absolute; right: 20px; bottom: 20px; z-index: 3;
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-radius: var(--radius); background: var(--panel); border: 1px solid var(--ok);
+  font-size: 13px; animation: toast 4s ease forwards;
+}
+@keyframes toast { 0% { opacity: 0; transform: translateY(10px); } 10%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="9" r="5" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="3 2.4"/><path d="M4 24c1-5 5-8 9-8s8 3 9 8" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="3 2.4"/></svg>
+      Nobody Inc
+    </div>
+    <span class="project">Project <code>nobody-sandbox</code></span>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" type="button" data-tab="office" aria-selected="true">Office</button>
+      <button class="tab" role="tab" type="button" data-tab="kanban" aria-selected="false">Kanban</button>
+      <button class="tab" role="tab" type="button" data-tab="recruitment" aria-selected="false">Recruitment</button>
+      <button class="tab" role="tab" type="button" data-tab="settings" aria-selected="false">Settings</button>
+    </nav>
+    <span class="daemon">Daemon 127.0.0.1:7420</span>
+  </header>
+  <nav id="rail" aria-label="Agents"></nav>
+  <aside id="thread" aria-label="Conversation"></aside>
+  <main class="main">
+    <section data-panel="office">
+      <div id="banner"></div>
+      <div class="office-wrap">
+        <div id="office"></div>
+        <div class="legend">
+          <span><i style="background:var(--ok)"></i>Working</span>
+          <span><i style="background:var(--idle)"></i>Idle</span>
+          <span><i style="background:var(--warn)"></i>Needs approval</span>
+          <span><i style="border:1px dashed var(--muted)"></i>On leave</span>
+        </div>
+      </div>
+    </section>
+    <section data-panel="kanban" hidden><div class="placeholder"><strong>Kanban</strong><span>Designed once the direction is chosen.</span></div></section>
+    <section data-panel="recruitment" hidden><div class="placeholder"><strong>Recruitment</strong><span>Designed once the direction is chosen.</span></div></section>
+    <section data-panel="settings" hidden><div class="placeholder"><strong>Settings</strong><span>Project and daemon, MCP registry, appearance.</span></div></section>
+  </main>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(function () {
+  "use strict";
+  const office = document.getElementById("office");
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function deskFor(a) {
+    const desk = document.createElement("button");
+    desk.type = "button";
+    desk.className = "desk";
+    desk.dataset.agent = a.id;
+    desk.dataset.status = a.status;
+    desk.setAttribute("aria-pressed", "false");
+    desk.setAttribute("aria-label", a.name + ", " + a.role + ", " + Mock.STATUS_LABEL[a.status]);
+    desk.innerHTML =
+      '<span class="token"><span class="ring"></span><span class="avatar" style="--av:var(--av-' + Mock.avatarIndex(a.id) + ')">' + a.name[0].toUpperCase() + "</span></span>" +
+      '<span class="desk-info"><strong>' + a.name + '</strong><span class="desk-role">' + a.role + '</span><span class="desk-task">' + a.ticket + "</span></span>" +
+      (a.status === "working" ? '<span class="typing" aria-hidden="true"><i></i><i></i><i></i></span>' : "") +
+      (a.status === "awaiting_approval" ? '<span class="flag">APPROVAL</span>' : "");
+    desk.addEventListener("click", () => Mock.select(a.id));
+    return desk;
+  }
+
+  function room(area, name, goal, queue) {
+    const r = document.createElement("div");
+    r.className = "room room-" + area;
+    r.style.gridArea = area;
+    r.dataset.room = area;
+    r.innerHTML = '<div class="room-head"><span class="room-name">' + name + '</span><span class="room-goal">' + goal + "</span>" +
+      (queue != null ? '<span class="room-queue">queue ' + queue + "</span>" : "") + '</div><span class="door"></span>';
+    office.append(r);
+    return r;
+  }
+
+  const dir = room("dir", "Director’s office", "Plans features and leads the teams");
+  dir.append(deskFor(Mock.agent("god")));
+  const notes = document.createElement("div");
+  notes.className = "dir-notes";
+  notes.innerHTML = "<span><b>1</b> proposal waiting for you</span><span><b>7</b> tickets in the active feature, <b>3</b> done</span>";
+  dir.append(notes);
+
+  const queues = { specs: 0, dev: 2, review: 1 };
+  Mock.TEAMS.forEach((t) => {
+    const r = room(t.id, t.name, t.goal, queues[t.id]);
+    Mock.AGENTS.filter((a) => a.team === t.id).forEach((a) => r.append(deskFor(a)));
+    if (t.id === "review") {
+      const free = document.createElement("div");
+      free.className = "desk desk-empty";
+      free.dataset.free = "review";
+      free.textContent = "Free desk";
+      r.append(free);
+    }
+  });
+
+  const flights = document.createElementNS(SVGNS, "svg");
+  flights.classList.add("flights");
+  office.append(flights);
+
+  function center(node) {
+    const o = office.getBoundingClientRect();
+    const r = (node.querySelector(".token") || node).getBoundingClientRect();
+    return { x: r.left - o.left + r.width / 2, y: r.top - o.top + r.height / 2 };
+  }
+
+  document.addEventListener("mock:select", (e) => {
+    office.querySelectorAll(".desk[data-agent]").forEach((d) => d.setAttribute("aria-pressed", String(d.dataset.agent === e.detail.id)));
+  });
+
+  // A message: dashed arc from sender to recipient, an envelope travels on it.
+  document.addEventListener("mock:message", (e) => {
+    const { from, to, label } = e.detail;
+    const a = office.querySelector('[data-agent="' + from + '"]');
+    const b = office.querySelector('[data-agent="' + to + '"]');
+    if (!a || !b) return;
+    const p = center(a), q = center(b);
+    const lift = Math.min(140, Math.hypot(q.x - p.x, q.y - p.y) * 0.35);
+    const cx = (p.x + q.x) / 2, cy = Math.min(p.y, q.y) - lift;
+    flights.setAttribute("viewBox", "0 0 " + office.scrollWidth + " " + office.scrollHeight);
+    flights.setAttribute("width", office.scrollWidth);
+    flights.setAttribute("height", office.scrollHeight);
+
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("d", "M" + p.x + " " + p.y + " Q" + cx + " " + cy + " " + q.x + " " + q.y);
+    path.classList.add("flight-path");
+    const env = document.createElementNS(SVGNS, "g");
+    env.innerHTML = '<rect x="-8" y="-6" width="16" height="12" rx="2" class="flight-env"/><path d="M-8 -6 L0 1 L8 -6" fill="none" stroke="var(--accent-ink)" stroke-width="1.5"/>';
+    flights.append(path, env);
+
+    const tag = document.createElement("span");
+    tag.className = "flight-label";
+    tag.textContent = from + " → " + to + " · " + label;
+    const mid = path.getPointAtLength(path.getTotalLength() / 2);
+    tag.style.left = mid.x + "px";
+    tag.style.top = mid.y + "px";
+    office.append(tag);
+
+    const total = path.getTotalLength();
+    const duration = reduced ? 1 : 1400;
+    const start = performance.now();
+    function step(now) {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+      const pt = path.getPointAtLength(total * eased);
+      env.setAttribute("transform", "translate(" + pt.x + " " + pt.y + ")");
+      if (t < 1) return requestAnimationFrame(step);
+      b.classList.remove("got"); void b.offsetWidth; b.classList.add("got");
+      env.remove();
+      path.animate([{ opacity: .7 }, { opacity: 0 }], { duration: 700 }).onfinish = () => path.remove();
+      setTimeout(() => tag.remove(), 900);
+    }
+    requestAnimationFrame(step);
+  });
+
+  // A newcomer walks in through the review room's door and takes the free desk.
+  document.addEventListener("mock:arrive", (e) => {
+    const a = Mock.agent(e.detail.id);
+    const free = office.querySelector('[data-free="' + a.team + '"]');
+    const roomEl = office.querySelector('[data-room="' + a.team + '"]');
+    if (!free || !roomEl) return;
+    const desk = deskFor(a);
+    free.replaceWith(desk);
+    const door = roomEl.querySelector(".door").getBoundingClientRect();
+    const tok = desk.querySelector(".token").getBoundingClientRect();
+    const dx = door.left + door.width / 2 - (tok.left + tok.width / 2);
+    const dy = door.top + 30 - (tok.top + tok.height / 2);
+    desk.querySelector(".token").animate(
+      [{ transform: "translate(" + dx + "px," + dy + "px) scale(.6)", opacity: 0 },
+       { transform: "translate(" + dx + "px," + (dy - 24) + "px) scale(.8)", opacity: 1, offset: .25 },
+       { transform: "translate(0,0) scale(1)" }],
+      { duration: reduced ? 1 : 1600, easing: "cubic-bezier(.3,.8,.3,1)" });
+    desk.querySelector(".desk-info").animate([{ opacity: 0 }, { opacity: 0, offset: .7 }, { opacity: 1 }], { duration: reduced ? 1 : 1800 });
+
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.innerHTML = '<span class="avatar" style="--av:var(--av-6);width:28px;height:28px;font-size:13px">E</span><span><strong>erin</strong> joined Review</span>';
+    document.querySelector(".office-wrap").append(toast);
+    setTimeout(() => toast.remove(), 4200);
+  });
+})();
+</script>
+</body>
+</html>

@@ -14,13 +14,14 @@ import (
 // Errors returned by the service. Like the messaging errors, they are shown
 // to agents, so they say what to do instead.
 var (
-	ErrNotFound  = errors.New("ticket not found")
-	ErrInvalid   = errors.New("invalid ticket request")
-	ErrForbidden = errors.New("not allowed")
-	ErrBlocked   = errors.New("this ticket depends on tickets that are not done yet")
-	ErrConflict  = errors.New("this ticket cannot change that way")
-	ErrNoTicket  = errors.New("no ticket is available in your team's queue")
-	ErrBusy      = errors.New("one ticket at a time: finish or release the ticket you are working on first")
+	ErrNotFound   = errors.New("ticket not found")
+	ErrInvalid    = errors.New("invalid ticket request")
+	ErrForbidden  = errors.New("not allowed")
+	ErrBlocked    = errors.New("this ticket depends on tickets that are not done yet")
+	ErrConflict   = errors.New("this ticket cannot change that way")
+	ErrNoTicket   = errors.New("no ticket is available in your team's queue")
+	ErrBusy       = errors.New("one ticket at a time: finish or release the ticket you are working on first")
+	ErrUnfinished = errors.New("some tickets of this feature are not done or canceled")
 )
 
 // Store keeps tickets and features (implemented by internal/store).
@@ -39,6 +40,10 @@ type TicketStore interface {
 	ListDeliverables(ctx context.Context, ticket string) ([]Deliverable, error)
 	InsertComment(ctx context.Context, c Comment) (Comment, error)
 	ListComments(ctx context.Context, ticket string) ([]Comment, error)
+	// ArchiveFeatureTickets archives a feature's tickets, returning their IDs.
+	ArchiveFeatureTickets(ctx context.Context, feature string) ([]string, error)
+	// DeleteTickets deletes tickets for good, with what belongs to them.
+	DeleteTickets(ctx context.Context, ids []string) error
 }
 
 // FeatureStore keeps features.
@@ -51,13 +56,17 @@ type FeatureStore interface {
 	UpdateFeature(ctx context.Context, f Feature) error
 	// ActivateFeature makes one feature the active one (the others are not).
 	ActivateFeature(ctx context.Context, id string) error
+	// DeactivateFeature leaves no feature active if id is the active one.
+	DeactivateFeature(ctx context.Context, id string) error
 }
 
-// Filter narrows ListTickets; empty fields match everything.
+// Filter narrows ListTickets; empty fields match everything. Archived
+// tickets are left out, unless Archived is set, which lists only them.
 type Filter struct {
 	Team     string
 	Assignee string
 	Status   Status
+	Archived bool
 }
 
 // Event is something that happened to a ticket, for notifications.
@@ -105,7 +114,13 @@ type Service struct {
 	// OnFeatureDecided, when set, is called once the human started or refused
 	// a proposed feature, e.g. to answer the director.
 	OnFeatureDecided func(Feature)
-	Now              func() time.Time
+	// OnFeatureFinished, when set, is called once a feature is merged and no
+	// longer active, e.g. to bring the agents back to the project.
+	OnFeatureFinished func(Feature)
+	// OnTicketDeleted, when set, is called for each deleted ticket an agent
+	// was working on, e.g. to tell it to stop.
+	OnTicketDeleted func(Ticket)
+	Now             func() time.Time
 }
 
 // Create files a new ticket in a team's queue, or assigns it directly.

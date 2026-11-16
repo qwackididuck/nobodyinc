@@ -31,6 +31,9 @@ type Statuses struct {
 	sessions map[string]string
 	// OnIdle, when set, is called when an agent becomes idle, outside the lock.
 	OnIdle func(address string)
+	// OnChange, when set, is called when an agent's status actually changes
+	// (not when the same status is recorded again), outside the lock.
+	OnChange func(address string, st Status)
 }
 
 // NewStatuses returns a registry where every agent is stopped.
@@ -53,8 +56,18 @@ func (s *Statuses) Get(address string) Status {
 // Set records the status of an agent.
 func (s *Statuses) Set(address string, st Status) {
 	s.mu.Lock()
+
+	previous, known := s.statuses[address]
+	if !known {
+		previous = StatusStopped
+	}
+
 	s.statuses[address] = st
 	s.mu.Unlock()
+
+	if previous != st && s.OnChange != nil {
+		s.OnChange(address, st)
+	}
 
 	if st == StatusIdle && s.OnIdle != nil {
 		s.OnIdle(address)

@@ -190,7 +190,7 @@ export async function decideApproval(id: string, allow: boolean, message = ""): 
 }
 
 // A request the organization works on, with its own git branch (see docs/workspaces.md).
-export type FeatureStatus = "proposed" | "started" | "refused";
+export type FeatureStatus = "proposed" | "started" | "refused" | "finished";
 
 export interface Feature {
   id: string;
@@ -207,6 +207,8 @@ export interface Feature {
   // The "propose" message the director's proposal sent to the human.
   proposal_message?: string;
   refusal_reason?: string;
+  // The merge commit on the base branch, once finished (ADR-0007).
+  merge_commit?: string;
   created_by: string;
   created_at: string;
 }
@@ -217,6 +219,27 @@ export function startProposedFeature(id: string): Promise<Feature> {
 
 export function refuseProposedFeature(id: string, reason: string): Promise<Feature> {
   return postJSON<Feature>(`/api/features/${encodeURIComponent(id)}/refuse`, { reason });
+}
+
+// What a started feature brings to its base branch (GET /api/features/{id}/review).
+export interface FeatureReview {
+  feature: Feature;
+  commits: { hash: string; author: string; date: string; subject: string }[];
+  // status: A added, M modified, D deleted, R renamed; added is -1 for a binary file.
+  files: { path: string; status: string; added: number; deleted: number }[];
+  diff: string;
+  diff_truncated: boolean;
+  unfinished_tickets: Ticket[];
+}
+
+export function reviewFeature(id: string): Promise<FeatureReview> {
+  return getJSON<FeatureReview>(`/api/features/${encodeURIComponent(id)}/review`);
+}
+
+// finishFeature merges the active feature into its base branch, locally, and
+// ends it; force finishes it although some tickets are not done.
+export function finishFeature(id: string, force: boolean): Promise<Feature> {
+  return postJSON<Feature>(`/api/features/${encodeURIComponent(id)}/finish`, { force });
 }
 
 export function listFeatures(): Promise<Feature[]> {
@@ -242,6 +265,8 @@ export interface Ticket {
   created_by: string;
   created_at: string;
   updated_at: string;
+  // The ticket of a finished feature, kept in the archives (read-only).
+  archived?: boolean;
 }
 
 export interface Deliverable {
@@ -279,6 +304,22 @@ export interface TicketDraft {
 
 export function listTickets(): Promise<Ticket[]> {
   return getJSON<Ticket[]>("/api/tickets");
+}
+
+// listArchivedTickets returns the tickets of finished features.
+export function listArchivedTickets(): Promise<Ticket[]> {
+  return getJSON<Ticket[]>("/api/tickets?archived=true");
+}
+
+// deleteTicket shreds a ticket for good; with cascade, the tickets that
+// depend on it (and theirs) go too, otherwise they stop waiting for it.
+// It returns the IDs of the deleted tickets.
+export async function deleteTicket(id: string, cascade: boolean): Promise<string[]> {
+  const res = await fetch(`/api/tickets/${encodeURIComponent(id)}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+  return ((await res.json()) as { ids: string[] }).ids;
 }
 
 export function getTicket(id: string): Promise<TicketDetails> {
@@ -322,6 +363,65 @@ export function listAgents(): Promise<Agent[]> {
 
 export function listMessages(limit = 200): Promise<Message[]> {
   return getJSON<Message[]>(`/api/messages?limit=${limit}`);
+}
+
+// listConversation returns the human's conversation with one address, both
+// directions, oldest first: the chat of that agent.
+export function listConversation(address: string, limit = 200): Promise<Message[]> {
+  return getJSON<Message[]>(`/api/messages?with=${encodeURIComponent(address)}&limit=${limit}`);
+}
+
+// listAgentExchanges returns the delivered messages between agents (the
+// director included), oldest first: the wastebasket of the control room.
+export function listAgentExchanges(limit = 200): Promise<Message[]> {
+  return getJSON<Message[]>(`/api/messages?scope=agents&limit=${limit}`);
+}
+
+// emptyWastebasket deletes for good the finished conversations between
+// agents (every message delivered, the last one expecting no answer); open
+// ones stay. It returns the IDs of the deleted messages.
+export async function emptyWastebasket(): Promise<string[]> {
+  const res = await fetch("/api/messages?scope=agents", { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+  return ((await res.json()) as { ids: string[] }).ids;
+}
+
+// --- Settings (GET/PUT /api/settings) and MCP servers (GET /api/mcp) ---
+
+export type ConfigProtection = "block" | "warn";
+
+export interface Settings {
+  project_dir: string;
+  project_id: string;
+  state_dir: string;
+  address: string;
+  origins: string[];
+  claude_path: string;
+  start_agents: boolean;
+  config_protection: ConfigProtection;
+}
+
+export function getSettings(): Promise<Settings> {
+  return getJSON<Settings>("/api/settings");
+}
+
+export function setConfigProtection(value: ConfigProtection): Promise<Settings> {
+  return sendJSON<Settings>("PUT", "/api/settings", { config_protection: value });
+}
+
+export interface MCPServer {
+  name: string;
+  type: string;
+  target: string;
+  // Environment variables the server refers to as ${NAME}; never their value.
+  env: { name: string; set: boolean }[];
+  used_by: string[];
+}
+
+export function listMCPServers(): Promise<MCPServer[]> {
+  return getJSON<MCPServer[]>("/api/mcp");
 }
 
 export async function sendMessage(draft: HumanDraft): Promise<Message> {

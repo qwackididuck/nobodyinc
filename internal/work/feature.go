@@ -27,21 +27,26 @@ type Feature struct {
 	Status     FeatureStatus `json:"status"`
 	// ProposalMessage is the "propose" message the director's proposal sent
 	// to the human; the decision answers it.
-	ProposalMessage string    `json:"proposal_message,omitempty"`
-	RefusalReason   string    `json:"refusal_reason,omitempty"`
-	CreatedBy       string    `json:"created_by"`
-	CreatedAt       time.Time `json:"created_at"`
+	ProposalMessage string `json:"proposal_message,omitempty"`
+	RefusalReason   string `json:"refusal_reason,omitempty"`
+	// MergeCommit is the merge commit on the base branch once finished (""
+	// when the feature brought nothing).
+	MergeCommit string    `json:"merge_commit,omitempty"`
+	CreatedBy   string    `json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // FeatureStatus is where a feature stands.
 type FeatureStatus string
 
 // Feature statuses: the director proposes, the human starts or refuses
-// (docs/god.md). A feature the human creates starts at once.
+// (docs/god.md). A feature the human creates starts at once. The human
+// finishes it by merging it into its base branch (finish.go).
 const (
 	FeatureProposed FeatureStatus = "proposed"
 	FeatureStarted  FeatureStatus = "started"
 	FeatureRefused  FeatureStatus = "refused"
+	FeatureFinished FeatureStatus = "finished"
 )
 
 // FeatureDraft is what the human provides to start a feature, or the
@@ -68,6 +73,11 @@ type Workspace interface {
 	// BeforeDone delivers the team's work to the feature branch and returns
 	// the commits it brought, as deliverables.
 	BeforeDone(ctx context.Context, f Feature, agent string) ([]Deliverable, error)
+	// ReviewFeature describes what the feature branch brings to its base.
+	ReviewFeature(ctx context.Context, f Feature) (Changes, error)
+	// FinishFeature merges the feature branch into its base branch and
+	// returns the merge commit ("" when there was nothing to merge).
+	FinishFeature(ctx context.Context, f Feature) (string, error)
 }
 
 // StartFeature creates a feature, prepares its branches and makes it the

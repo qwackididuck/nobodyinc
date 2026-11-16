@@ -48,6 +48,9 @@ type Service struct {
 	Org     *org.Live
 	Catalog *catalog.Catalog
 	Agents  Applier
+	// OnReload, when set, is called each time the organization is reloaded
+	// after a change, before the agents are brought in line with it.
+	OnReload func()
 
 	mu sync.Mutex // one change at a time: each one starts from the latest snapshot
 }
@@ -237,6 +240,10 @@ func (s *Service) reloadAndApply(ctx context.Context, address string, opts runti
 	after, err := s.Org.Reload()
 	if err != nil {
 		return fmt.Errorf("saved, but the organization cannot be reloaded (fix .nobody/ by hand): %w", err)
+	}
+
+	if s.OnReload != nil {
+		s.OnReload()
 	}
 
 	if err := s.Agents.Apply(ctx, address, opts); err != nil {

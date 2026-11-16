@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blueprint Office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="shared.css">
+<style>
+/* Variant B, "Blueprint": light, precise, the office drawn as an
+   architect's floor plan on squared paper. Rooms carry plan labels and
+   areas, doors swing, messages are drawn as dimension-like ink lines. */
+:root {
+  color-scheme: light;
+  --bg: #e9edf3;
+  --panel: #ffffff;
+  --panel-2: #f5f7fa;
+  --line: #d3dae5;
+  --text: #15233c;
+  --muted: #5c6880;
+  --accent: #2554e0;
+  --accent-ink: #ffffff;
+  --ok: #138f5f;
+  --ok-text: #0f7a51;
+  --warn: #d08400;
+  --danger: #d23f37;
+  --idle: #a3adbf;
+  --off: #c7cdd8;
+  --pill-ink: #ffffff;
+  --bubble-in: #ffffff;
+  --bubble-out: #2554e0;
+  --bubble-out-text: #ffffff;
+  --term-bg: #0f1a2e;
+  --term-fg: #d6def0;
+  --radius: 6px;
+  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --av-0: #c47b00; --av-1: #7a4fc9; --av-2: #1d8fbf; --av-3: #c8455f;
+  --av-4: #2f9a62; --av-5: #6b7488; --av-6: #d0612f;
+  --paper: #f8fafc;
+  --grid: #e1e7f0;
+  --grid-major: #cfd8e5;
+  --ink: #1b2b49;
+}
+.pill.s-idle, .pill.s-stopped { color: var(--text); }
+.rail-badge.b-approval { color: #fff; }
+
+.office-wrap {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+.plan-head { display: flex; align-items: center; gap: 12px; padding: 18px 28px 0; min-width: 780px; }
+.plan-title { font: 700 13px var(--font-display); letter-spacing: .16em; text-transform: uppercase; color: var(--ink); }
+.plan-meta { font: 11px var(--font-mono); color: var(--muted); }
+.dim { flex: 1; display: flex; align-items: center; gap: 8px; font: 11px var(--font-mono); color: var(--muted); }
+.dim::before, .dim::after { content: ""; flex: 1; height: 7px; border: solid var(--muted); border-width: 0 1px; background: linear-gradient(var(--muted), var(--muted)) center / 100% 1px no-repeat; }
+
+#office {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(230px, 1fr));
+  grid-template-areas: "dir dir dir" "specs dev review";
+  gap: 0;
+  margin: 14px 28px 28px;
+  min-width: 724px;
+  border: 5px solid var(--ink);
+  background: color-mix(in srgb, var(--paper) 85%, transparent);
+}
+.room {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 18px 16px 30px;
+  border: 0 solid var(--ink);
+}
+.room-dir { grid-area: dir; grid-template-columns: minmax(240px, 320px) 1fr; align-items: center; column-gap: 28px; border-bottom-width: 3px; }
+.room-specs, .room-dev { border-right-width: 3px; }
+.room-head { display: grid; gap: 1px; }
+.room-dir .room-head { grid-column: 1 / -1; }
+.room-name { font: 700 15px var(--font-display); letter-spacing: .12em; text-transform: uppercase; color: var(--ink); }
+.room-code { font: 11px var(--font-mono); color: var(--muted); }
+.room-queue { position: absolute; top: 18px; right: 16px; font: 600 11px var(--font-mono); color: var(--accent); }
+/* Door: an opening in the wall plus the quarter-circle swing of the leaf. */
+.door { position: absolute; left: calc(50% - 26px); width: 52px; height: 52px; pointer-events: none; }
+.room-dir .door { bottom: -3px; }
+.room-specs .door, .room-dev .door, .room-review .door { bottom: -5px; }
+.door::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 5px; background: var(--paper); }
+.door::after { content: ""; position: absolute; left: 0; bottom: 0; width: 52px; height: 52px; border: 1px dashed var(--muted); border-width: 1px 1px 0 0; border-radius: 0 100% 0 0; }
+
+.desk {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--ink);
+  border-radius: 2px;
+  background: var(--panel);
+  text-align: left;
+  transition: box-shadow .2s;
+}
+.desk:hover { box-shadow: 4px 4px 0 var(--grid-major); }
+.desk[aria-pressed="true"] { box-shadow: 4px 4px 0 var(--accent); }
+.desk[data-status="stopped"] { border-style: dashed; color: var(--muted); background: none; }
+.desk-empty { grid-template-columns: 1fr; place-items: center; min-height: 68px; border-style: dashed; border-color: var(--muted); color: var(--muted); background: none; font: 11px var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.desk-info { display: grid; min-width: 0; }
+.desk-info strong { font: 600 15px var(--font-display); }
+.desk-role { font-size: 11px; color: var(--muted); }
+.desk-task { margin-top: 3px; font: 11.5px var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stamp {
+  position: absolute; top: -9px; right: 10px;
+  padding: 1px 6px; border: 1.5px solid currentColor; border-radius: 2px;
+  background: var(--panel); font: 700 9.5px var(--font-mono); letter-spacing: .08em; text-transform: uppercase;
+}
+.stamp.s-working { color: var(--ok); background: var(--panel); }
+.stamp.s-idle { color: var(--muted); background: var(--panel); }
+.stamp.s-awaiting_approval { color: var(--warn); background: var(--panel); animation: nudge 1.6s ease-in-out infinite; }
+.stamp.s-stopped { color: var(--muted); background: var(--paper); }
+@keyframes nudge { 50% { transform: translateY(-2px); } }
+
+/* Token: avatar seated on a chair seen from above. */
+.token { position: relative; display: grid; place-items: center; width: 50px; height: 50px; }
+.token::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--ink); background: var(--paper); }
+.token .avatar { position: relative; width: 38px; height: 38px; font-size: 15px; }
+[data-status="working"] .token::after {
+  content: ""; position: absolute; inset: -5px; border-radius: 50%;
+  border: 1.5px dashed var(--ok); animation: spin 6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(1turn); } }
+
+.dir-notes { display: flex; flex-wrap: wrap; gap: 10px 22px; font: 12px var(--font-mono); color: var(--muted); }
+.dir-notes b { color: var(--ink); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 16px; padding: 0 28px 28px; min-width: 780px; font: 11px var(--font-mono); color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 10px; border: 1.5px solid currentColor; }
+
+.flights { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.flight-path { fill: none; stroke: var(--accent); stroke-width: 1.8; }
+.flight-dot { fill: var(--accent); }
+.flight-label {
+  position: absolute; pointer-events: none; transform: translate(-50%, -150%);
+  padding: 2px 7px; border: 1.5px solid var(--accent); border-radius: 2px;
+  background: var(--panel); color: var(--accent); white-space: nowrap;
+  font: 600 11px var(--font-mono);
+  animation: label 2.4s ease forwards;
+}
+@keyframes label { 0% { opacity: 0; } 15%, 75% { opacity: 1; } 100% { opacity: 0; } }
+.got { animation: got .6s ease; }
+@keyframes got { 40% { box-shadow: 4px 4px 0 var(--accent); } }
+.step { position: absolute; width: 7px; height: 10px; border-radius: 50%; background: var(--ink); opacity: 0; pointer-events: none; animation: step 2.2s ease forwards; }
+@keyframes step { 10% { opacity: .5; } 100% { opacity: 0; } }
+
+.toast {
+  position: absolute; right: 24px; bottom: 24px; z-index: 3;
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border: 1.5px solid var(--ink); border-radius: 2px; background: var(--panel); box-shadow: 4px 4px 0 var(--ok);
+  font-size: 13px; animation: toast 4s ease forwards;
+}
+@keyframes toast { 0% { opacity: 0; transform: translateY(10px); } 10%, 85% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="9" r="5" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="3 2.4"/><path d="M4 24c1-5 5-8 9-8s8 3 9 8" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="3 2.4"/></svg>
+      Nobody Inc
+    </div>
+    <span class="project">Project <code>nobody-sandbox</code></span>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" type="button" data-tab="office" aria-selected="true">Office</button>
+      <button class="tab" role="tab" type="button" data-tab="kanban" aria-selected="false">Kanban</button>
+      <button class="tab" role="tab" type="button" data-tab="recruitment" aria-selected="false">Recruitment</button>
+      <button class="tab" role="tab" type="button" data-tab="settings" aria-selected="false">Settings</button>
+    </nav>
+    <span class="daemon">Daemon 127.0.0.1:7420</span>
+  </header>
+  <nav id="rail" aria-label="Agents"></nav>
+  <aside id="thread" aria-label="Conversation"></aside>
+  <main class="main">
+    <section data-panel="office">
+      <div id="banner"></div>
+      <div class="office-wrap">
+        <div class="plan-head">
+          <span class="plan-title">Floor 1 · nobody-sandbox</span>
+          <span class="dim">24.60 m</span>
+          <span class="plan-meta">Scale 1:50 · rev. 7</span>
+        </div>
+        <div id="office"></div>
+        <div class="legend">
+          <span style="color:var(--ok)"><i></i>Working</span>
+          <span><i></i>Idle</span>
+          <span style="color:var(--warn)"><i></i>Needs approval</span>
+          <span><i style="border-style:dashed"></i>On leave</span>
+        </div>
+      </div>
+    </section>
+    <section data-panel="kanban" hidden><div class="placeholder"><strong>Kanban</strong><span>Designed once the direction is chosen.</span></div></section>
+    <section data-panel="recruitment" hidden><div class="placeholder"><strong>Recruitment</strong><span>Designed once the direction is chosen.</span></div></section>
+    <section data-panel="settings" hidden><div class="placeholder"><strong>Settings</strong><span>Project and daemon, MCP registry, appearance.</span></div></section>
+  </main>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(function () {
+  "use strict";
+  const office = document.getElementById("office");
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const STAMP = { working: "Working", idle: "Idle", awaiting_approval: "Approval", stopped: "On leave" };
+
+  function deskFor(a) {
+    const desk = document.createElement("button");
+    desk.type = "button";
+    desk.className = "desk";
+    desk.dataset.agent = a.id;
+    desk.dataset.status = a.status;
+    desk.setAttribute("aria-pressed", "false");
+    desk.setAttribute("aria-label", a.name + ", " + a.role + ", " + Mock.STATUS_LABEL[a.status]);
+    desk.innerHTML =
+      '<span class="stamp s-' + a.status + '">' + STAMP[a.status] + "</span>" +
+      '<span class="token"><span class="avatar" style="--av:var(--av-' + Mock.avatarIndex(a.id) + ')" data-status="' + a.status + '">' + a.name[0].toUpperCase() + "</span></span>" +
+      '<span class="desk-info"><strong>' + a.name + '</strong><span class="desk-role">' + a.role + '</span><span class="desk-task">' + a.ticket + "</span></span>";
+    desk.addEventListener("click", () => Mock.select(a.id));
+    return desk;
+  }
+
+  const AREAS = { dir: "R-01 · 38 m²", specs: "R-02 · 21 m²", dev: "R-03 · 24 m²", review: "R-04 · 24 m²" };
+  function room(area, name, queue) {
+    const r = document.createElement("div");
+    r.className = "room room-" + area;
+    r.dataset.room = area;
+    r.innerHTML = '<div class="room-head"><span class="room-name">' + name + '</span><span class="room-code">' + AREAS[area] + "</span></div>" +
+      (queue != null ? '<span class="room-queue">QUEUE ' + queue + "</span>" : "") + '<span class="door"></span>';
+    office.append(r);
+    return r;
+  }
+
+  const dir = room("dir", "Director");
+  dir.append(deskFor(Mock.agent("god")));
+  const notes = document.createElement("div");
+  notes.className = "dir-notes";
+  notes.innerHTML = "<span><b>1</b> proposal waiting</span><span><b>3/7</b> tickets done</span><span><b>4</b> agents at work</span>";
+  dir.append(notes);
+
+  const queues = { specs: 0, dev: 2, review: 1 };
+  Mock.TEAMS.forEach((t) => {
+    const r = room(t.id, t.name, queues[t.id]);
+    Mock.AGENTS.filter((a) => a.team === t.id).forEach((a) => r.append(deskFor(a)));
+    if (t.id === "review") {
+      const free = document.createElement("div");
+      free.className = "desk desk-empty";
+      free.dataset.free = "review";
+      free.textContent = "Free desk";
+      r.append(free);
+    }
+  });
+
+  const flights = document.createElementNS(SVGNS, "svg");
+  flights.classList.add("flights");
+  flights.innerHTML = '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/></marker></defs>';
+  office.append(flights);
+
+  function center(node) {
+    const o = office.getBoundingClientRect();
+    const r = (node.querySelector(".token") || node).getBoundingClientRect();
+    return { x: r.left - o.left + r.width / 2, y: r.top - o.top + r.height / 2 };
+  }
+
+  document.addEventListener("mock:select", (e) => {
+    office.querySelectorAll(".desk[data-agent]").forEach((d) => d.setAttribute("aria-pressed", String(d.dataset.agent === e.detail.id)));
+  });
+
+  // A message is inked from sender to recipient, then the line fades.
+  document.addEventListener("mock:message", (e) => {
+    const { from, to, label } = e.detail;
+    const a = office.querySelector('[data-agent="' + from + '"]');
+    const b = office.querySelector('[data-agent="' + to + '"]');
+    if (!a || !b) return;
+    const p = center(a), q = center(b);
+    const lift = Math.min(120, Math.hypot(q.x - p.x, q.y - p.y) * 0.3);
+    const cx = (p.x + q.x) / 2, cy = Math.min(p.y, q.y) - lift;
+    flights.setAttribute("viewBox", "0 0 " + office.clientWidth + " " + office.clientHeight);
+    flights.setAttribute("width", office.clientWidth);
+    flights.setAttribute("height", office.clientHeight);
+
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("d", "M" + p.x + " " + p.y + " Q" + cx + " " + cy + " " + q.x + " " + q.y);
+    path.classList.add("flight-path");
+    path.setAttribute("marker-end", "url(#arrow)");
+    flights.append(path);
+    const total = path.getTotalLength();
+    path.style.strokeDasharray = total;
+    path.style.strokeDashoffset = total;
+    const dot = document.createElementNS(SVGNS, "circle");
+    dot.setAttribute("r", "4");
+    dot.classList.add("flight-dot");
+    dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
+    flights.append(dot);
+
+    const tag = document.createElement("span");
+    tag.className = "flight-label";
+    tag.textContent = from + " → " + to + " · " + label;
+    const mid = path.getPointAtLength(total / 2);
+    tag.style.left = mid.x + "px";
+    tag.style.top = mid.y + "px";
+    office.append(tag);
+
+    path.animate([{ strokeDashoffset: total }, { strokeDashoffset: 0 }], { duration: reduced ? 1 : 1200, easing: "ease-in-out", fill: "forwards" })
+      .onfinish = () => {
+        b.classList.remove("got"); void b.offsetWidth; b.classList.add("got");
+        dot.animate([{ r: 4 }, { r: 14, opacity: 0 }], { duration: 500, fill: "forwards" });
+        dot.setAttribute("cx", q.x); dot.setAttribute("cy", q.y);
+        path.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 900, delay: 300, fill: "forwards" }).onfinish = () => { path.remove(); dot.remove(); };
+        setTimeout(() => tag.remove(), 1200);
+      };
+  });
+
+  // The newcomer walks in through the door, leaving footsteps, and sits down.
+  document.addEventListener("mock:arrive", (e) => {
+    const a = Mock.agent(e.detail.id);
+    const free = office.querySelector('[data-free="' + a.team + '"]');
+    const roomEl = office.querySelector('[data-room="' + a.team + '"]');
+    if (!free || !roomEl) return;
+    const desk = deskFor(a);
+    free.replaceWith(desk);
+    const o = office.getBoundingClientRect();
+    const door = roomEl.querySelector(".door").getBoundingClientRect();
+    const tok = desk.querySelector(".token").getBoundingClientRect();
+    const start = { x: door.left - o.left + 26, y: door.bottom - o.top };
+    const end = { x: tok.left - o.left + tok.width / 2, y: tok.top - o.top + tok.height / 2 };
+    const steps = 7;
+    for (let i = 0; i < steps; i++) {
+      const t = i / steps;
+      const s = document.createElement("span");
+      s.className = "step";
+      s.style.left = (start.x + (end.x - start.x) * t + (i % 2 ? 6 : -6)) + "px";
+      s.style.top = (start.y + (end.y - start.y) * t) + "px";
+      s.style.animationDelay = (reduced ? 0 : i * 160) + "ms";
+      office.append(s);
+      setTimeout(() => s.remove(), 3600);
+    }
+    desk.animate([{ opacity: 0 }, { opacity: 0, offset: .6 }, { opacity: 1 }], { duration: reduced ? 1 : 1500 });
+
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.innerHTML = '<span class="avatar" style="--av:var(--av-6);width:28px;height:28px;font-size:13px">E</span><span><strong>erin</strong> joined Review</span>';
+    document.querySelector(".office-wrap").append(toast);
+    setTimeout(() => toast.remove(), 4200);
+  });
+})();
+</script>
+</body>
+</html>

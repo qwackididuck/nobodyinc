@@ -248,8 +248,9 @@ func TestOneTicketAtATime(t *testing.T) {
 
 // fakeWorkspace records the git hooks and can refuse them.
 type fakeWorkspace struct {
-	claimErr, doneErr error
-	claims            []string
+	claimErr, doneErr, finishErr error
+	claims                       []string
+	finished                     int
 }
 
 func (f *fakeWorkspace) PrepareFeature(_ context.Context, ft work.Feature) (work.Feature, error) {
@@ -262,6 +263,16 @@ func (f *fakeWorkspace) BeforeClaim(_ context.Context, _ work.Feature, agent str
 	f.claims = append(f.claims, agent)
 
 	return f.claimErr
+}
+
+func (f *fakeWorkspace) ReviewFeature(context.Context, work.Feature) (work.Changes, error) {
+	return work.Changes{Commits: []work.ReviewCommit{{Hash: "abc123", Subject: "feat: implement"}}, Files: []work.FileChange{}}, nil
+}
+
+func (f *fakeWorkspace) FinishFeature(context.Context, work.Feature) (string, error) {
+	f.finished++
+
+	return "merge123", f.finishErr
 }
 
 func (f *fakeWorkspace) BeforeDone(context.Context, work.Feature, string) ([]work.Deliverable, error) {

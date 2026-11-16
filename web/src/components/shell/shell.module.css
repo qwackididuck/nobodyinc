@@ -1,0 +1,117 @@
+/* The frame of the control room: top bar, chat panel on the left, main area. */
+
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 76px minmax(320px, 380px) 1fr;
+  grid-template-rows: auto 1fr;
+}
+
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 56px;
+  padding: 0 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 15px var(--font-display);
+  white-space: nowrap;
+}
+
+.brandMark {
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+
+.project {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.project code {
+  color: var(--text);
+  font: 16px var(--font-mono);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  align-self: stretch;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.tab {
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: 12px var(--font-label);
+  white-space: nowrap;
+}
+
+.tab:hover,
+.tab[aria-selected="true"] {
+  color: var(--text);
+}
+
+.tab[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+}
+
+.daemon {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.daemon::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.daemon[data-connected="true"]::before {
+  background: var(--ok);
+}
+
+.main {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.placeholder {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  text-align: center;
+  color: var(--muted);
+  padding: 40px 20px;
+}
+
+.placeholder strong {
+  color: var(--text);
+  font: 700 22px var(--font-display);
+}

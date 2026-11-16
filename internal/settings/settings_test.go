@@ -76,3 +76,45 @@ func TestWriteDefaultIfMissing(t *testing.T) {
 		t.Fatalf("an existing file must be kept: wrote=%v err=%v", wrote, err)
 	}
 }
+
+func TestLiveSetConfigProtection(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+		want    string // in force and in the file afterwards
+	}{
+		{"warn is saved", ProtectWarn, false, ProtectWarn},
+		{"block is saved", ProtectBlock, false, ProtectBlock},
+		{"anything else is refused and changes nothing", "maybe", true, ProtectBlock},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			home := t.TempDir()
+			live := NewLive(home, Defaults())
+
+			_, err := live.SetConfigProtection(tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if got := live.Current().ConfigProtection; got != tt.want {
+				t.Fatalf("in force: %q, want %q", got, tt.want)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			saved, err := Load(home)
+			if err != nil || saved.ConfigProtection != tt.want {
+				t.Fatalf("saved file: %+v, %v; want %q", saved, err, tt.want)
+			}
+		})
+	}
+}

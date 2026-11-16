@@ -123,7 +123,7 @@ All of these go through the daemon's API (`api/openapi.yaml`, `internal/staffing
 | Leave / return | `POST /api/agents/{address}/leave`, `POST /api/agents/{address}/return` |
 | Dismiss | `DELETE /api/agents/{address}` |
 
-The control room's **Recruitment** tab drives these endpoints: the catalog (recruit a template into a team, or customize it as your own template), creating an agent from scratch, and editing the agent selected in the team list (save and restart, leave, return, dismiss). `GET /api/teams` lists the teams, including those without agents yet.
+The control room's **Recruitment** tab drives these endpoints: the catalog (recruit a template into a team, customize it as your own template, delete your own), the staff (chat, edit, leave, return, dismiss), and creating an agent from scratch. Recruits walk into the office through its door, and dismissed agents walk out. `GET /api/teams` lists the teams, including those without agents yet.
 
 If the daemon stops while a leave or dismissal still waits for the end of a turn, the hand-over happens at its next start: tickets in progress of agents on leave or no longer in the organization go back to their team's queue, and the undelivered mail of departed agents is returned.
 

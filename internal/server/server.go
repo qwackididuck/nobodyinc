@@ -6,6 +6,8 @@
 //   - approvals.go: /api/approvals*  permission requests waiting for the human;
 //   - tickets.go:   /api/tickets*    tickets, as seen and handled by the human;
 //   - features.go:  /api/features    features and their git branches;
+//   - events.go:    /api/events      changes pushed to the control room (SSE);
+//   - settings.go:  /api/settings, /api/mcp  how the daemon runs, MCP servers;
 //   - hooks.go:     /internal/*      for nobody-hook, called by Claude Code hooks.
 package server
 
@@ -13,13 +15,16 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/events"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
 	"github.com/qwackididuck/nobodyinc/internal/staffing"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 	"github.com/qwackididuck/nobodyinc/internal/work"
@@ -51,6 +56,19 @@ type Deps struct {
 	// allowed to change things through the API besides the daemon itself
 	// (guard.go).
 	Origins []string
+	// Events is streamed by GET /api/events; nil disables it.
+	Events *events.Bus
+	// Heartbeat overrides how often an idle event stream sends a comment
+	// (tests only).
+	Heartbeat time.Duration
+	// Settings are the user's settings, changed by PUT /api/settings; nil
+	// makes them read-only (empty).
+	Settings *settings.Live
+	// Info describes how the daemon was launched (GET /api/settings).
+	Info DaemonInfo
+	// LookupEnv tells whether an environment variable is set
+	// (GET /api/mcp); nil means os.LookupEnv.
+	LookupEnv func(string) (string, bool)
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits
@@ -93,15 +111,23 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("DELETE /api/catalog/{name}", s.deleteTemplate)
 	mux.HandleFunc("GET /api/messages", s.listMessages)
 	mux.HandleFunc("POST /api/messages", s.sendMessageAsHuman)
+	mux.HandleFunc("DELETE /api/messages", s.deleteFinishedAgentConversations)
 	mux.HandleFunc("GET /api/features", s.listFeatures)
 	mux.HandleFunc("POST /api/features", s.startFeature)
 	mux.HandleFunc("POST /api/features/{id}/start", s.startProposedFeature)
 	mux.HandleFunc("POST /api/features/{id}/refuse", s.refuseProposedFeature)
+	mux.HandleFunc("GET /api/features/{id}/review", s.reviewFeature)
+	mux.HandleFunc("POST /api/features/{id}/finish", s.finishFeature)
 	mux.HandleFunc("GET /api/tickets", s.listTickets)
 	mux.HandleFunc("POST /api/tickets", s.createTicketAsHuman)
 	mux.HandleFunc("GET /api/tickets/{id}", s.getTicket)
+	mux.HandleFunc("DELETE /api/tickets/{id}", s.deleteTicket)
 	mux.HandleFunc("POST /api/tickets/{id}/comments", s.commentTicketAsHuman)
 	mux.HandleFunc("POST /api/tickets/{id}/status", s.setTicketStatusAsHuman)
+	mux.HandleFunc("GET /api/events", s.streamEvents)
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PUT /api/settings", s.updateSettings)
+	mux.HandleFunc("GET /api/mcp", s.listMCPServers)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.decideApproval)
 
@@ -113,6 +139,14 @@ func New(d Deps) http.Handler {
 	}
 
 	return guardCrossSite(d.Origins, mux)
+}
+
+func (s *server) lookupEnv(name string) (string, bool) {
+	if s.LookupEnv != nil {
+		return s.LookupEnv(name)
+	}
+
+	return os.LookupEnv(name)
 }
 
 func (s *server) health(w http.ResponseWriter, _ *http.Request) {

@@ -8,9 +8,11 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/events"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -36,6 +38,16 @@ type Options struct {
 	// Settings are the user's global settings (~/.nobody/settings.yaml); the
 	// zero value means the defaults.
 	Settings settings.Settings
+	// SettingsHome is where changed settings are saved (~/.nobody); "" keeps
+	// changes made through the API in memory.
+	SettingsHome string
+	// StateDir is this project's directory on this machine
+	// (~/.nobody/projects/<id>), ListenAddr where the HTTP server listens and
+	// StartAgents whether every agent starts with the daemon. They are only
+	// shown in the control room's settings.
+	StateDir    string
+	ListenAddr  string
+	StartAgents bool
 	// DBPath is the SQLite file; ":memory:" for a throwaway database.
 	DBPath string
 	// WorktreesDir holds the teams' worktrees, outside the project
@@ -60,6 +72,8 @@ type Daemon struct {
 	Statuses   *runtime.Statuses
 	Approvals  *approval.Queue
 	Supervisor *runtime.Supervisor
+	// Events announces changes to the control room (GET /api/events).
+	Events *events.Bus
 	// Staff changes agents; nil when the organization is fixed.
 	Staff *staffing.Service
 	// WorkDir is the directory an agent works in: its team's worktree for the
@@ -68,18 +82,32 @@ type Daemon struct {
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
+// When ctx ends, the event streams end too (an HTTP server's Shutdown would
+// wait for them otherwise).
 func New(ctx context.Context, opts Options) (*Daemon, error) {
 	st, err := store.Open(ctx, opts.DBPath)
 	if err != nil {
 		return nil, err
 	}
 
+	bus := events.NewBus()
+	context.AfterFunc(ctx, bus.Close)
+
+	userSettings := opts.Settings
+	if userSettings.ConfigProtection == "" {
+		userSettings = settings.Defaults()
+	}
+
+	liveSettings := settings.NewLive(opts.SettingsHome, userSettings)
+
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
+	announce(bus, st, statuses, approvals)
+
 	git := &gitWorkspace{
 		repo:             workspace.Repo{Dir: opts.Org.Current().ProjectDir, WorktreesDir: opts.WorktreesDir},
 		org:              opts.Org,
-		configProtection: opts.Settings.ConfigProtection,
+		configProtection: func() string { return liveSettings.Current().ConfigProtection },
 	}
 	restoreActiveFeature(ctx, st, git, opts.Logger)
 
@@ -125,6 +153,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	//     from its hooks.
 	// An agent going idle also checks for mail that arrived as its turn ended.
 	messages.OnSent = func(m messaging.Message) {
+		bus.Publish(events.Event{Type: events.MessageSent, Data: m})
 		staff.onSent(context.WithoutCancel(ctx), m)
 
 		if forker.ShouldAnswer(m) {
@@ -137,7 +166,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	}
 	statuses.OnIdle = supervisor.OnIdle
 
-	tickets := &work.Service{Store: st, Org: opts.Org, Workspace: git}
+	tickets := &work.Service{Store: announcingWorkStore{Store: st, bus: bus}, Org: opts.Org, Workspace: git}
 	// A new feature moves every agent into its team's worktree.
 	tickets.OnFeatureStarted = func(f work.Feature) {
 		git.activate(f)
@@ -154,6 +183,9 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	tickets.OnFeatureProposed = featureProposals.onProposed
 	tickets.OnFeatureDecided = featureProposals.onDecided
 
+	tickets.OnFeatureFinished = onFeatureFinished(ctx, opts, git, supervisor, featureProposals)
+	tickets.OnTicketDeleted = onTicketDeleted(ctx, messages, opts.Logger)
+
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
 	tickets.OnEvent = notifier.onEvent
 
@@ -167,7 +199,10 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	var staffService *staffing.Service
 	if live, ok := opts.Org.(*org.Live); ok {
-		staffService = &staffing.Service{Org: live, Catalog: cat, Agents: supervisor}
+		staffService = &staffing.Service{
+			Org: live, Catalog: cat, Agents: supervisor,
+			OnReload: func() { bus.Publish(events.Event{Type: events.OrgChanged, Data: events.Empty{}}) },
+		}
 	}
 
 	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
@@ -185,6 +220,15 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Staff:     staffService,
 		Catalog:   cat,
 		Origins:   opts.Origins,
+		Events:    bus,
+		Settings:  liveSettings,
+		Info: server.DaemonInfo{
+			ProjectID:   filepath.Base(opts.StateDir),
+			StateDir:    opts.StateDir,
+			Address:     opts.ListenAddr,
+			ClaudePath:  opts.ClaudePath,
+			StartAgents: opts.StartAgents,
+		},
 		Extra: map[string]http.Handler{
 			"/mcp/{address}": officemcp.Handler(officemcp.Office{
 				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Version: opts.Version,
@@ -201,9 +245,72 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Statuses:   statuses,
 		Approvals:  approvals,
 		Supervisor: supervisor,
+		Events:     bus,
 		Staff:      staffService,
 		WorkDir:    git.workDir,
 	}, nil
+}
+
+// onFeatureFinished sends the team agents back to the project once a feature
+// is finished, then removes its worktrees when nobody works in them any more,
+// and tells the director (ADR-0007).
+func onFeatureFinished(
+	ctx context.Context, opts Options, git *gitWorkspace, supervisor *runtime.Supervisor, p *proposals,
+) func(work.Feature) {
+	return func(f work.Feature) {
+		git.deactivate()
+
+		director := ""
+		if god := opts.Org.Current().God; god != nil {
+			director = god.Name
+		}
+
+		ctx := context.WithoutCancel(ctx)
+		p.onFinished(ctx, director, f)
+
+		go func() {
+			if err := supervisor.RestartAll(ctx); err != nil {
+				opts.Logger.Error("restart agents after the feature", "feature", f.ID, "err", err)
+			}
+
+			if err := git.cleanup(ctx, f); err != nil {
+				opts.Logger.Error("remove the feature's worktrees", "feature", f.ID, "err", err)
+			}
+		}()
+	}
+}
+
+// onTicketDeleted tells an agent that the ticket it was working on was
+// deleted by the human, with an urgent notice it gets at its next tool use.
+func onTicketDeleted(ctx context.Context, messages *messaging.Service, logger *slog.Logger) func(work.Ticket) {
+	return func(t work.Ticket) {
+		_, err := messages.Send(context.WithoutCancel(ctx), messaging.Draft{
+			From: org.SystemAddress, To: t.Assignee, Act: messaging.ActInform, Priority: messaging.Urgent,
+			Subject: "Ticket " + t.ID + " deleted",
+			Body: "The human deleted the ticket " + t.ID + " (" + t.Title + ") while you were working on it. " +
+				"Stop working on it now: do not commit or deliver it, and do not use the ticket tools for it. " +
+				"Leave your worktree as it is and wait for your next ticket.",
+		})
+		if err != nil {
+			logger.Error("tell an agent its ticket was deleted", "ticket", t.ID, "agent", t.Assignee, "err", err)
+		}
+	}
+}
+
+// announce publishes on the bus the changes the services report through
+// their hooks: agent statuses, deliveries and permission requests. Sent
+// messages, tickets, features and the organization are announced where those
+// services are built (see New).
+func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, approvals *approval.Queue) {
+	statuses.OnChange = func(address string, s runtime.Status) {
+		bus.Publish(events.Event{Type: events.AgentStatus, Data: events.AgentStatusData{Address: address, Status: string(s)}})
+	}
+	st.OnDelivered = func(recipient string, ids []string) {
+		bus.Publish(events.Event{Type: events.MessagesDelivered, Data: events.DeliveredData{Recipient: recipient, IDs: ids}})
+	}
+	approvals.OnChange = func() {
+		bus.Publish(events.Event{Type: events.ApprovalsChanged, Data: events.Empty{}})
+	}
 }
 
 // Close stops every agent and closes the database.
