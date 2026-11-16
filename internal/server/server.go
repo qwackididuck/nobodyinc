@@ -111,6 +111,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("DELETE /api/catalog/{name}", s.deleteTemplate)
 	mux.HandleFunc("GET /api/messages", s.listMessages)
 	mux.HandleFunc("POST /api/messages", s.sendMessageAsHuman)
+	mux.HandleFunc("DELETE /api/messages", s.deleteFinishedAgentConversations)
 	mux.HandleFunc("GET /api/features", s.listFeatures)
 	mux.HandleFunc("POST /api/features", s.startFeature)
 	mux.HandleFunc("POST /api/features/{id}/start", s.startProposedFeature)

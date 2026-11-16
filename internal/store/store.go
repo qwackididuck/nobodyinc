@@ -163,6 +163,38 @@ func (s *Store) DeliveredMessagesAmong(ctx context.Context, excluded []string, l
 	return s.queryMessages(ctx, `SELECT `+messageColumns+` FROM (`+latest+`) ORDER BY sent_at, id`, args...)
 }
 
+// DeleteFinishedConversations deletes for good the conversations exchanged
+// only among addresses outside excluded (what agents said to each other)
+// that are finished: every message is delivered and the last one has none of
+// the openActs (it expects no answer). It returns the IDs of the deleted
+// messages.
+func (s *Store) DeleteFinishedConversations(ctx context.Context, excluded []string, openActs []messaging.Act) ([]string, error) {
+	outside, outsideArgs := inClause(excluded)
+
+	acts := make([]string, len(openActs))
+	for i, a := range openActs {
+		acts[i] = string(a)
+	}
+
+	open, openArgs := inClause(acts)
+
+	// The last message of a conversation: the latest sent (ties: highest ID).
+	finished := `SELECT m.conversation FROM messages m GROUP BY m.conversation
+		HAVING SUM(m.delivered_at IS NULL) = 0
+		AND SUM(m.sender IN ` + outside + ` OR m.recipient IN ` + outside + `) = 0
+		AND (SELECT l.act FROM messages l WHERE l.conversation = m.conversation
+			ORDER BY l.sent_at DESC, l.id DESC LIMIT 1) NOT IN ` + open
+
+	args := append(append(append([]any{}, outsideArgs...), outsideArgs...), openArgs...)
+
+	ids, err := s.queryIDs(ctx, `DELETE FROM messages WHERE conversation IN (`+finished+`) RETURNING id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("delete finished conversations: %w", err)
+	}
+
+	return ids, nil
+}
+
 // MarkDelivered records that messages have been handed to their recipient.
 // IDs addressed to someone else are ignored, and already delivered messages
 // keep their original delivery time.

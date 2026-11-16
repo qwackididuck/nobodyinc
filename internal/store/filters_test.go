@@ -118,3 +118,62 @@ func messageIDs(ms []messaging.Message) []string {
 
 	return ids
 }
+
+func TestDeleteFinishedConversations(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	// in builds a message of a conversation.
+	in := func(conversation, id, from, to string, act messaging.Act, minute int) messaging.Message {
+		m := between(id, from, to, minute)
+		m.Conversation, m.Act = conversation, act
+
+		return m
+	}
+
+	messages := []messaging.Message{
+		in("finished", "f1", "dev1@dev", "archi@specs", messaging.ActQuery, 1),
+		in("finished", "f2", "archi@specs", "dev1@dev", messaging.ActInform, 2),
+		in("unanswered", "u1", "dev1@dev", "archi@specs", messaging.ActQuery, 3),
+		in("undelivered", "d1", "dev1@dev", "archi@specs", messaging.ActDone, 4),
+		in("with-human", "h1", "human", "dev1@dev", messaging.ActInform, 5),
+		in("with-nobody", "n1", "nobody", "dev1@dev", messaging.ActInform, 6),
+		in("to-director", "g1", "dev1@dev", "god", messaging.ActDone, 7),
+	}
+	for _, m := range messages {
+		if err := s.InsertMessage(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	at := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
+	for recipient, ids := range map[string][]string{
+		"archi@specs": {"f1", "u1"}, "dev1@dev": {"f2", "h1", "n1"}, "god": {"g1"},
+	} {
+		if err := s.MarkDelivered(ctx, recipient, ids, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deleted, err := s.DeleteFinishedConversations(ctx, []string{"human", "nobody"}, messaging.ActsRequiringReply())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	slices.Sort(deleted)
+
+	if want := []string{"f1", "f2", "g1"}; !slices.Equal(deleted, want) {
+		t.Fatalf("deleted %v, want %v (finished conversations between agents only)", deleted, want)
+	}
+
+	left, err := s.RecentMessages(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if ids := messageIDs(left); !slices.Equal(ids, []string{"u1", "d1", "h1", "n1"}) {
+		t.Fatalf("left %v", ids)
+	}
+}

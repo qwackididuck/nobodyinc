@@ -1,5 +1,5 @@
-import { ControlRoom } from "@/components/ControlRoom";
+import { App } from "@/components/App";
 
 export default function Home() {
-  return <ControlRoom />;
+  return <App />;
 }

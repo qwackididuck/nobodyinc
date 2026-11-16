@@ -12,6 +12,7 @@ package messaging
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
@@ -31,7 +32,13 @@ const (
 
 // RequiresReply reports whether the recipient is expected to answer.
 func (a Act) RequiresReply() bool {
-	return a == ActRequest || a == ActQuery || a == ActPropose
+	return slices.Contains(ActsRequiringReply(), a)
+}
+
+// ActsRequiringReply lists the acts the recipient is expected to answer: a
+// conversation whose last message has one of them is still open.
+func ActsRequiringReply() []Act {
+	return []Act{ActRequest, ActQuery, ActPropose}
 }
 
 func (a Act) valid() bool {

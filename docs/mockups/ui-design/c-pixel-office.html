@@ -1,0 +1,629 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pixel Office</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Pixelify+Sans:wght@500;600;700&family=Silkscreen&family=VT323&display=swap">
+<link rel="stylesheet" href="shared.css">
+<link rel="stylesheet" href="c-panels.css">
+<style>
+/* Variant C, "Pixel office": a cosy pixel-art office seen from the front.
+   Agents are little characters at their desks with a speech bubble for their
+   status; newcomers walk in through the door; paper planes fly between
+   desks. The chrome around it stays calm and readable. */
+:root {
+  color-scheme: dark;
+  --bg: #1b1626;
+  --panel: #221c30;
+  --panel-2: #2a2340;
+  --line: #3e3558;
+  --text: #f4ecdb;
+  --muted: #a99dc2;
+  --accent: #ff8a5c;
+  --accent-ink: #2a1205;
+  --ok: #6fdc8c;
+  --warn: #ffd34d;
+  --danger: #ff5d73;
+  --idle: #786f93;
+  --off: #4a4262;
+  --bubble-in: #352c4d;
+  --bubble-out: #ff8a5c;
+  --bubble-out-text: #2a1205;
+  --term-bg: #120e1b;
+  --term-fg: #b9f5c8;
+  --radius: 4px;
+  --font-ui: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Pixelify Sans", "Inter", ui-sans-serif, sans-serif;
+  --font-mono: "VT323", ui-monospace, Menlo, monospace;
+  --font-label: "Silkscreen", "Pixelify Sans", ui-monospace, monospace;
+  --av-0: #e0a630; --av-1: #b86fe0; --av-2: #3fb0e0; --av-3: #ef6b86;
+  --av-4: #57c27f; --av-5: #8b86a3; --av-6: #ff9a4d;
+  --wall: #5a4878;
+  --wall-dark: #463862;
+  --wood: #a4673a;
+  --wood-light: #c58450;
+  --wood-dark: #7a4a28;
+  --partition: #6e4e33;
+  --paper: #f4e7c9;
+  --ink-px: #1d1726;
+}
+.term, .card-code { font-size: 17px; line-height: 1.25; }
+.project code, .banner-meta code { font-size: 16px; }
+.card, .btn, .composer-input, .composer-send { border-width: 2px; }
+.card { box-shadow: 3px 3px 0 #0007; }
+.btn-primary, .composer-send { box-shadow: 0 3px 0 #a4492a; }
+.rail-name, .card-kicker, .banner-kicker, .tab { font-family: var(--font-label); letter-spacing: .02em; }
+.tab { font-size: 12px; }
+.card-kicker, .banner-kicker { font-size: 10px; letter-spacing: 0; }
+.pill { font-family: var(--font-label); font-weight: 400; border-radius: 2px; }
+.avatar { border-radius: 6px; }
+
+.office-wrap { background: var(--bg); }
+.scene {
+  position: relative;
+  width: 960px;
+  height: 640px;
+  margin: 16px auto 24px;
+  image-rendering: pixelated;
+  border: 4px solid var(--ink-px);
+  box-shadow: 6px 6px 0 #0008;
+  overflow: hidden;
+}
+/* Wall with windows, a clock and the entrance door. */
+.wall { position: absolute; inset: 0 0 auto; height: 84px; background: var(--wall); box-shadow: inset 0 -12px 0 var(--wall-dark), inset 0 -16px 0 #3a2e52; }
+.window { position: absolute; top: 14px; width: 74px; height: 44px; background: linear-gradient(#ffb58a 0 40%, #ff8f8f 40% 70%, #9c6fc0 70%); box-shadow: inset 0 0 0 4px #3a2e52, inset 37px 0 0 -35px #3a2e52; }
+.window::after { content: ""; position: absolute; left: 35px; top: 0; bottom: 0; width: 4px; background: #3a2e52; }
+.clock { position: absolute; top: 18px; left: 470px; width: 30px; height: 30px; background: var(--paper); box-shadow: inset 0 0 0 3px var(--ink-px); }
+.clock::before { content: ""; position: absolute; left: 13px; top: 6px; width: 4px; height: 10px; background: var(--ink-px); }
+.clock::after { content: ""; position: absolute; left: 13px; top: 13px; width: 9px; height: 4px; background: var(--ink-px); }
+.door-px { position: absolute; left: 850px; bottom: 0; width: 56px; height: 70px; background: #7b5434; box-shadow: inset 0 0 0 4px #4e3320, inset 0 -12px 0 #4e3320; }
+.door-px::after { content: ""; position: absolute; right: 9px; top: 32px; width: 6px; height: 6px; background: var(--warn); }
+.floor {
+  position: absolute; inset: 84px 0 0;
+  background-color: #d7b384;
+  background-image:
+    linear-gradient(#0000 15px, #b98d5c 15px 16px),
+    linear-gradient(90deg, #0000 62px, #c19866 62px 64px);
+  background-size: 100% 16px, 64px 32px;
+}
+.area { position: absolute; border: 4px solid var(--partition); box-shadow: inset 0 0 0 2px #8f6a48; }
+.area-rug { background: repeating-linear-gradient(45deg, #9b5266 0 8px, #a65a6f 8px 16px); box-shadow: inset 0 0 0 2px #8f6a48, inset 0 0 0 8px #7c3f52; }
+.area-carpet { background: #8fae9a; }
+.area-carpet-2 { background: #8a9ec2; }
+.area-carpet-3 { background: #c2a28a; }
+.sign {
+  position: absolute; top: -14px; left: 12px; z-index: 2;
+  padding: 2px 8px; background: #7a5232; color: #ffe9c2;
+  border: 2px solid #4e3320; box-shadow: 0 3px 0 #3a2616;
+  font: 11px var(--font-label); white-space: nowrap;
+}
+.sign em { font-style: normal; color: var(--warn); }
+.prop { position: absolute; }
+.plant { width: 28px; height: 44px; }
+.plant::before { content: ""; position: absolute; left: 2px; top: 0; width: 24px; height: 26px; background: #3f9a5a; box-shadow: inset -6px -4px 0 #2f7a45, inset 4px 4px 0 #57b872; }
+.plant::after { content: ""; position: absolute; left: 6px; bottom: 0; width: 16px; height: 18px; background: #b55d3a; box-shadow: inset 0 4px 0 #8c4429; }
+.board { width: 110px; height: 66px; background: var(--paper); box-shadow: 0 0 0 4px #4e3320, 4px 6px 0 4px #0003; font: 10px/1.35 var(--font-label); color: var(--ink-px); padding: 6px 8px; }
+.board b { color: #c0392b; font-weight: 400; }
+
+/* A desk station: character, desk, laptop, name plate and status bubble. */
+.station { position: absolute; width: 104px; height: 118px; padding: 0; border: 0; background: none; }
+.char { position: absolute; left: 30px; top: 10px; width: 45px; height: 54px; }
+.char svg { display: block; width: 100%; height: 100%; }
+.desk-px { position: absolute; left: 8px; top: 56px; width: 88px; height: 26px; background: var(--wood); box-shadow: inset 0 5px 0 var(--wood-light), inset 0 -4px 0 var(--wood-dark); }
+.desk-px::before, .desk-px::after { content: ""; position: absolute; top: 26px; width: 6px; height: 10px; background: var(--wood-dark); }
+.desk-px::before { left: 4px; } .desk-px::after { right: 4px; }
+.laptop { position: absolute; left: 30px; top: -14px; width: 28px; height: 17px; background: #4a4760; box-shadow: inset 0 0 0 2px #2a2838; }
+.laptop::after { content: ""; position: absolute; left: 11px; top: 5px; width: 6px; height: 6px; background: #6b6884; }
+[data-status="working"] .laptop::after { background: #7fe7ff; box-shadow: 0 0 6px #7fe7ff; animation: screen 1s steps(2) infinite; }
+@keyframes screen { 50% { background: #c5f6ff; } }
+.mug { position: absolute; left: 70px; top: -8px; width: 8px; height: 8px; background: #fff; box-shadow: 3px 0 0 -1px #fff; }
+.plate {
+  position: absolute; left: 0; right: 0; top: 96px;
+  padding: 1px 2px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--paper); color: var(--ink-px); border: 2px solid #4e3320;
+  font: 10px var(--font-label);
+}
+.plate em { font-style: normal; color: #8a5a2e; }
+.station[aria-pressed="true"] .plate { background: var(--accent); }
+.station[aria-pressed="true"]::before {
+  content: ""; position: absolute; left: 46px; top: -14px; width: 12px; height: 8px;
+  background: var(--accent); clip-path: polygon(0 0, 100% 0, 50% 100%);
+  animation: point .6s steps(2) infinite;
+}
+@keyframes point { 50% { transform: translateY(3px); } }
+.station:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.station:hover .char { transform: translateY(-2px); }
+
+.say {
+  position: absolute; left: 72px; top: -8px; min-width: 24px; height: 20px; padding: 0 5px;
+  display: grid; place-items: center;
+  background: #fff; color: var(--ink-px); border: 2px solid var(--ink-px);
+  font: 11px/1 var(--font-label);
+}
+.say::after { content: ""; position: absolute; left: 2px; bottom: -7px; width: 6px; height: 6px; background: #fff; border: solid var(--ink-px); border-width: 0 2px 2px 0; transform: skewX(30deg); }
+.say-working { display: flex; gap: 3px; }
+.say-working i { width: 4px; height: 4px; background: var(--ink-px); animation: dots 1.2s steps(1) infinite; }
+.say-working i:nth-child(2) { animation-delay: .3s; } .say-working i:nth-child(3) { animation-delay: .6s; }
+@keyframes dots { 0% { opacity: .15; } 30% { opacity: 1; } }
+.say-idle { animation: float 2s steps(4) infinite; }
+@keyframes float { 50% { transform: translateY(-4px); } }
+.say-awaiting_approval { background: var(--warn); animation: hop .5s steps(2) infinite; }
+.say-awaiting_approval::after { background: var(--warn); }
+@keyframes hop { 50% { transform: translateY(-4px); } }
+.note { position: absolute; left: 36px; top: 30px; width: 34px; height: 30px; padding: 3px; background: var(--warn); color: var(--ink-px); font: 8px/1.1 var(--font-label); transform: rotate(-6deg); box-shadow: 2px 2px 0 #0004; }
+.chair { position: absolute; left: 38px; top: 34px; width: 28px; height: 26px; background: #3e3a55; box-shadow: inset 0 0 0 3px #2a2738; }
+[data-status="stopped"] .plate { background: #cfc6b4; color: #5b5346; }
+.walking .char { animation: walk .28s steps(2) infinite; }
+@keyframes walk { 50% { transform: translateY(-3px); } }
+
+/* Construction work */
+.dust { position: absolute; z-index: 6; width: 6px; height: 6px; background: #efe3cc; box-shadow: 2px 2px 0 #b9a27f; pointer-events: none; }
+.works-word { position: absolute; z-index: 7; padding: 1px 4px; background: var(--warn); color: var(--ink-px); font: 11px var(--font-label); border: 2px solid var(--ink-px); pointer-events: none; animation: hop .25s steps(2) 4, fl 1.3s steps(6) forwards; }
+
+/* Wastebasket next to the door: delivered messages end up here. */
+.bin-px {
+  position: absolute; left: 918px; top: 52px; z-index: 3; width: 30px; height: 34px; padding: 0; border: 0;
+  background: repeating-linear-gradient(90deg, #9a97b3 0 4px, #7d7a96 4px 6px);
+  box-shadow: inset 0 4px 0 #c9c6dd, inset 0 -3px 0 #5e5b75;
+}
+.bin-px::before {
+  content: ""; position: absolute; left: 3px; top: -9px; width: 24px; height: 12px;
+  background: radial-gradient(circle at 25% 60%, #fffaf0 0 4px, transparent 4.5px), radial-gradient(circle at 60% 40%, #f1e8d6 0 5px, transparent 5.5px), radial-gradient(circle at 85% 70%, #fffaf0 0 3px, transparent 3.5px);
+}
+.bin-px:hover, .bin-px[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: 3px; }
+.bin-px.got { animation: got .3s steps(2) 2; }
+.bin-badge { position: absolute; right: -10px; top: -14px; min-width: 18px; height: 18px; padding: 0 4px; background: var(--accent); color: var(--accent-ink); font: 10px/18px var(--font-label); border: 2px solid var(--ink-px); }
+
+/* Flights */
+.env-px { position: absolute; z-index: 5; width: 42px; height: 28px; margin: -14px 0 0 -21px; pointer-events: none; filter: drop-shadow(3px 6px 0 rgba(29, 23, 38, .3)); }
+.env-px svg { display: block; width: 100%; height: 100%; }
+.trail { position: absolute; z-index: 4; width: 4px; height: 4px; background: #fffaf0; pointer-events: none; animation: trail .7s steps(3) forwards; }
+
+/* A new team: the plot is marked out, the walls go up, the sign is hung. */
+.scene { transition: height .9s steps(9); }
+.area-carpet-4 { background: #b9a4c9; }
+.plot { position: absolute; border: 4px dashed var(--ink-px); opacity: .5; animation: plot .4s steps(1) 3; }
+@keyframes plot { 50% { opacity: 0; } }
+.building { animation: build 1.4s steps(10) both; }
+@keyframes build { from { clip-path: inset(100% 0 0 0); } to { clip-path: inset(0); } }
+.building .sign { animation: hang .6s steps(4) 1.4s both; }
+@keyframes hang { from { transform: translateY(-40px); opacity: 0; } }
+.pop { animation: popin .5s steps(4) both; }
+@keyframes popin { from { transform: scale(.2); opacity: 0; } }
+@keyframes trail { to { opacity: 0; transform: scale(.4); } }
+.fl-label {
+  position: absolute; z-index: 6; transform: translate(-50%, -160%); pointer-events: none;
+  padding: 2px 6px; white-space: nowrap; background: var(--ink-px); color: var(--paper);
+  border: 2px solid var(--accent); font: 10px var(--font-label);
+  animation: fl 3.2s steps(8) forwards;
+}
+@keyframes fl { 0% { opacity: 0; } 12%, 80% { opacity: 1; } 100% { opacity: 0; } }
+.got .char { animation: got .4s steps(2) 2; }
+.fl-reply { border-color: var(--ok); }
+@keyframes got { 50% { transform: translateY(-5px); } }
+
+.toast {
+  position: absolute; left: 50%; top: 120px; z-index: 8; transform: translateX(-50%);
+  display: grid; gap: 4px; justify-items: center; padding: 12px 18px;
+  background: var(--ink-px); color: var(--paper); border: 3px solid var(--warn); box-shadow: 5px 5px 0 #0009;
+  font: 12px var(--font-label); animation: pop 4s steps(8) forwards;
+}
+.toast strong { font: 700 18px var(--font-display); color: var(--warn); }
+@keyframes pop { 0% { opacity: 0; transform: translate(-50%, 10px); } 8%, 85% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; } }
+.confetti { position: absolute; z-index: 7; width: 6px; height: 6px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 13 13" shape-rendering="crispEdges" aria-hidden="true"><path fill="var(--accent)" d="M4 1h1v1H4zM6 1h1v1H6zM8 1h1v1H8zM3 3h1v1H3zM9 3h1v1H9zM4 5h1v1H4zM6 5h1v1H6zM8 5h1v1H8zM2 9h1v1H2zM4 8h1v1H4zM6 8h1v1H6zM8 8h1v1H8zM10 9h1v1h-1zM1 11h1v1H1zM11 11h1v1h-1z"/></svg>
+      Nobody Inc
+    </div>
+    <span class="project">Project <code>nobody-sandbox</code></span>
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab" role="tab" type="button" data-tab="office" aria-selected="true">Office</button>
+      <button class="tab" role="tab" type="button" data-tab="kanban" aria-selected="false">Kanban</button>
+      <button class="tab" role="tab" type="button" data-tab="recruitment" aria-selected="false">Recruitment</button>
+      <button class="tab" role="tab" type="button" data-tab="settings" aria-selected="false">Settings</button>
+    </nav>
+    <span class="daemon">Daemon 127.0.0.1:7420</span>
+  </header>
+  <nav id="rail" aria-label="Agents"></nav>
+  <aside id="thread" aria-label="Conversation"></aside>
+  <main class="main">
+    <section data-panel="office">
+      <div id="banner"></div>
+      <div class="office-wrap">
+        <div class="scene" id="scene">
+          <div class="wall">
+            <span class="window" style="left:60px"></span>
+            <span class="window" style="left:200px"></span>
+            <span class="clock"></span>
+            <span class="window" style="left:620px"></span>
+            <span class="door-px"></span>
+          </div>
+          <div class="floor"></div>
+        </div>
+      </div>
+    </section>
+    <section data-panel="kanban" hidden><div class="board-wrap" id="kanban"></div></section>
+    <section data-panel="recruitment" hidden><div class="panel-scroll" id="recruitment"></div></section>
+    <section data-panel="settings" hidden><div class="panel-scroll" id="settings"></div></section>
+  </main>
+</div>
+
+<script src="shared.js"></script>
+<script>
+(function () {
+  "use strict";
+  const scene = document.getElementById("scene");
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---- Pixel characters, drawn from a 10x12 map ------------------------
+  const MAP = [
+    "...HHHH...",
+    "..HHHHHH..",
+    ".HHSSSSHH.",
+    ".HSESSESH.",
+    "..SSSSSS..",
+    "..SSMMSS..",
+    "...SSSS...",
+    ".CCCTTCCC.",
+    "CCCCTTCCCC",
+    "SCCCTTCCCS",
+    "SCCCCCCCCS",
+    ".DDD..DDD.",
+  ];
+  const LOOKS = {
+    god:   { H: "#e8e2d0", S: "#e9b48f", C: "#2f2b44", T: "#ffd34d" },
+    maya:  { H: "#3a2418", S: "#c88a5e", C: "#b86fe0" },
+    alice: { H: "#e0a24a", S: "#f0c2a0", C: "#3fb0e0" },
+    bob:   { H: "#1d1b26", S: "#8d5a3b", C: "#ef6b86" },
+    carol: { H: "#c2462e", S: "#f2c9a8", C: "#57c27f" },
+    dan:   { H: "#5a4a3a", S: "#d9a27b", C: "#8b86a3" },
+    erin:  { H: "#2b2238", S: "#b07a55", C: "#ff9a4d" },
+    // Catalog templates (Recruitment tab).
+    "t-god":      { H: "#e8e2d0", S: "#e9b48f", C: "#2f2b44", T: "#ffd34d" },
+    "t-archi":    { H: "#6b4a2f", S: "#f0c2a0", C: "#4a6fa5", T: "#e8e2d0" },
+    "t-dev":      { H: "#1d1b26", S: "#c88a5e", C: "#3fb0e0" },
+    "t-reviewer": { H: "#c2462e", S: "#f2c9a8", C: "#57c27f" },
+    "t-qa":       { H: "#2b2238", S: "#b07a55", C: "#ff9a4d" },
+    "t-go":       { H: "#e0a24a", S: "#8d5a3b", C: "#00add8" },
+    "t-doc":      { H: "#8a6bb8", S: "#e9b48f", C: "#f4e7c9", T: "#c0392b" },
+  };
+  function sprite(id) {
+    const look = Object.assign({ E: "#1d1726", M: "#a5544c", D: "#3a3550" }, LOOKS[id] || LOOKS.dan);
+    if (!look.T) look.T = look.C;
+    let rects = "";
+    MAP.forEach((row, y) => {
+      [...row].forEach((k, x) => {
+        if (k !== ".") rects += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + look[k] + '"/>';
+      });
+    });
+    return '<svg viewBox="0 0 10 12" shape-rendering="crispEdges" aria-hidden="true">' + rects + "</svg>";
+  }
+
+  // ---- Layout of the floor ----------------------------------------------
+  function add(cls, style, html) {
+    const n = document.createElement("div");
+    n.className = cls;
+    Object.assign(n.style, style);
+    if (html) n.innerHTML = html;
+    scene.append(n);
+    return n;
+  }
+  const px = (v) => v + "px";
+  function area(x, y, w, h, cls, sign) {
+    const a = add("area " + cls, { left: px(x), top: px(y), width: px(w), height: px(h) });
+    a.innerHTML = '<span class="sign">' + sign + "</span>";
+    return a;
+  }
+
+  area(20, 108, 340, 220, "area-rug", "DIRECTOR");
+  area(380, 108, 260, 220, "area-carpet-3", "SPECS <em>Q0</em>");
+  area(20, 352, 460, 268, "area-carpet", "DEV <em>Q2</em>");
+  area(500, 352, 300, 268, "area-carpet-2", "REVIEW <em>Q1</em>").dataset.room = "review";
+
+  add("prop board", { left: "200px", top: "136px" }, "PROPOSALS<br><b>1 waiting</b><br>TICKETS 3/7");
+  add("prop plant", { left: "316px", top: "268px" });
+  add("prop plant", { left: "596px", top: "268px" });
+  add("prop plant", { left: "440px", top: "560px" });
+  add("prop plant", { left: "756px", top: "560px" }).dataset.plant = "review";
+
+  const SPOTS = { god: [60, 170], maya: [470, 170], alice: [70, 420], bob: [250, 420], carol: [530, 420], dan: [680, 420], erin: [830, 420] };
+  const SAY = {
+    working: '<span class="say say-working"><i></i><i></i><i></i></span>',
+    idle: '<span class="say say-idle">z</span>',
+    awaiting_approval: '<span class="say say-awaiting_approval">!</span>',
+    stopped: "",
+  };
+
+  function station(a) {
+    const s = document.createElement("button");
+    s.type = "button";
+    s.className = "station";
+    s.dataset.agent = a.id;
+    s.dataset.status = a.status;
+    s.setAttribute("aria-pressed", "false");
+    s.setAttribute("aria-label", a.name + ", " + a.role + ", " + Mock.STATUS_LABEL[a.status]);
+    s.style.left = px(SPOTS[a.id][0]);
+    s.style.top = px(SPOTS[a.id][1]);
+    const away = a.status === "stopped";
+    s.innerHTML =
+      (away ? '<span class="chair"></span>' : '<span class="char">' + sprite(a.id) + "</span>" + SAY[a.status]) +
+      '<span class="desk-px"><span class="laptop"></span><span class="mug"></span></span>' +
+      (away ? '<span class="note">ON<br>LEAVE</span>' : "") +
+      '<span class="plate">' + a.name + " <em>" + (away ? "away" : (a.ticket.match(/T-\d+/) || [a.id === "god" ? "boss" : "new"])[0]) + "</em></span>";
+    s.addEventListener("click", () => Mock.select(a.id));
+    scene.append(s);
+    return s;
+  }
+
+  Mock.AGENTS.forEach(station);
+
+  const bin = document.createElement("button");
+  bin.type = "button";
+  bin.className = "bin-px";
+  bin.setAttribute("aria-label", "Wastebasket: messages between agents");
+  bin.innerHTML = '<span class="bin-badge" hidden></span>';
+  bin.addEventListener("click", () => Mock.select("bin"));
+  scene.append(bin);
+  document.addEventListener("mock:bin", (e) => {
+    const badge = bin.querySelector(".bin-badge");
+    badge.hidden = !e.detail.unread;
+    badge.textContent = e.detail.unread;
+    bin.classList.remove("got"); void bin.offsetWidth; bin.classList.add("got");
+  });
+
+  document.addEventListener("mock:select", (e) => {
+    bin.setAttribute("aria-pressed", String(e.detail.id === "bin"));
+    scene.querySelectorAll(".station[data-agent]").forEach((s) => s.setAttribute("aria-pressed", String(s.dataset.agent === e.detail.id)));
+  });
+
+  function head(s) { return { x: s.offsetLeft + 52, y: s.offsetTop + 24 }; }
+
+  // ---- Paper planes ------------------------------------------------------
+  // Drawn pointing right; rotated along the flight in 15° steps.
+  const PLANE_MAP = [
+    "KK..........",
+    "KWKK........",
+    ".KWWWKK.....",
+    "..KWWWWWKKKK",
+    "..KWGGGGKK..",
+    ".KGGKK......",
+    "KGKK........",
+    "KK..........",
+  ];
+  const PLANE = (function () {
+    const fill = { K: "#1d1726", W: "#fffaf0", G: "#bdb3d1" };
+    let rects = "";
+    PLANE_MAP.forEach((row, y) => [...row].forEach((k, x) => {
+      if (k !== ".") rects += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + fill[k] + '"/>';
+    }));
+    return '<svg viewBox="0 0 12 8" shape-rendering="crispEdges">' + rects + "</svg>";
+  })();
+  // A flight is a polyline: a cubic curve with random climbs and dips, a
+  // gentle wobble, and sometimes a loop-the-loop in the middle.
+  function flightPath(p, q) {
+    const rand = (a, b) => a + Math.random() * (b - a);
+    const dist = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    const n = { x: -(q.y - p.y) / dist, y: (q.x - p.x) / dist };
+    const c1 = { x: p.x + (q.x - p.x) * .3 + n.x * rand(-.45, .45) * dist, y: p.y + (q.y - p.y) * .3 + n.y * rand(-.45, .45) * dist - rand(40, 130) };
+    const c2 = { x: p.x + (q.x - p.x) * .7 + n.x * rand(-.45, .45) * dist, y: p.y + (q.y - p.y) * .7 + n.y * rand(-.45, .45) * dist - rand(0, 90) };
+    const wobble = { a: rand(5, 16), f: rand(1.5, 3.5), phase: rand(0, Math.PI * 2) };
+    const N = 140;
+    const pts = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, u = 1 - t;
+      const w = wobble.a * Math.sin(2 * Math.PI * wobble.f * t + wobble.phase) * Math.sin(Math.PI * t);
+      pts.push({
+        x: u * u * u * p.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * q.x + n.x * w,
+        y: u * u * u * p.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * q.y + n.y * w,
+      });
+    }
+    if (dist > 160 && Math.random() < .6) {
+      const k = Math.round(N * rand(.35, .6));
+      const a = pts[k - 1], b = pts[k];
+      const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const tx = (b.x - a.x) / len, ty = (b.y - a.y) / len;
+      // The loop always goes up first: pick the normal that points up the screen.
+      let ux = -ty, uy = tx;
+      if (uy > 0) { ux = -ux; uy = -uy; }
+      const r = rand(22, 36);
+      const loop = [];
+      for (let i = 1; i <= 48; i++) {
+        const th = (i / 48) * Math.PI * 2;
+        loop.push({ x: b.x + tx * r * Math.sin(th) + ux * r * (1 - Math.cos(th)), y: b.y + ty * r * Math.sin(th) + uy * r * (1 - Math.cos(th)) });
+      }
+      pts.splice(k + 1, 0, ...loop);
+    }
+    return pts;
+  }
+
+  function fly(from, to, label, reply, isReply) {
+    const a = scene.querySelector('[data-agent="' + from + '"]');
+    const b = scene.querySelector('[data-agent="' + to + '"]');
+    if (!a || !b) return;
+    const pts = flightPath(head(a), head(b));
+    const plane = add("env-px", {}, PLANE);
+    const top = pts.reduce((m, pt) => (pt.y < m.y ? pt : m), pts[0]);
+    const tag = add("fl-label" + (reply ? " fl-reply" : ""), { left: px(top.x), top: px(top.y - 6) }, from + " → " + to + ": " + label);
+    const snap = (v) => px(Math.round(v / 2) * 2);
+    let i = 0, along = 0, last = performance.now(), frame = 0;
+    function step(now) {
+      const dt = Math.min(48, now - last);
+      last = now;
+      if (reduced) i = pts.length - 1;
+      // Move along the polyline: slower when climbing, faster when diving.
+      const segLen = (k) => Math.hypot(pts[k + 1].x - pts[k].x, pts[k + 1].y - pts[k].y) || .001;
+      if (i < pts.length - 1) {
+        const slope = (pts[i + 1].y - pts[i].y) / segLen(i);
+        along += .3 * (1 + .7 * slope) * dt;
+      }
+      while (i < pts.length - 1 && along >= segLen(i)) {
+        along -= segLen(i);
+        i += 1;
+      }
+      const s0 = pts[Math.min(i, pts.length - 1)], s1 = pts[Math.min(i + 1, pts.length - 1)];
+      const seg = Math.hypot(s1.x - s0.x, s1.y - s0.y) || 1;
+      const f = Math.min(1, along / seg);
+      const x = s0.x + (s1.x - s0.x) * f, y = s0.y + (s1.y - s0.y) * f;
+      plane.style.left = snap(x);
+      plane.style.top = snap(y);
+      const deg = Math.round((Math.atan2(s1.y - s0.y, s1.x - s0.x) * 180 / Math.PI) / 15) * 15;
+      plane.style.transform = "rotate(" + deg + "deg)";
+      if (frame++ % 3 === 0 && !reduced) {
+        const tr = add("trail", { left: snap(x), top: snap(y) });
+        setTimeout(() => tr.remove(), 800);
+      }
+      if (i < pts.length - 1) return requestAnimationFrame(step);
+      plane.remove();
+      b.classList.remove("got"); void b.offsetWidth; b.classList.add("got");
+      Mock.trash({ from, to, text: label, reply: !!isReply });
+      setTimeout(() => tag.remove(), 900);
+      if (reply) setTimeout(() => fly(to, from, reply, null, true), reduced ? 1500 : 900);
+    }
+    requestAnimationFrame(step);
+  }
+
+  document.addEventListener("mock:message", (e) => fly(e.detail.from, e.detail.to, e.detail.label, e.detail.reply));
+
+  // ---- Walking and construction work ---------------------------------------
+  // Moves a walker through waypoints (offsets from its own position) at a
+  // steady pace; resolves when it arrives.
+  function walk(el, legs) {
+    const lengths = legs.slice(1).map(([x, y], i) => Math.hypot(x - legs[i][0], y - legs[i][1]));
+    const total = lengths.reduce((sum, l) => sum + l, 0) || 1;
+    let acc = 0;
+    const frames = legs.map(([x, y], i) => {
+      if (i) acc += lengths[i - 1];
+      return { transform: "translate(" + x + "px," + y + "px)", offset: acc / total };
+    });
+    return new Promise((done) => {
+      el.animate(frames, { duration: reduced ? 1 : total * 6, easing: "linear", fill: "forwards" }).onfinish = done;
+    });
+  }
+
+  // A burst of dust and "tap tap" words around a desk spot.
+  function works(x, y) {
+    if (reduced) return;
+    const words = ["TAP", "BANG!", "TAP"];
+    words.forEach((w, i) => {
+      const n = add("works-word", { left: px(x + 10 + i * 34), top: px(y + 20 - (i % 2) * 18), animationDelay: i * 220 + "ms" }, w);
+      setTimeout(() => n.remove(), 1400);
+    });
+    for (let i = 0; i < 16; i++) {
+      const d = add("dust", { left: px(x + 52), top: px(y + 64) });
+      const ang = Math.random() * Math.PI * 2, r = 30 + Math.random() * 50;
+      d.animate([{ transform: "translate(0,0) scale(1)" }, { transform: "translate(" + Math.cos(ang) * r + "px," + Math.sin(ang) * r * .6 + "px) scale(.3)", opacity: 0 }],
+        { duration: 900, delay: Math.random() * 300, easing: "steps(6)", fill: "forwards" }).onfinish = () => d.remove();
+    }
+  }
+
+  // ---- A newcomer walks in, then the team builds a desk for them -----------
+  // There are no empty desks waiting: a room holds exactly its team. The
+  // newcomer walks to the room, a quick construction adds a desk (the room
+  // grows first when the desk does not fit), then they sit down.
+  document.addEventListener("mock:arrive", (e) => {
+    const a = Mock.agent(e.detail.id);
+    const [fx, fy] = SPOTS[a.id];
+    const corridor = 330 - fy;
+    const walker = add("station walking", { left: px(fx), top: px(fy), pointerEvents: "none", zIndex: 6 }, '<span class="char">' + sprite(a.id) + "</span>");
+    walk(walker, [[870 - 52 - fx, 20 - fy], [870 - 52 - fx, corridor], [0, corridor]]).then(() => {
+      walker.classList.remove("walking");
+      const room = scene.querySelector('[data-room="' + a.team + '"]');
+      const needed = fx + 104 + 12 - room.offsetLeft;
+      const grow = needed > room.offsetWidth;
+      if (grow) {
+        room.style.transition = "width .7s steps(7)";
+        room.style.width = px(needed);
+        const plant = scene.querySelector('[data-plant="' + a.team + '"]');
+        if (plant) { plant.style.transition = "left .7s steps(7)"; plant.style.left = px(room.offsetLeft + needed - 44); }
+        works(fx - 40, fy + 40);
+      }
+      setTimeout(() => {
+        works(fx, fy);
+        setTimeout(() => {
+          const s = station(a);
+          s.classList.add("pop");
+          const seated = s.querySelector(".char");
+          seated.style.visibility = "hidden";
+          walker.classList.add("walking");
+          walk(walker, [[0, corridor], [0, 0]]).then(() => {
+            walker.remove();
+            seated.style.visibility = "";
+            celebrate("NEW RECRUIT!", a.name + " joined " + a.team.toUpperCase(), 380);
+          });
+        }, reduced ? 1 : 1100);
+      }, grow ? (reduced ? 1 : 800) : 0);
+    });
+  });
+
+  function celebrate(title, text, top) {
+    const toast = add("toast", { top: px(top - 30) }, "<strong>" + title + "</strong><span>" + text + "</span>");
+    const colors = ["#ffd34d", "#ff8a5c", "#6fdc8c", "#3fb0e0", "#ef6b86"];
+    for (let i = 0; i < (reduced ? 0 : 26); i++) {
+      const c = add("confetti", { left: px(480), top: px(top), background: colors[i % colors.length] });
+      const ang = Math.random() * Math.PI * 2, d = 80 + Math.random() * 120;
+      c.animate([{ transform: "translate(0,0)" }, { transform: "translate(" + Math.cos(ang) * d + "px," + (Math.sin(ang) * d + 80) + "px)", opacity: 0 }],
+        { duration: 1400, easing: "steps(10)" }).onfinish = () => c.remove();
+    }
+    setTimeout(() => toast.remove(), 4100);
+  }
+
+  // ---- Leave, return, dismiss ---------------------------------------------
+  // Redraws an agent's desk after its status changed (leave or return).
+  function refresh(id) {
+    const old = scene.querySelector('[data-agent="' + id + '"]');
+    if (!old) return;
+    old.remove();
+    const s = station(Mock.agent(id));
+    s.classList.add("pop");
+    s.setAttribute("aria-pressed", String(Mock.selected === id));
+  }
+
+  // A dismissed agent stands up and walks out through the entrance door; the
+  // empty desk is taken down behind them.
+  function walkOut(id) {
+    const s = scene.querySelector('[data-agent="' + id + '"]');
+    if (!s) return;
+    const fx = s.offsetLeft, fy = s.offsetTop;
+    s.querySelectorAll(".char, .say").forEach((n) => n.remove());
+    s.style.pointerEvents = "none";
+    const walker = add("station walking", { left: px(fx), top: px(fy), pointerEvents: "none", zIndex: 6 }, '<span class="char">' + sprite(id) + "</span>");
+    walk(walker, [[0, 0], [0, 300 - fy], [870 - 52 - fx, 300 - fy], [870 - 52 - fx, 20 - fy]]).then(() => walker.remove());
+    setTimeout(() => {
+      works(fx, fy);
+      setTimeout(() => s.remove(), reduced ? 1 : 500);
+    }, reduced ? 1 : 900);
+  }
+
+  window.Pixel = { sprite, LOOKS, refresh, walkOut };
+
+  // ---- A new team gets its own room ----------------------------------------
+  // In the real UI the rooms are laid out automatically: the director's office
+  // comes first, team rooms fill the free slots row by row, and the floor grows
+  // (it scrolls) when a row is full. Here, one scripted team takes the free
+  // slot next to Specs.
+  setTimeout(function buildTeam() {
+    const rect = { x: 660, y: 108, w: 280, h: 220 };
+    const plot = add("plot", { left: px(rect.x), top: px(rect.y), width: px(rect.w), height: px(rect.h) });
+    setTimeout(() => {
+      plot.remove();
+      const room = area(rect.x, rect.y, rect.w, rect.h, "area-carpet-4 building", "INTEGRATION <em>Q0</em>");
+      setTimeout(() => {
+        room.classList.remove("building");
+        add("prop plant pop", { left: px(896), top: px(268) });
+        celebrate("NEW TEAM!", "INTEGRATION has its room", 200);
+      }, reduced ? 1 : 2100);
+    }, reduced ? 1 : 1300);
+  }, reduced ? 10000 : 10500);
+})();
+</script>
+<script src="c-panels.js"></script>
+</body>
+</html>

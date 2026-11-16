@@ -26,6 +26,7 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 - `hello` opens every connection: reload everything. Nothing is replayed.
 - `: ping` is sent every 15 seconds so that idle proxies keep the connection open (the Next.js development proxy closes it after 30 seconds of silence).
 - `retry` tells `EventSource` to reconnect after 2 seconds if the connection drops.
+- `Cache-Control: no-cache, no-transform`: `no-transform` keeps proxies from compressing the stream. The Next.js development server gzips responses for browsers and would otherwise hold every event back.
 - A client that falls behind (its buffer of 256 events is full) is dropped; it reconnects and gets `hello` again.
 
 ## Event types
@@ -36,6 +37,7 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 | `agent.status` | `{address, status}` | an agent's status actually changes (a repeat is not sent) | `runtime.Statuses.OnChange` |
 | `message.sent` | the message | any message is sent (human, agents, director, `nobody`) | `messaging.Service.OnSent` |
 | `message.delivered` | `{recipient, ids}` | messages are handed to their recipient (hook, fork, hand-over) | `store.Store.OnDelivered` |
+| `messages.deleted` | `{ids}` | the wastebasket was emptied: finished conversations between agents deleted (`DELETE /api/messages?scope=agents`) | `server/api.go` |
 | `approvals.changed` | `{}` | a permission request is added or answered | `approval.Queue.OnChange` |
 | `tickets.changed` | `{id}` | a ticket is created or changed, commented, or gets a deliverable | the ticket service's store, wrapped in `daemon/events.go` |
 | `features.changed` | `{id}` | a feature is proposed, started, refused or activated | the same wrapper |

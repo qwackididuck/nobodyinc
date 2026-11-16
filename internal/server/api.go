@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/qwackididuck/nobodyinc/internal/events"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
@@ -151,6 +152,41 @@ func (s *server) queryMessages(r *http.Request, limit int) ([]messaging.Message,
 	default:
 		return s.Store.RecentMessages(r.Context(), limit)
 	}
+}
+
+// deletedMessages is the body answered by DELETE /api/messages.
+type deletedMessages struct {
+	IDs []string `json:"ids"`
+}
+
+// deleteFinishedAgentConversations empties the control room's wastebasket:
+// the finished conversations between agents are deleted for good; open ones
+// stay. Conversations involving the human or nobody are never touched.
+func (s *server) deleteFinishedAgentConversations(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("scope") != "agents" {
+		s.writeError(w, http.StatusBadRequest, fmt.Errorf("%w: scope must be agents", errBadFilter))
+
+		return
+	}
+
+	ids, err := s.Store.DeleteFinishedConversations(r.Context(),
+		[]string{org.HumanAddress, org.SystemAddress}, messaging.ActsRequiringReply())
+	if err != nil {
+		s.Logger.Error("empty the wastebasket", "err", err)
+		s.writeError(w, http.StatusInternalServerError, errors.New("cannot delete the finished conversations"))
+
+		return
+	}
+
+	if ids == nil {
+		ids = []string{}
+	}
+
+	if len(ids) > 0 {
+		s.Events.Publish(events.Event{Type: events.MessagesDeleted, Data: events.DeletedData{IDs: ids}})
+	}
+
+	s.writeJSON(w, http.StatusOK, deletedMessages{IDs: ids})
 }
 
 // humanDraft is the body of POST /api/messages.

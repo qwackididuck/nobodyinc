@@ -375,6 +375,32 @@ paths:
           $ref: "#/components/responses/Error"
         "403":
           $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteFinishedAgentConversations
+      summary: Delete the finished conversations between agents (empty the wastebasket)
+      description: |
+        Deletes for good the conversations exchanged only between agents (the
+        director included; never one involving the human or `nobody`) that
+        are finished: every message is delivered and the last one expects no
+        answer (inform, agree, refuse, done). Open conversations stay. The
+        deleted messages also disappear from the tickets they were attached
+        to. `scope=agents` is required.
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [agents]
+      responses:
+        "200":
+          description: IDs of the deleted messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagesDeleted"
+        "400":
+          $ref: "#/components/responses/Error"
 
   /api/events:
     get:
@@ -395,6 +421,7 @@ paths:
         - `agent.status`: AgentStatusEvent
         - `message.sent`: Message
         - `message.delivered`: MessagesDeliveredEvent
+        - `messages.deleted`: MessagesDeleted (the wastebasket was emptied)
         - `approvals.changed`: `{}`
         - `tickets.changed`: ChangedEvent (ticket ID)
         - `features.changed`: ChangedEvent (feature ID)
@@ -1014,6 +1041,15 @@ components:
       properties:
         recipient:
           type: string
+        ids:
+          type: array
+          items:
+            type: string
+
+    MessagesDeleted:
+      type: object
+      required: [ids]
+      properties:
         ids:
           type: array
           items:

@@ -32,6 +32,7 @@ The services keep reporting through their own hooks (`Statuses.OnChange`, `Store
 ### 5. Connection details
 
 - A comment line is sent every 15 seconds: the Next.js development proxy closes a connection that stays silent for 30 seconds.
+- The stream is sent with `Cache-Control: no-transform`: the Next.js development server compresses responses for browsers, and a compressed stream is held back until enough data accumulates.
 - In development the UI reaches the stream through the Next.js `/api` proxy, on its own origin (no CORS). How the UI is served in production (static export served by the daemon, or a desktop shell) is left open; the stream works the same way from the daemon's origin.
 - The stream ends when the daemon stops (the bus is closed with the daemon's context), since an HTTP server's `Shutdown` does not interrupt streaming responses.
 - `GET` requests pass the Origin/JSON guard (it protects changes only); the stream reveals nothing more than the REST API it points to.

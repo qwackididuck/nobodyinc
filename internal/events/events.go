@@ -24,6 +24,8 @@ const (
 	MessageSent = "message.sent"
 	// MessagesDelivered carries a DeliveredData.
 	MessagesDelivered = "message.delivered"
+	// MessagesDeleted carries a DeletedData: the wastebasket was emptied.
+	MessagesDeleted = "messages.deleted"
 	// ApprovalsChanged: a permission request was added or answered.
 	ApprovalsChanged = "approvals.changed"
 	// TicketsChanged carries a ChangedData with the ticket ID.
@@ -53,6 +55,11 @@ type AgentStatusData struct {
 type DeliveredData struct {
 	Recipient string   `json:"recipient"`
 	IDs       []string `json:"ids"`
+}
+
+// DeletedData is the data of a MessagesDeleted event.
+type DeletedData struct {
+	IDs []string `json:"ids"`
 }
 
 // ChangedData names the record that changed.

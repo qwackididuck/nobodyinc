@@ -89,6 +89,10 @@ func TestEventStream(t *testing.T) {
 		t.Fatalf("Content-Type = %q", ct)
 	}
 
+	if cc := res.Header.Get("Cache-Control"); !strings.Contains(cc, "no-transform") {
+		t.Fatalf("Cache-Control = %q: proxies would compress and hold events back", cc)
+	}
+
 	lines := sseLines(t, bufio.NewReader(res.Body))
 
 	expectLine(t, lines, "retry: ")

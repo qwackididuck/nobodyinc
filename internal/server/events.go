@@ -44,7 +44,9 @@ func (s *server) streamEvents(w http.ResponseWriter, r *http.Request) {
 func openStream(w http.ResponseWriter, rc *http.ResponseController) error {
 	h := w.Header()
 	h.Set("Content-Type", "text/event-stream")
-	h.Set("Cache-Control", "no-cache")
+	// no-transform keeps proxies from compressing the stream: the Next.js
+	// development server gzips responses and would hold events back.
+	h.Set("Cache-Control", "no-cache, no-transform")
 	h.Set("Connection", "keep-alive")
 	h.Set("X-Accel-Buffering", "no") // tells buffering proxies to pass events at once
 	w.WriteHeader(http.StatusOK)

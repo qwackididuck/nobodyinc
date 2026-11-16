@@ -80,6 +80,46 @@ func TestListMessagesFilters(t *testing.T) {
 	}
 }
 
+func TestEmptyTheWastebasket(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+	ctx := context.Background()
+	t0 := time.Date(2026, 11, 16, 9, 0, 0, 0, time.UTC)
+
+	for i, m := range []messaging.Message{
+		{ID: "a1", Conversation: "c", From: "dev1@dev", To: "archi@specs", Act: messaging.ActQuery},
+		{ID: "a2", Conversation: "c", From: "archi@specs", To: "dev1@dev", Act: messaging.ActInform},
+	} {
+		m.Priority, m.SentAt = messaging.Normal, t0.Add(time.Duration(i)*time.Minute)
+		if err := env.store.InsertMessage(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+
+		if err := env.store.MarkDelivered(ctx, m.To, []string{m.ID}, t0.Add(time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if rec := env.do(t, http.MethodDelete, "/api/messages", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("without scope: status = %d, want 400", rec.Code)
+	}
+
+	rec := env.do(t, http.MethodDelete, "/api/messages?scope=agents", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+
+	var got deletedMessages
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got.IDs) != 2 {
+		t.Fatalf("deleted %v, want both messages of the finished conversation", got.IDs)
+	}
+}
+
 // settingsEnv is a router with settings, launch information and an MCP
 // registry.
 func settingsEnv(t *testing.T, live *settings.Live) testEnv {
