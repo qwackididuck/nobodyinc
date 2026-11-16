@@ -613,10 +613,13 @@ paths:
         otherwise. Nothing is pushed. Then the feature is finished and no
         longer active: team agents restart in the project directory, and the
         teams' worktrees and branches are removed (the feature branch is
-        kept). On a conflict nothing changes.
+        kept). The feature's tickets are archived: they leave the Kanban and
+        stay readable (`GET /api/tickets?archived=true`). On a conflict nothing
+        changes.
 
         While some of its tickets are not done or canceled, the finish is
-        refused unless `force` is true; work not delivered by then is lost.
+        refused unless `force` is true: they are then canceled (and archived),
+        and the work they did not deliver is lost.
       parameters:
         - $ref: "#/components/parameters/FeatureID"
       requestBody:
@@ -652,11 +655,18 @@ paths:
     get:
       operationId: listTickets
       summary: Tickets, oldest first, optionally filtered
+      description: |
+        Archived tickets (those of finished features, ADR-0007) are left out,
+        unless `archived=true`, which lists only them.
       parameters:
         - name: team
           in: query
           schema:
             type: string
+        - name: archived
+          in: query
+          schema:
+            type: boolean
         - name: status
           in: query
           schema:
@@ -703,6 +713,41 @@ paths:
               schema:
                 $ref: "#/components/schemas/TicketDetails"
         "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTicket
+      summary: Delete a ticket for good (the Kanban's shredder)
+      description: |
+        Only the human deletes tickets. The ticket, its comments and its
+        deliverables are deleted; messages about it stay, without the link.
+        If an agent is working on it, it gets an urgent notice from `nobody`
+        to stop. With `cascade=true`, the tickets that depend on it, and the
+        ones that depend on those, are deleted too; otherwise they no longer
+        wait for it. Archived tickets cannot be deleted.
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+        - name: cascade
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: IDs of the deleted tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ids]
+                properties:
+                  ids:
+                    type: array
+                    items:
+                      type: string
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
 
   /api/tickets/{id}/comments:
@@ -1357,6 +1402,9 @@ components:
         updated_at:
           type: string
           format: date-time
+        archived:
+          type: boolean
+          description: The ticket of a finished feature, kept in the archives (read-only).
 
     TicketDraft:
       type: object

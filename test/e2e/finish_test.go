@@ -71,6 +71,11 @@ func TestFinishFeature(t *testing.T) {
 
 	waitRestarted(t, d, o, before)
 
+	archived, err := d.Tickets.Get(ctx, impl.ID)
+	if err != nil || !archived.Ticket.Archived {
+		t.Fatalf("the feature's ticket should be archived: %+v, %v", archived.Ticket, err)
+	}
+
 	if dir := d.WorkDir("dev1@dev"); dir != o.ProjectDir {
 		t.Fatalf("dev1 should work in the project again, works in %s", dir)
 	}

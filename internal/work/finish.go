@@ -3,8 +3,9 @@ package work
 // Finishing a feature (ADR-0007). The human reviews what the feature branch
 // brings to its base branch, then finishes it: the feature branch is merged
 // into the base branch (locally, never pushed), the feature is finished and
-// no longer active, and OnFeatureFinished brings the agents back to the
-// project. Only the human finishes a feature, and only the active one.
+// no longer active, its tickets are archived, and OnFeatureFinished brings
+// the agents back to the project. Only the human finishes a feature, and only
+// the active one.
 
 import (
 	"context"
@@ -74,9 +75,10 @@ func (s *Service) ReviewFeature(ctx context.Context, id string) (FeatureReview, 
 	return review, nil
 }
 
-// FinishFeature merges the active feature into its base branch and ends it.
-// While some of its tickets are not done or canceled, it is refused unless
-// force is set (the work they have not delivered is then lost).
+// FinishFeature merges the active feature into its base branch and ends it;
+// its tickets are archived. While some of them are not done or canceled, it
+// is refused unless force is set: they are then canceled, and the work they
+// have not delivered is lost.
 func (s *Service) FinishFeature(ctx context.Context, by, id string, force bool) (Feature, error) {
 	f, err := s.finishable(ctx, by, id, force)
 	if err != nil {
@@ -95,6 +97,10 @@ func (s *Service) FinishFeature(ctx context.Context, by, id string, force bool) 
 	}
 
 	if err := s.Store.DeactivateFeature(ctx, f.ID); err != nil {
+		return Feature{}, err
+	}
+
+	if err := s.archiveTickets(ctx, f.ID); err != nil {
 		return Feature{}, err
 	}
 
@@ -141,6 +147,26 @@ func (s *Service) finishable(ctx context.Context, by, id string, force bool) (Fe
 	}
 
 	return f, nil
+}
+
+// archiveTickets cancels the feature's unfinished tickets (only left when the
+// finish was forced), then archives all of them.
+func (s *Service) archiveTickets(ctx context.Context, feature string) error {
+	unfinished, err := s.unfinishedTickets(ctx, feature)
+	if err != nil {
+		return err
+	}
+
+	for _, t := range unfinished {
+		t.Status, t.UpdatedAt = StatusCanceled, s.now()
+		if err := s.Store.UpdateTicket(ctx, t); err != nil {
+			return err
+		}
+	}
+
+	_, err = s.Store.ArchiveFeatureTickets(ctx, feature)
+
+	return err
 }
 
 func (s *Service) unfinishedTickets(ctx context.Context, feature string) ([]Ticket, error) {

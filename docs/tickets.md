@@ -63,6 +63,10 @@ Agents on leave are never chosen, neither for a queued ticket nor for `@<team>`.
 
 `/api/tickets*` (see `api/openapi.yaml`) lets the human list, create, comment and change the status of tickets. The control room has a **Kanban** tab: tickets as cards in one column per status (dragging a card changes its status), a creation form, and a drawer with a ticket's deliverables, comments and messages.
 
+**Deleting a ticket** (`DELETE /api/tickets/{id}`): the human drags its card onto the Kanban's shredder. The ticket, its comments and its deliverables are deleted for good; messages about it stay, without the link. If an agent was working on it, it gets an urgent notice from `nobody` to stop. With `cascade=true` (a box in the shredder's confirmation), the tickets that depend on it, and theirs, are deleted too; otherwise they no longer wait for it.
+
+**Archived tickets**: finishing a feature archives its tickets (ADR-0007). They leave the Kanban and every queue, and stay readable: `GET /api/tickets?archived=true`, and the archives room of the office. They cannot be deleted.
+
 ## Not yet
 
 - Bids (calls for tender) and the god session that writes the tickets from the requirements.

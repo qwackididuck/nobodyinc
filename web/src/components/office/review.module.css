@@ -203,3 +203,7 @@
   font: 15px/1.25 var(--font-mono);
   white-space: pre-wrap;
 }
+
+.diffFile > .section {
+  padding: 8px 12px 12px;
+}

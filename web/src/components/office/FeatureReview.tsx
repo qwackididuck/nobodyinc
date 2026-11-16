@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { type Feature, type FeatureReview as Review, finishFeature, reviewFeature } from "@/lib/api";
-import { useDaemonEvents } from "@/lib/live";
+import { useDaemonEvents, useLive } from "@/lib/live";
 import ui from "../ui/ui.module.css";
 import styles from "./review.module.css";
 
@@ -17,6 +17,7 @@ interface Props {
 // the tickets not done yet. "Merge and finish" merges the feature into its
 // base branch, locally (never pushed), and ends it (ADR-0007).
 export function FeatureReview({ feature, onClose }: Props) {
+  const { tickets } = useLive();
   const [review, setReview] = useState<Review | null>(null);
   const [version, setVersion] = useState(0);
   const [force, setForce] = useState(false);
@@ -54,6 +55,7 @@ export function FeatureReview({ feature, onClose }: Props) {
   }
 
   const unfinished = review?.unfinished_tickets ?? [];
+  const ticketCount = tickets.filter((t) => t.feature === feature.id).length;
   const blocked = unfinished.length > 0 && !force;
 
   return (
@@ -161,9 +163,13 @@ export function FeatureReview({ feature, onClose }: Props) {
           )}
 
           <div className={styles.foot}>
+            <p className={styles.by}>
+              Finishing archives the feature&apos;s {ticketCount} ticket{ticketCount === 1 ? "" : "s"}: they leave the Kanban and the librarian files them in the
+              archives, where they stay readable.
+            </p>
             {unfinished.length > 0 && (
               <label className={styles.force}>
-                <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} /> Finish anyway: what these tickets did not deliver is lost
+                <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} /> Finish anyway: these tickets are canceled and archived, and what they did not deliver is lost
               </label>
             )}
             {confirming ? (

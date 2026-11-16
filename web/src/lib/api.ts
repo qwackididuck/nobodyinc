@@ -265,6 +265,8 @@ export interface Ticket {
   created_by: string;
   created_at: string;
   updated_at: string;
+  // The ticket of a finished feature, kept in the archives (read-only).
+  archived?: boolean;
 }
 
 export interface Deliverable {
@@ -302,6 +304,22 @@ export interface TicketDraft {
 
 export function listTickets(): Promise<Ticket[]> {
   return getJSON<Ticket[]>("/api/tickets");
+}
+
+// listArchivedTickets returns the tickets of finished features.
+export function listArchivedTickets(): Promise<Ticket[]> {
+  return getJSON<Ticket[]>("/api/tickets?archived=true");
+}
+
+// deleteTicket shreds a ticket for good; with cascade, the tickets that
+// depend on it (and theirs) go too, otherwise they stop waiting for it.
+// It returns the IDs of the deleted tickets.
+export async function deleteTicket(id: string, cascade: boolean): Promise<string[]> {
+  const res = await fetch(`/api/tickets/${encodeURIComponent(id)}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+  return ((await res.json()) as { ids: string[] }).ids;
 }
 
 export function getTicket(id: string): Promise<TicketDetails> {

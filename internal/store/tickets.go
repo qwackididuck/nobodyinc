@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/qwackididuck/nobodyinc/internal/work"
@@ -110,22 +111,17 @@ func (s *Store) ListTickets(ctx context.Context, f work.Filter) ([]work.Ticket, 
 }
 
 // ticketFilter turns a filter into a WHERE clause made of fixed conditions,
-// with the values passed as arguments.
+// with the values passed as arguments. Archived tickets are only listed when
+// asked for, and then alone.
 func ticketFilter(f work.Filter) (string, []any) {
-	var (
-		conditions []string
-		args       []any
-	)
+	conditions := []string{"archived = ?"}
+	args := []any{f.Archived}
 
 	for column, value := range map[string]string{"team": f.Team, "assignee": f.Assignee, "status": string(f.Status)} {
 		if value != "" {
 			conditions = append(conditions, column+" = ?")
 			args = append(args, value)
 		}
-	}
-
-	if len(conditions) == 0 {
-		return "", nil
 	}
 
 	return " WHERE " + strings.Join(conditions, " AND "), args
@@ -258,8 +254,79 @@ func (s *Store) ListComments(ctx context.Context, ticket string) ([]work.Comment
 	return list, rows.Err()
 }
 
+// ArchiveFeatureTickets archives the tickets of a feature and returns their
+// IDs.
+func (s *Store) ArchiveFeatureTickets(ctx context.Context, feature string) ([]string, error) {
+	rows, err := s.db.QueryContext(ctx, `UPDATE tickets SET archived = 1 WHERE feature = ? AND archived = 0 RETURNING id`, feature)
+	if err != nil {
+		return nil, fmt.Errorf("archive the tickets of %s: %w", feature, err)
+	}
+	defer rows.Close()
+
+	var ids []string
+
+	for rows.Next() {
+		var n int64
+		if err := rows.Scan(&n); err != nil {
+			return nil, err
+		}
+
+		ids = append(ids, work.FormatID(n))
+	}
+
+	return ids, rows.Err()
+}
+
+// DeleteTickets deletes tickets for good, with their comments, deliverables
+// and dependencies (tickets that waited for them no longer do). Messages
+// about them stay, without the link.
+func (s *Store) DeleteTickets(ctx context.Context, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	numbers := make([]string, len(ids))
+
+	for i, id := range ids {
+		n, err := work.ParseID(id)
+		if err != nil {
+			return err
+		}
+
+		numbers[i] = strconv.FormatInt(n, 10)
+	}
+
+	nIn, nArgs := inClause(numbers)
+	idIn, idArgs := inClause(ids)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after a successful commit
+
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{"DELETE FROM deliverables WHERE ticket IN " + nIn, nArgs},
+		{"DELETE FROM ticket_comments WHERE ticket IN " + nIn, nArgs},
+		{"DELETE FROM ticket_dependencies WHERE ticket IN " + nIn + " OR depends_on IN " + nIn, append(append([]any{}, nArgs...), nArgs...)},
+		{"UPDATE messages SET ticket = '' WHERE ticket IN " + idIn, idArgs},
+		{"DELETE FROM tickets WHERE id IN " + nIn, nArgs},
+	}
+
+	for _, st := range statements {
+		if _, err := tx.ExecContext(ctx, st.query, st.args...); err != nil {
+			return fmt.Errorf("delete tickets: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 const selectTickets = `
-	SELECT id, title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at
+	SELECT id, title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at, archived
 	FROM tickets`
 
 func scanTicket(row scanner) (work.Ticket, error) {
@@ -269,7 +336,7 @@ func scanTicket(row scanner) (work.Ticket, error) {
 		createdAt, updatedAt string
 	)
 	if err := row.Scan(&n, &t.Title, &t.Description, &t.AcceptanceCriteria, &t.Team, &t.Feature, &t.Assignee,
-		&t.Status, &t.CreatedBy, &createdAt, &updatedAt); err != nil {
+		&t.Status, &t.CreatedBy, &createdAt, &updatedAt, &t.Archived); err != nil {
 		return work.Ticket{}, err
 	}
 

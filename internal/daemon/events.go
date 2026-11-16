@@ -89,6 +89,26 @@ func (a announcingWorkStore) DeactivateFeature(ctx context.Context, id string) e
 	return err
 }
 
+func (a announcingWorkStore) ArchiveFeatureTickets(ctx context.Context, feature string) ([]string, error) {
+	ids, err := a.Store.ArchiveFeatureTickets(ctx, feature)
+	for _, id := range ids {
+		a.ticketChanged(id)
+	}
+
+	return ids, err
+}
+
+func (a announcingWorkStore) DeleteTickets(ctx context.Context, ids []string) error {
+	err := a.Store.DeleteTickets(ctx, ids)
+	if err == nil {
+		for _, id := range ids {
+			a.ticketChanged(id)
+		}
+	}
+
+	return err
+}
+
 func (a announcingWorkStore) ticketChanged(id string) {
 	a.bus.Publish(events.Event{Type: events.TicketsChanged, Data: events.ChangedData{ID: id}})
 }

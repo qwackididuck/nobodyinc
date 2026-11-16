@@ -40,6 +40,10 @@ type TicketStore interface {
 	ListDeliverables(ctx context.Context, ticket string) ([]Deliverable, error)
 	InsertComment(ctx context.Context, c Comment) (Comment, error)
 	ListComments(ctx context.Context, ticket string) ([]Comment, error)
+	// ArchiveFeatureTickets archives a feature's tickets, returning their IDs.
+	ArchiveFeatureTickets(ctx context.Context, feature string) ([]string, error)
+	// DeleteTickets deletes tickets for good, with what belongs to them.
+	DeleteTickets(ctx context.Context, ids []string) error
 }
 
 // FeatureStore keeps features.
@@ -56,11 +60,13 @@ type FeatureStore interface {
 	DeactivateFeature(ctx context.Context, id string) error
 }
 
-// Filter narrows ListTickets; empty fields match everything.
+// Filter narrows ListTickets; empty fields match everything. Archived
+// tickets are left out, unless Archived is set, which lists only them.
 type Filter struct {
 	Team     string
 	Assignee string
 	Status   Status
+	Archived bool
 }
 
 // Event is something that happened to a ticket, for notifications.
@@ -111,7 +117,10 @@ type Service struct {
 	// OnFeatureFinished, when set, is called once a feature is merged and no
 	// longer active, e.g. to bring the agents back to the project.
 	OnFeatureFinished func(Feature)
-	Now               func() time.Time
+	// OnTicketDeleted, when set, is called for each deleted ticket an agent
+	// was working on, e.g. to tell it to stop.
+	OnTicketDeleted func(Ticket)
+	Now             func() time.Time
 }
 
 // Create files a new ticket in a team's queue, or assigns it directly.

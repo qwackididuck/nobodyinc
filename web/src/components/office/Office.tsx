@@ -10,7 +10,9 @@
 //     construction adds its desk (the room grows first, and neighbours move,
 //     when it does not fit), then it sits down;
 //   - a dismissed agent walks out and its desk is taken down;
-//   - a new team gets its room built; a removed team's room is taken down.
+//   - a new team gets its room built; a removed team's room is taken down;
+//   - a finished feature: the librarian fetches its tickets from the
+//     director's office and files them in the archives.
 // Paper planes are launched by the event stream (message.sent).
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -22,9 +24,11 @@ import { lookOf, teamColors } from "@/lib/look";
 import { betweenAgents, isDirector } from "../chat/agents";
 import { Banner } from "./Banner";
 import { Desk } from "./Desk";
+import { Sprite } from "./sprite";
+import { ArchivesPanel } from "./ArchivesPanel";
 import { FeatureReview } from "./FeatureReview";
 import { addWalker, celebrate, dismantle, flyPlane, walk, works } from "./effects";
-import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
+import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, LIBRARIAN, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
 import styles from "./office.module.css";
 
 interface Props {
@@ -39,7 +43,8 @@ type Scene =
   | { id: number; kind: "arrive"; agent: Agent }
   | { id: number; kind: "leave"; agent: Agent; at: Point }
   | { id: number; kind: "team-built"; team: string }
-  | { id: number; kind: "team-removed"; box: Room };
+  | { id: number; kind: "team-removed"; box: Room }
+  | { id: number; kind: "archive"; feature: Feature };
 
 // What the office last showed, to tell what changed.
 interface Seen {
@@ -80,6 +85,10 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
   // The feature under review stays shown after it is finished (and no
   // longer active), so that the panel can say how it went.
   const [reviewing, setReviewing] = useState<Feature | null>(null);
+  const [archivesOpen, setArchivesOpen] = useState(false);
+  // While the librarian is out fetching tickets, its chair is empty.
+  const [librarianAway, setLibrarianAway] = useState(false);
+  const [seenFinished, setSeenFinished] = useState<string | null>(null);
 
   // Compare with what was shown before (React's "adjust state when props
   // change" pattern: no effect, no flash of the new desk).
@@ -109,6 +118,20 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
       if (newScenes.length) setScenes((s) => [...s, ...newScenes]);
     }
     setSeen({ key, agents, teams });
+  }
+
+  // A feature newly finished sends the librarian to file its tickets.
+  const finishedKey = features
+    .filter((f) => f.status === "finished")
+    .map((f) => f.id)
+    .join(",");
+  if (loaded.features && seenFinished !== finishedKey) {
+    if (seenFinished !== null) {
+      const before = new Set(seenFinished.split(","));
+      const newly = features.filter((f) => f.status === "finished" && !before.has(f.id));
+      if (newly.length) setScenes((s) => [...s, ...newly.map((feature): Scene => ({ id: nextSceneID++, kind: "archive", feature }))]);
+    }
+    setSeenFinished(finishedKey);
   }
 
   const walking = useMemo(() => new Set([...arrivals].filter(([, phase]) => phase === "walking").map(([a]) => a)), [arrivals]);
@@ -182,7 +205,33 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
         case "team-removed":
           dismantle(el, scene.box, motion);
           return;
+        case "archive":
+          await fileTickets(el, scene.feature, motion);
+          return;
       }
+    }
+
+    // fileTickets plays the librarian fetching a finished feature's tickets
+    // from the director's office and bringing them back to the archives.
+    async function fileTickets(el: HTMLDivElement, feature: Feature, motion: boolean) {
+      const { layout: now } = current.current;
+      const desk = now.desks.get(LIBRARIAN);
+      const archives = now.rooms.find((r) => r.kind === "archives");
+      const office = now.rooms.find((r) => r.kind === "director");
+      if (!desk || !archives || !office) return;
+
+      const pileAt = { x: office.x + 190, y: office.y + 70 };
+      const pile = addPile(el, pileAt);
+      setLibrarianAway(true);
+      const walker = addWalker(el, lookOf(LIBRARIAN, false), desk);
+      const route = [desk, { x: desk.x, y: archives.corridorY }, { x: pileAt.x, y: archives.corridorY }, { x: pileAt.x, y: office.corridorY }, pileAt];
+      await walk(walker, route, motion);
+      pile.remove();
+      carry(walker);
+      await walk(walker, [...route].reverse(), motion);
+      walker.remove();
+      setLibrarianAway(false);
+      celebrate(el, "ARCHIVED!", `${feature.id} filed by the librarian`, { x: SCENE_WIDTH / 2, y: archives.y + 40 }, motion);
     }
   }, [scenes]);
 
@@ -214,6 +263,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
     <section className={styles.office} aria-label="Office">
       <Banner onOpenDirector={() => (director ? onSelectAgent(director.address) : onHireDirector())} onReview={() => setReviewing(active ?? null)} />
       {reviewing && <FeatureReview feature={reviewing} onClose={() => setReviewing(null)} />}
+      {archivesOpen && <ArchivesPanel onClose={() => setArchivesOpen(false)} onOpenChat={onSelectAgent} />}
       <div className={styles.wrap}>
         <div className={styles.scene} style={{ width: SCENE_WIDTH, height: Math.max(layout.height, full.height) }}>
           <Wall binUnread={binUnread} onOpenBin={onOpenBin} />
@@ -226,6 +276,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
               building={building.has(room.id)}
               queue={room.kind === "team" ? queue(room.id) : 0}
             >
+              {room.kind === "archives" && <Shelves count={features.filter((f) => f.status === "finished").length} onOpen={() => setArchivesOpen(true)} />}
               {room.kind === "director" && (
                 <DirectorProps
                   room={room}
@@ -240,6 +291,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
           ))}
           {layout.rooms.flatMap((room) =>
             room.desks.map(({ address, at }) => {
+              if (address === LIBRARIAN) return <Librarian key={address} at={at} away={librarianAway} onOpen={() => setArchivesOpen(true)} />;
               const agent = byAddress.get(address);
               if (!agent) return null;
               return (
@@ -350,4 +402,64 @@ function bounce(scene: HTMLElement | null, address: string) {
   desk.classList.remove(styles.got);
   void desk.offsetWidth;
   desk.classList.add(styles.got);
+}
+
+// Librarian is the archives' keeper at its desk: a character of the office,
+// not an agent. Clicking it opens the archives.
+function Librarian({ at, away, onOpen }: { at: Point; away: boolean; onOpen: () => void }) {
+  return (
+    <button type="button" className={styles.desk} style={{ left: at.x, top: at.y }} data-status="idle" aria-label="The librarian: open the archives" onClick={onOpen}>
+      {away ? (
+        <span className={styles.chair} />
+      ) : (
+        <>
+          <span className={styles.char}>
+            <Sprite look={lookOf(LIBRARIAN, false)} />
+          </span>
+          <span className={`${styles.say} ${styles.sayIdle}`} aria-hidden="true">
+            z
+          </span>
+        </>
+      )}
+      <span className={styles.deskTop}>
+        <span className={styles.book} />
+      </span>
+      <span className={styles.plate}>
+        librarian{away && <em> out</em>}
+      </span>
+    </button>
+  );
+}
+
+// Shelves hold one box per finished feature. Clicking them opens the archives.
+function Shelves({ count, onOpen }: { count: number; onOpen: () => void }) {
+  const shown = Math.min(count, 12);
+  return (
+    <button type="button" className={styles.shelves} aria-label={`Archives: ${count} finished features`} onClick={onOpen}>
+      {[0, 1, 2].map((row) => (
+        <span key={row} className={styles.shelf}>
+          {Array.from({ length: Math.max(0, Math.min(4, shown - row * 4)) }, (_, i) => (
+            <span key={i} className={styles.box} />
+          ))}
+        </span>
+      ))}
+    </button>
+  );
+}
+
+// addPile drops a pile of ticket cards where the librarian will pick it up.
+function addPile(layer: HTMLElement, at: Point): HTMLElement {
+  const pile = document.createElement("div");
+  pile.className = styles.pile;
+  pile.style.left = `${at.x + 34}px`;
+  pile.style.top = `${at.y + 60}px`;
+  layer.append(pile);
+  return pile;
+}
+
+// carry puts the pile above the walker's head.
+function carry(walker: HTMLElement) {
+  const pile = document.createElement("span");
+  pile.className = styles.carried;
+  walker.append(pile);
 }

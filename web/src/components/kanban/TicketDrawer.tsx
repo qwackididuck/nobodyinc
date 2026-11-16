@@ -19,12 +19,14 @@ interface Props {
   id: string;
   onClose: () => void;
   onOpenChat: (address: string) => void;
+  // Archived tickets are shown read-only.
+  readOnly?: boolean;
 }
 
 // TicketDrawer shows everything about a ticket: the need and its acceptance
 // criteria, the deliverables, the comments and the messages attached to it.
 // The human may change its status and comment.
-export function TicketDrawer({ id, onClose, onOpenChat }: Props) {
+export function TicketDrawer({ id, onClose, onOpenChat, readOnly = false }: Props) {
   const [details, setDetails] = useState<TicketDetails | null>(null);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -90,13 +92,20 @@ export function TicketDrawer({ id, onClose, onOpenChat }: Props) {
               )}
               {t.feature && ` · ${t.feature}`} · created by {t.created_by}
             </p>
-            <div className={ui.seg} role="group" aria-label="Status">
-              {STATUSES.map((s) => (
-                <button key={s.status} type="button" aria-pressed={t.status === s.status} onClick={() => void act(() => setTicketStatus(id, s.status))}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
+            {readOnly ? (
+              <span className={ui.chip}>
+                {STATUSES.find((s) => s.status === t.status)?.label}
+                {t.archived ? " · archived" : ""}
+              </span>
+            ) : (
+              <div className={ui.seg} role="group" aria-label="Status">
+                {STATUSES.map((s) => (
+                  <button key={s.status} type="button" aria-pressed={t.status === s.status} onClick={() => void act(() => setTicketStatus(id, s.status))}>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            )}
             {t.blocked_by?.length ? <p className={ui.sub}>Waits for {t.blocked_by.join(", ")}</p> : null}
             {t.description && <Section title="What is needed">{t.description}</Section>}
             {t.acceptance_criteria && <Section title="Acceptance criteria">{t.acceptance_criteria}</Section>}
@@ -124,7 +133,7 @@ export function TicketDrawer({ id, onClose, onOpenChat }: Props) {
                 </li>
               ))}
             </ul>
-            <form className={styles.commentForm} onSubmit={submit}>
+            {!readOnly && <form className={styles.commentForm} onSubmit={submit}>
               <input
                 id="ticket-comment"
                 className={ui.input}
@@ -136,7 +145,7 @@ export function TicketDrawer({ id, onClose, onOpenChat }: Props) {
               <button type="submit" className={ui.btn} disabled={!comment.trim()}>
                 Comment
               </button>
-            </form>
+            </form>}
             {details.messages.length > 0 && (
               <>
                 <h4 className={styles.sectionTitle}>Messages about it</h4>

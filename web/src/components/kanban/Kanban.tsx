@@ -10,6 +10,7 @@ import { Sprite } from "../office/sprite";
 import ui from "../ui/ui.module.css";
 import styles from "./kanban.module.css";
 import { NewTicket } from "./NewTicket";
+import { Shredder } from "./Shredder";
 import { TicketDrawer } from "./TicketDrawer";
 
 const COLUMNS: { status: TicketStatus; label: string }[] = [
@@ -25,7 +26,9 @@ interface Props {
 
 // Kanban shows the tickets as index cards pinned on a cork board, one column
 // per status. Dragging a card to another column changes its status (the
-// human may change any ticket); clicking it opens its details.
+// human may change any ticket), dragging it onto the shredder deletes it;
+// clicking it opens its details. Tickets of finished features are archived
+// and not shown here.
 export function Kanban({ onOpenChat }: Props) {
   const { tickets, teams, features, agents, approvals } = useLive();
   const [team, setTeam] = useState<string | null>(null);
@@ -149,6 +152,7 @@ export function Kanban({ onOpenChat }: Props) {
           );
         })}
       </div>
+      <Shredder tickets={tickets} onShredded={(ids) => ids.includes(open ?? "") && setOpen(null)} />
       {open && <TicketDrawer id={open} onClose={() => setOpen(null)} onOpenChat={onOpenChat} />}
       {creating && <NewTicket onClose={() => setCreating(false)} onCreated={(id) => setOpen(id)} />}
     </div>

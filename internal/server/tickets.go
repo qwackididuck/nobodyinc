@@ -11,8 +11,9 @@ import (
 
 func (s *server) listTickets(w http.ResponseWriter, r *http.Request) {
 	tickets, err := s.Tickets.Store.ListTickets(r.Context(), work.Filter{
-		Team:   r.URL.Query().Get("team"),
-		Status: work.Status(r.URL.Query().Get("status")),
+		Team:     r.URL.Query().Get("team"),
+		Status:   work.Status(r.URL.Query().Get("status")),
+		Archived: r.URL.Query().Get("archived") == "true",
 	})
 	if err != nil {
 		s.ticketError(w, err)
@@ -21,6 +22,24 @@ func (s *server) listTickets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, http.StatusOK, append([]work.Ticket{}, tickets...))
+}
+
+// deletedTickets is the body answered by DELETE /api/tickets/{id}.
+type deletedTickets struct {
+	IDs []string `json:"ids"`
+}
+
+// deleteTicket shreds a ticket for good, and with cascade=true the tickets
+// that depend on it.
+func (s *server) deleteTicket(w http.ResponseWriter, r *http.Request) {
+	ids, err := s.Tickets.DeleteTicket(r.Context(), org.HumanAddress, r.PathValue("id"), r.URL.Query().Get("cascade") == "true")
+	if err != nil {
+		s.ticketError(w, err)
+
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, deletedTickets{IDs: ids})
 }
 
 // ticketDraft is the body of POST /api/tickets.

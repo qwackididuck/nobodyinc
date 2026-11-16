@@ -51,7 +51,7 @@ nobody/…--specs                               nobody/…--dev
 - **Finishing the feature** is the human's decision (ADR-0007). "Review & finish" in the banner above the office (`GET /api/features/{id}/review`) shows the commits, the files changed and the diff against the base branch, and the tickets not done yet. "Merge and finish" (`POST /api/features/{id}/finish`):
   - merges `nobody/<slug>` into the base branch with a merge commit signed by Nobody Inc: in the project's checkout when the base branch is checked out there (refused while a tracked file has uncommitted changes), in a throwaway worktree when it is checked out nowhere, refused when another worktree has it. On a conflict nothing changes, and the refusal gives the commands to merge it by hand. **Nothing is pushed**;
   - is refused while some of the feature's tickets are not done or canceled, unless the human finishes anyway (their undelivered work is lost);
-  - ends the feature: it is `finished` and no longer active, team agents restart in the project, then the teams' worktrees and branches are removed. The feature branch is kept. The director gets a notice from `nobody`.
+  - ends the feature: it is `finished` and no longer active, its tickets are archived (the unfinished ones canceled first, when finishing anyway), team agents restart in the project, then the teams' worktrees and branches are removed. The feature branch is kept. The director gets a notice from `nobody`. In the office, the librarian carries the tickets to the archives room, where they stay readable.
 
 ## One ticket at a time
 

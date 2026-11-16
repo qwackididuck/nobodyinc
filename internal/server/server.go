@@ -121,6 +121,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/tickets", s.listTickets)
 	mux.HandleFunc("POST /api/tickets", s.createTicketAsHuman)
 	mux.HandleFunc("GET /api/tickets/{id}", s.getTicket)
+	mux.HandleFunc("DELETE /api/tickets/{id}", s.deleteTicket)
 	mux.HandleFunc("POST /api/tickets/{id}/comments", s.commentTicketAsHuman)
 	mux.HandleFunc("POST /api/tickets/{id}/status", s.setTicketStatusAsHuman)
 	mux.HandleFunc("GET /api/events", s.streamEvents)

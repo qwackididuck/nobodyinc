@@ -184,6 +184,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	tickets.OnFeatureDecided = featureProposals.onDecided
 
 	tickets.OnFeatureFinished = onFeatureFinished(ctx, opts, git, supervisor, featureProposals)
+	tickets.OnTicketDeleted = onTicketDeleted(ctx, messages, opts.Logger)
 
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
 	tickets.OnEvent = notifier.onEvent
@@ -276,6 +277,23 @@ func onFeatureFinished(
 				opts.Logger.Error("remove the feature's worktrees", "feature", f.ID, "err", err)
 			}
 		}()
+	}
+}
+
+// onTicketDeleted tells an agent that the ticket it was working on was
+// deleted by the human, with an urgent notice it gets at its next tool use.
+func onTicketDeleted(ctx context.Context, messages *messaging.Service, logger *slog.Logger) func(work.Ticket) {
+	return func(t work.Ticket) {
+		_, err := messages.Send(context.WithoutCancel(ctx), messaging.Draft{
+			From: org.SystemAddress, To: t.Assignee, Act: messaging.ActInform, Priority: messaging.Urgent,
+			Subject: "Ticket " + t.ID + " deleted",
+			Body: "The human deleted the ticket " + t.ID + " (" + t.Title + ") while you were working on it. " +
+				"Stop working on it now: do not commit or deliver it, and do not use the ticket tools for it. " +
+				"Leave your worktree as it is and wait for your next ticket.",
+		})
+		if err != nil {
+			logger.Error("tell an agent its ticket was deleted", "ticket", t.ID, "agent", t.Assignee, "err", err)
+		}
 	}
 }
 

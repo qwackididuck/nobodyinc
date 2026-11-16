@@ -28,12 +28,13 @@ This is the one exception to "Nobody Inc never touches a branch it does not own"
 ### 3. Then the feature ends
 
 - the feature becomes `finished` and is no longer active; its merge commit is recorded;
+- its tickets are **archived**: they leave the Kanban and the queues, and stay readable, with their comments and deliverables, from the archives room of the office (`GET /api/tickets?archived=true`). Archived tickets cannot be deleted;
 - team agents restart in the project directory (the director, which always works there, is not restarted);
 - the teams' worktrees and branches are removed afterwards, once nobody works in them. The feature branch is kept: it is merged, and it documents what the feature was.
 
 ### 4. Unfinished tickets
 
-While some of the feature's tickets are not done or canceled, finishing is refused. The human may finish anyway (`force`): what those tickets did not deliver is then lost with the worktrees. The control room says so before doing it.
+While some of the feature's tickets are not done or canceled, finishing is refused. The human may finish anyway (`force`): those tickets are canceled before being archived, and what they did not deliver is lost with the worktrees. The control room says so before doing it.
 
 ## Consequences
 
