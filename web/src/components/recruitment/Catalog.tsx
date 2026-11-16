@@ -27,7 +27,7 @@ export function templateLook(name: string) {
 export function Catalog() {
   const { templates } = useLive();
   const [picked, setPicked] = useState<string | null>(null);
-  const chosen = templates.find((t) => t.name === picked) ?? templates.find((t) => t.name === "dev") ?? templates[0];
+  const chosen = templates.find((t) => t.name === picked) ?? templates.find((t) => t.name === "developer") ?? templates[0];
 
   const groups: { label: string; items: Template[] }[] = [
     { label: "Built in", items: templates.filter((t) => t.builtin) },

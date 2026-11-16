@@ -128,10 +128,10 @@ func TestRecruitRefusals(t *testing.T) {
 		name, team, agent, template string
 		want                        error
 	}{
-		{name: "agent exists", team: "dev", agent: "dev1", template: "dev", want: ErrExists},
-		{name: "unknown team", team: "ghosts", agent: "a", template: "dev", want: ErrNotFound},
+		{name: "agent exists", team: "dev", agent: "dev1", template: "developer", want: ErrExists},
+		{name: "unknown team", team: "ghosts", agent: "a", template: "developer", want: ErrNotFound},
 		{name: "unknown template", team: "dev", agent: "a", template: "astronaut", want: ErrNotFound},
-		{name: "invalid name", team: "dev", agent: "Dev 2", template: "dev", want: ErrInvalid},
+		{name: "invalid name", team: "dev", agent: "Dev 2", template: "developer", want: ErrInvalid},
 	}
 
 	for _, tt := range tests {
@@ -262,7 +262,7 @@ func TestRecruitWaitsForAPendingDismissal(t *testing.T) {
 	s, a := newService(t)
 	a.pending = map[string]bool{"old@qa": true} // dismissed, still finishing its turn
 
-	if _, err := s.Recruit(context.Background(), "qa", "old", "dev"); !errors.Is(err, ErrExists) {
+	if _, err := s.Recruit(context.Background(), "qa", "old", "developer"); !errors.Is(err, ErrExists) {
 		t.Fatalf("err = %v, want ErrExists while the dismissal is pending", err)
 	}
 }
@@ -273,7 +273,7 @@ func TestRecruitRefusesAFileOnDisk(t *testing.T) {
 	s, _ := newService(t)
 	writeFile(t, filepath.Join(s.Org.Current().ProjectDir, ".nobody", "teams", "qa", "tester.md"), "---\n---\n")
 
-	if _, err := s.Recruit(context.Background(), "qa", "tester", "dev"); !errors.Is(err, ErrExists) {
+	if _, err := s.Recruit(context.Background(), "qa", "tester", "developer"); !errors.Is(err, ErrExists) {
 		t.Fatalf("err = %v, want ErrExists: a file not loaded yet must not be overwritten", err)
 	}
 }
@@ -288,7 +288,7 @@ func TestHandEditsAreAppliedWithTheNextChange(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".nobody", "teams", "dev", "dev2.md"), "---\nrole: Developer\n---\n")
 	writeFile(t, filepath.Join(dir, ".nobody", "teams", "dev", "dev1.md"), "---\nrole: Developer\non_leave: true\n---\n")
 
-	if _, err := s.Recruit(context.Background(), "qa", "tester", "dev"); err != nil {
+	if _, err := s.Recruit(context.Background(), "qa", "tester", "developer"); err != nil {
 		t.Fatal(err)
 	}
 

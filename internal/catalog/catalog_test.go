@@ -21,8 +21,18 @@ func TestBuiltinTemplatesAreValid(t *testing.T) {
 	}
 
 	for _, tt := range templates {
-		if !tt.Builtin || tt.Description == "" || tt.Version < 1 || tt.Role == "" || tt.Prompt == "" {
-			t.Errorf("built-in template %q needs a description, a version, a role and a prompt: %+v", tt.Name, tt)
+		if !tt.Builtin || tt.Description == "" || tt.Version < 1 || tt.Role == "" || tt.Expertise == "" || tt.Prompt == "" {
+			t.Errorf("built-in template %q needs a description, a version, a role, an expertise and a prompt: %+v", tt.Name, tt)
+		}
+
+		if err := tt.Validate(); err != nil {
+			t.Errorf("built-in template %q is invalid: %v", tt.Name, err)
+		}
+
+		// Templates are about a trade: they name roles, never addresses or
+		// teams, which belong to the organization (docs/agents.md).
+		if strings.Contains(tt.Prompt, "@") {
+			t.Errorf("built-in template %q names an address", tt.Name)
 		}
 	}
 }
@@ -31,27 +41,27 @@ func TestUserTemplatesExtendAndOverride(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "dev.md"), "---\ndescription: My dev\nversion: 7\n---\nMine.\n")
+	writeFile(t, filepath.Join(dir, "developer.md"), "---\ndescription: My dev\nversion: 7\n---\nMine.\n")
 	writeFile(t, filepath.Join(dir, "pentester.md"), "---\ndescription: Breaks things\n---\n")
 	writeFile(t, filepath.Join(dir, "notes.txt"), "not a template")
 
 	c := New(dir)
 
-	dev, err := c.Get("dev")
+	dev, err := c.Get("developer")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if dev.Builtin || !dev.OverridesBuiltin || dev.Version != 7 || dev.Prompt != "Mine." || dev.Role != "" {
-		t.Fatalf("user dev.md should replace the built-in one entirely, got %+v", dev)
+		t.Fatalf("user developer.md should replace the built-in one entirely, got %+v", dev)
 	}
 
 	if _, err := c.Get("pentester"); err != nil {
 		t.Fatalf("user template not listed: %v", err)
 	}
 
-	if archi, err := c.Get("archi"); err != nil || !archi.Builtin {
-		t.Fatalf("built-in archi should still be there: %+v, %v", archi, err)
+	if architect, err := c.Get("architect"); err != nil || !architect.Builtin {
+		t.Fatalf("built-in architect should still be there: %+v, %v", architect, err)
 	}
 
 	if _, err := c.Get("notes"); !errors.Is(err, ErrNotFound) {
@@ -133,7 +143,7 @@ func TestDelete(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "dev.md"), "---\ndescription: My dev\n---\n")
+	writeFile(t, filepath.Join(dir, "developer.md"), "---\ndescription: My dev\n---\n")
 	writeFile(t, filepath.Join(dir, "pentester.md"), "---\ndescription: Breaks things\n---\n")
 
 	c := New(dir)
@@ -147,15 +157,15 @@ func TestDelete(t *testing.T) {
 	}
 
 	// Deleting an override brings the built-in template back.
-	if err := c.Delete("dev"); err != nil {
+	if err := c.Delete("developer"); err != nil {
 		t.Fatal(err)
 	}
 
-	if dev, err := c.Get("dev"); err != nil || !dev.Builtin {
-		t.Fatalf("the built-in dev should be back: %+v, %v", dev, err)
+	if dev, err := c.Get("developer"); err != nil || !dev.Builtin {
+		t.Fatalf("the built-in developer should be back: %+v, %v", dev, err)
 	}
 
-	if err := c.Delete("dev"); !errors.Is(err, ErrBuiltin) {
+	if err := c.Delete("developer"); !errors.Is(err, ErrBuiltin) {
 		t.Fatalf("deleting a built-in template: err = %v, want ErrBuiltin", err)
 	}
 
