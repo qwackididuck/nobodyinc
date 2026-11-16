@@ -23,6 +23,12 @@ const (
 	orgFile  = "org.yaml"
 	teamsDir = "teams"
 	agentExt = ".md"
+	// projectPromptFile holds the project's shared instructions, given to
+	// every agent (docs/agents.md, "The prompt cascade").
+	projectPromptFile = "project.md"
+	// teamPromptFile, in teams/<team>/, holds the team's shared instructions.
+	// It is not an agent: readAgents skips it.
+	teamPromptFile = "TEAM.md"
 )
 
 // orgFileHeader opens the org.yaml written by Nobody Inc.
@@ -46,7 +52,8 @@ func HasConfig(projectDir string) bool {
 
 // LoadProject reads the organization of a project from its .nobody/
 // directory: org.yaml for teams and channels, one file per agent in
-// teams/<team>/, and the MCP registry mcp.yaml. It returns ErrNoConfig when
+// teams/<team>/, the team prompts (teams/<team>/TEAM.md), the project prompt
+// (project.md) and the MCP registry mcp.yaml. It returns ErrNoConfig when
 // org.yaml is missing.
 func LoadProject(projectDir string) (*Org, error) {
 	dir, err := filepath.Abs(projectDir)
@@ -60,10 +67,13 @@ func LoadProject(projectDir string) (*Org, error) {
 	}
 
 	for i := range o.Teams {
-		o.Teams[i].Agents, err = readAgents(filepath.Join(ConfigDir(dir), teamsDir, o.Teams[i].ID))
-		if err != nil {
+		if err := readTeamFiles(dir, &o.Teams[i]); err != nil {
 			return nil, err
 		}
+	}
+
+	if o.ProjectPrompt, err = readPrompt(filepath.Join(ConfigDir(dir), projectPromptFile)); err != nil {
+		return nil, err
 	}
 
 	if o.God, err = readGod(dir); err != nil {
@@ -86,25 +96,22 @@ func LoadProject(projectDir string) (*Org, error) {
 }
 
 // WriteProject writes the whole organization into o.ProjectDir/.nobody/:
-// org.yaml and every agent file.
+// org.yaml, the project and team prompts, and every agent file.
 // Agent files that are no longer part of the organization are left alone.
 func WriteProject(o *Org) error {
-	if err := o.Validate(); err != nil {
+	if err := WriteOrgFile(o); err != nil {
 		return err
 	}
 
-	header, err := catalog.MarshalYAML(o)
-	if err != nil {
-		return fmt.Errorf("encode %s: %w", orgFile, err)
-	}
-
-	dir := ConfigDir(o.ProjectDir)
-
-	if err := atomicfile.Write(filepath.Join(dir, orgFile), append([]byte(orgFileHeader), header...)); err != nil {
+	if err := WriteProjectPrompt(o.ProjectDir, o.ProjectPrompt); err != nil {
 		return err
 	}
 
 	for _, t := range o.Teams {
+		if err := WriteTeamPrompt(o.ProjectDir, t.ID, t.Prompt); err != nil {
+			return err
+		}
+
 		for _, a := range t.Agents {
 			if err := WriteAgent(o.ProjectDir, t.ID, a); err != nil {
 				return err
@@ -117,6 +124,76 @@ func WriteProject(o *Org) error {
 	}
 
 	return nil
+}
+
+// WriteOrgFile validates the organization and writes .nobody/org.yaml alone:
+// teams (id, goal) and channels. Agent files and prompts are untouched.
+func WriteOrgFile(o *Org) error {
+	if err := o.Validate(); err != nil {
+		return err
+	}
+
+	body, err := catalog.MarshalYAML(o)
+	if err != nil {
+		return fmt.Errorf("encode %s: %w", orgFile, err)
+	}
+
+	return atomicfile.Write(filepath.Join(ConfigDir(o.ProjectDir), orgFile), append([]byte(orgFileHeader), body...))
+}
+
+// WriteProjectPrompt writes .nobody/project.md; an empty text removes it.
+func WriteProjectPrompt(projectDir, text string) error {
+	return writePrompt(filepath.Join(ConfigDir(projectDir), projectPromptFile), text)
+}
+
+// WriteTeamPrompt writes .nobody/teams/<team>/TEAM.md; an empty text removes
+// it.
+func WriteTeamPrompt(projectDir, team, text string) error {
+	return writePrompt(filepath.Join(ConfigDir(projectDir), teamsDir, team, teamPromptFile), text)
+}
+
+// writePrompt writes a markdown prompt file, or removes it when the text is
+// empty, so that an absent file and an empty prompt mean the same thing.
+func writePrompt(path, text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+
+		return nil
+	}
+
+	return atomicfile.Write(path, []byte(text+"\n"))
+}
+
+// readPrompt reads a prompt file, trimmed; a missing file is an empty prompt.
+func readPrompt(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(data)), nil
+}
+
+// readTeamFiles reads what teams/<team>/ holds: the team prompt and the
+// agents.
+func readTeamFiles(dir string, t *Team) error {
+	teamDir := filepath.Join(ConfigDir(dir), teamsDir, t.ID)
+
+	var err error
+	if t.Prompt, err = readPrompt(filepath.Join(teamDir, teamPromptFile)); err != nil {
+		return err
+	}
+
+	t.Agents, err = readAgents(teamDir)
+
+	return err
 }
 
 // WriteAgent writes one agent file: .nobody/teams/<team>/<name>.md.
@@ -213,7 +290,7 @@ func readAgents(teamDir string) ([]Agent, error) {
 
 	for _, e := range entries {
 		name, ok := strings.CutSuffix(e.Name(), agentExt)
-		if e.IsDir() || !ok {
+		if e.IsDir() || !ok || e.Name() == teamPromptFile {
 			continue
 		}
 

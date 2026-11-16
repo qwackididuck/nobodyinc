@@ -163,3 +163,51 @@ func TestDelete(t *testing.T) {
 		t.Fatalf("deleting an unknown template: err = %v, want ErrNotFound", err)
 	}
 }
+
+func TestTheDirectorIsNotInTheCatalog(t *testing.T) {
+	t.Parallel()
+
+	templates, err := New(t.TempDir()).List()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tt := range templates {
+		if tt.Name == DirectorName || tt.Role == "Director" {
+			t.Fatalf("the director is listed in the catalog: %+v", tt)
+		}
+	}
+
+	god, err := Director()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if god.Name != DirectorName || god.Role == "" || god.Prompt == "" || god.Expertise == "" || god.Model != "opus" {
+		t.Fatalf("director = %+v", god)
+	}
+
+	if err := god.Validate(); err != nil {
+		t.Fatalf("the built-in director is invalid: %v", err)
+	}
+}
+
+func TestExpertiseIsReadWrittenAndRecruited(t *testing.T) {
+	t.Parallel()
+
+	tmpl := Template{Name: "qa", Version: 1, Role: "QA", Expertise: "test plans, edge cases", Prompt: "Test."}
+
+	data, err := Format(tmpl.Recruit())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d.Expertise != "test plans, edge cases" {
+		t.Fatalf("expertise lost: %q in\n%s", d.Expertise, data)
+	}
+}

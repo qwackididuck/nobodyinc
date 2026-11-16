@@ -4,10 +4,9 @@ The director talks with you, turns your requests into features and tickets, and 
 
 ## Setting it up
 
-- A new project gets one from `nobodyd init` (recruited from the built-in `god` template).
-- An existing project: "+ director" at the top of the chat's avatar rail, or the Recruitment tab with team "Director (no team)" (or `POST /api/director` with `{"name": "god", "template": "god"}`).
+There is nothing to do: the director is always present. It is not in the catalog. `nobodyd init` writes it, alone (you then build the teams, or ask it to), and the daemon writes it when it starts on a project that has none (`org.EnsureDirector`, from `internal/catalog/director/god.md`).
 
-Its file is `.nobody/director/<name>.md`, and its address is that name: name the file `boss.md` and everyone writes to `boss`. There is at most one. Edit it like any agent (Recruitment tab, Staff); its template uses Sonnet and the `default` permission profile.
+Its file is `.nobody/director/<name>.md`, and its address is that name: rename the file `boss.md` and everyone writes to `boss`. There is exactly one. Edit it like any agent (Recruitment tab, Staff), or put it on leave; it cannot be dismissed. Its built-in definition uses Opus and the `default` permission profile.
 
 ## Working with it
 
@@ -40,6 +39,7 @@ you ──── request ──────────────────�
 | Create tickets for | its team and teams it has a channel to | any team, with an assignee |
 | Change a ticket's status | its own tickets | any ticket |
 | Propose a feature | no | yes (`feature_propose`); you start or refuse it |
+| Create teams | no | yes (`team_create`) |
 | Recruit, create, edit, put on leave, dismiss agents | no | yes, freely; never itself |
 
 Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `ticket_*`):
@@ -47,11 +47,14 @@ Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `tick
 | Tool | Does |
 |---|---|
 | `feature_propose` | Proposes a feature (title, need, acceptance criteria, base branch). |
-| `org_overview` | The active feature, and for each team its agents (status, on leave) and tickets (open, in progress, done and canceled counts). |
+| `org_overview` | The active feature, and for each team its goal and prompt, its agents (role, expertise, status, on leave) and tickets (open, in progress, done and canceled counts). |
+| `team_create` | Creates a team (id, goal, and the prompt its members share, which it writes from the goal). |
 | `template_list`, `agent_get` | The catalog; an agent's definition. |
 | `agent_recruit`, `agent_create` | Recruit from a template, or create from a definition written from scratch, into a team. |
 | `agent_edit` | Replace an agent's definition (a new role or new instructions restart it with a fresh session). |
 | `agent_leave`, `agent_return`, `agent_dismiss` | As in the Recruitment tab (`docs/agents.md`, "Lifecycle"). |
+
+It is not a source of knowledge about the project: it knows what you want, the teams know how the project works. The agents' routing rule treats a question to it like a question to you (`docs/agents.md`, "Whom to ask"), and its own prompt asks it to send questions about the project to the agent whose expertise covers them.
 
 Changes to agents are written by the daemon (`internal/staffing`), as when you make them; the director cannot change its own definition, leave or dismiss itself. When a change is its own idea, its instructions ask it to say so and, before creating an agent from scratch, to show you the whole definition.
 
@@ -59,10 +62,10 @@ Changes to agents are written by the daemon (`internal/staffing`), as when you m
 
 | Piece | Role |
 |---|---|
-| `internal/org/director.go` | The director in the organization: its file, its address, at most one. |
+| `internal/org/director.go` | The director in the organization: its file, its address, exactly one (`EnsureDirector`). |
 | `internal/messaging/policy.go` | It writes to anyone, anyone writes to it. |
 | `internal/work/service.go`, `feature.go` | Its ticket privileges; feature proposals (`ProposeFeature`, `StartProposedFeature`, `RefuseFeature`). |
 | `internal/officemcp/director.go` | Its office tools, exposed at its address only. |
 | `internal/daemon/director.go`, `proposals.go` | The tools' backing (staffing, overview); proposals and decisions as messages. |
-| `internal/catalog/builtin/god.md` | Its template. |
-| `web/src/components/chat/` (`cards.tsx`, `HireDirector.tsx`) | Its chat; proposals with Start / Refuse; recruiting it when the project has none. |
+| `internal/catalog/director/god.md` | Its built-in definition (`catalog.Director`), outside the catalog. |
+| `web/src/components/chat/` (`cards.tsx`) | Its chat; proposals with Start / Refuse. |

@@ -34,6 +34,9 @@ var (
 	ErrNotFound = errors.New("not found")
 	ErrExists   = errors.New("already exists")
 	ErrInvalid  = errors.New("invalid")
+	// ErrRefused is a change the organization never accepts, such as
+	// dismissing the director, who is always present.
+	ErrRefused = errors.New("refused")
 )
 
 // Applier brings a running agent in line with its definition, and tells
@@ -49,15 +52,15 @@ type Service struct {
 	Catalog *catalog.Catalog
 	Agents  Applier
 	// OnReload, when set, is called each time the organization is reloaded
-	// after a change, before the agents are brought in line with it.
-	OnReload func()
+	// after a change, with the snapshots before and after it, before the
+	// agents are brought in line with it.
+	OnReload func(before, after *org.Org)
 
 	mu sync.Mutex // one change at a time: each one starts from the latest snapshot
 }
 
 // Recruit copies a template into a team under a name, then starts the agent.
-// The team org.DirectorTeam ("") recruits the director (there is at most
-// one).
+// The director is not recruited: the daemon creates it (org.EnsureDirector).
 //
 // ctx bounds the agent's process: it must outlive the caller's request.
 func (s *Service) Recruit(ctx context.Context, team, name, template string) (org.Member, error) {
@@ -139,6 +142,10 @@ func (s *Service) Dismiss(ctx context.Context, address string, opts runtime.Appl
 	}
 
 	o := s.Org.Current()
+	if o.IsGod(address) {
+		return fmt.Errorf("%w: the director is always present: edit it, or put it on leave, instead", ErrRefused)
+	}
+
 	if err := org.RemoveAgent(o.ProjectDir, m.Team.ID, m.Agent.Name); err != nil {
 		return err
 	}
@@ -172,6 +179,10 @@ func (s *Service) hire(ctx context.Context, team, name string, d catalog.Definit
 	defer s.mu.Unlock()
 
 	address := org.Address(name, team)
+
+	if team == org.DirectorTeam {
+		return org.Member{}, fmt.Errorf("%w: the project already has its director, created by the daemon: edit it instead", ErrRefused)
+	}
 
 	if !catalog.ValidName(name) {
 		return org.Member{}, fmt.Errorf("%w: agent name %q: use lowercase letters, digits and dashes", ErrInvalid, name)
@@ -243,13 +254,23 @@ func (s *Service) reloadAndApply(ctx context.Context, address string, opts runti
 	}
 
 	if s.OnReload != nil {
-		s.OnReload()
+		s.OnReload(before, after)
 	}
 
-	if err := s.Agents.Apply(ctx, address, opts); err != nil {
-		return fmt.Errorf("saved, but %s cannot be restarted: %w", address, err)
+	// address is "" for a change that is not about one agent (a team or the
+	// project prompt): the agents it concerns are among the changed ones.
+	if address != "" {
+		if err := s.Agents.Apply(ctx, address, opts); err != nil {
+			return fmt.Errorf("saved, but %s cannot be restarted: %w", address, err)
+		}
 	}
 
+	return s.applyOthers(ctx, address, before, after)
+}
+
+// applyOthers applies every agent changed between before and after, except
+// the one at address, with a fresh session when its prompt changed.
+func (s *Service) applyOthers(ctx context.Context, address string, before, after *org.Org) error {
 	var errs []error
 
 	for _, other := range changedAgents(before, after) {
@@ -259,7 +280,9 @@ func (s *Service) reloadAndApply(ctx context.Context, address string, opts runti
 
 		oldMember, wasThere := before.Member(other)
 		newMember, isThere := after.Member(other)
-		fresh := wasThere && isThere && needsFreshSession(oldMember.Agent.Definition, newMember.Agent.Definition)
+		fresh := wasThere && isThere &&
+			(needsFreshSession(oldMember.Agent.Definition, newMember.Agent.Definition) ||
+				sharedPrompt(before, oldMember) != sharedPrompt(after, newMember))
 
 		if err := s.Agents.Apply(ctx, other, runtime.ApplyOptions{Fresh: fresh}); err != nil {
 			errs = append(errs, fmt.Errorf("apply the hand-made change to %s: %w", other, err))
@@ -280,13 +303,23 @@ func needsFreshSession(before, after catalog.Definition) bool {
 	return before.Role != after.Role || strings.TrimSpace(before.Prompt) != strings.TrimSpace(after.Prompt)
 }
 
+// sharedPrompt is what an agent's system prompt holds besides its own
+// definition and the org chart: its team's goal and prompt, and the project
+// prompt. Like new instructions, a change here needs a fresh session (see
+// needsFreshSession). The rest of the org chart is not part of it: the agents
+// are told of arrivals and departures by a notice instead (daemon/orgnotice.go).
+func sharedPrompt(o *org.Org, m org.Member) string {
+	return strings.Join([]string{o.ProjectPrompt, m.Team.Goal, m.Team.Prompt}, "\x00")
+}
+
 // changedAgents lists the agents added, removed or changed between two
-// snapshots of the organization.
+// snapshots of the organization, a change of their shared prompt included.
 func changedAgents(before, after *org.Org) []string {
 	var changed []string
 
 	for _, m := range after.Members() {
-		if old, ok := before.Member(m.Address); !ok || !reflect.DeepEqual(old.Agent, m.Agent) {
+		old, ok := before.Member(m.Address)
+		if !ok || !reflect.DeepEqual(old.Agent, m.Agent) || sharedPrompt(before, old) != sharedPrompt(after, m) {
 			changed = append(changed, m.Address)
 		}
 	}

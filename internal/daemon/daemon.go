@@ -58,6 +58,9 @@ type Options struct {
 	HookPath   string
 	// DaemonURL is how agents reach this daemon, e.g. "http://127.0.0.1:7420".
 	DaemonURL string
+	// UserClaudeMD is the user's own CLAUDE.md (~/.claude/CLAUDE.md), whose
+	// text every agent gets in its system prompt (ADR-0008); "" for none.
+	UserClaudeMD string
 	// Origins are the browser origins (host patterns) allowed to open
 	// terminals and to change things through the API.
 	Origins []string
@@ -120,6 +123,9 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 			HookPath:   opts.HookPath,
 			DaemonURL:  opts.DaemonURL,
 			WorkDir:    git.workDir,
+			UserInstructions: func() string {
+				return readUserInstructions(opts.Logger, opts.UserClaudeMD)
+			},
 		}.Command,
 		HasMail: func(ctx context.Context, address string) (bool, error) {
 			return hasMail(ctx, st, address)
@@ -197,13 +203,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	cat := catalog.New(opts.CatalogDir)
 
-	var staffService *staffing.Service
-	if live, ok := opts.Org.(*org.Live); ok {
-		staffService = &staffing.Service{
-			Org: live, Catalog: cat, Agents: supervisor,
-			OnReload: func() { bus.Publish(events.Event{Type: events.OrgChanged, Data: events.Empty{}}) },
-		}
-	}
+	staffService := newStaffing(ctx, opts, cat, supervisor, messages, bus)
 
 	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
 
@@ -359,4 +359,26 @@ func hasMail(ctx context.Context, st *store.Store, address string) (bool, error)
 	}
 
 	return false, nil
+}
+
+// newStaffing returns the service that changes the organization, or nil when
+// it is fixed (not an *org.Live, as in some tests). After each change, the
+// control room is told over SSE and the agents get an org-change notice.
+func newStaffing(ctx context.Context, opts Options, cat *catalog.Catalog, agents staffing.Applier,
+	messages *messaging.Service, bus *events.Bus,
+) *staffing.Service {
+	live, ok := opts.Org.(*org.Live)
+	if !ok {
+		return nil
+	}
+
+	notices := &orgNotices{messages: messages, logger: opts.Logger}
+
+	return &staffing.Service{
+		Org: live, Catalog: cat, Agents: agents,
+		OnReload: func(before, after *org.Org) {
+			bus.Publish(events.Event{Type: events.OrgChanged, Data: events.Empty{}})
+			notices.send(context.WithoutCancel(ctx), before, after)
+		},
+	}
 }

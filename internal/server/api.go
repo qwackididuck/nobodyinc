@@ -19,9 +19,11 @@ type agentView struct {
 	Team    string `json:"team"`
 	Name    string `json:"name"`
 	Role    string `json:"role"`
-	Status  string `json:"status"`
-	OnLeave bool   `json:"on_leave"`
-	From    string `json:"from,omitempty"`
+	// Expertise: what to ask this agent about, and what it decides.
+	Expertise string `json:"expertise,omitempty"`
+	Status    string `json:"status"`
+	OnLeave   bool   `json:"on_leave"`
+	From      string `json:"from,omitempty"`
 	// PendingChange: a change waits for the agent to end its turn.
 	PendingChange bool `json:"pending_change"`
 }
@@ -37,10 +39,11 @@ func (s *server) listAgents(w http.ResponseWriter, _ *http.Request) {
 	s.writeJSON(w, http.StatusOK, agents)
 }
 
-// teamView is a team as shown in the UI.
+// teamView is a team as shown in the UI, and the body of POST /api/teams.
 type teamView struct {
-	ID   string `json:"id"`
-	Goal string `json:"goal,omitempty"`
+	ID     string `json:"id"`
+	Goal   string `json:"goal,omitempty"`
+	Prompt string `json:"prompt,omitempty"`
 }
 
 // listTeams lists the declared teams, so that the UI can recruit into a team
@@ -50,7 +53,7 @@ func (s *server) listTeams(w http.ResponseWriter, _ *http.Request) {
 
 	views := make([]teamView, 0, len(teams))
 	for _, t := range teams {
-		views = append(views, teamView{ID: t.ID, Goal: t.Goal})
+		views = append(views, teamView{ID: t.ID, Goal: t.Goal, Prompt: t.Prompt})
 	}
 
 	s.writeJSON(w, http.StatusOK, views)
@@ -62,6 +65,7 @@ func (s *server) agentView(m org.Member) agentView {
 		Team:          m.Team.ID,
 		Name:          m.Agent.Name,
 		Role:          m.Agent.Role,
+		Expertise:     m.Agent.Expertise,
 		Status:        string(s.Statuses.Get(m.Address)),
 		OnLeave:       m.Agent.OnLeave,
 		From:          m.Agent.From,

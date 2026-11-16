@@ -28,6 +28,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
@@ -86,6 +87,10 @@ func run(logger *slog.Logger, opts options) error {
 		return err
 	}
 
+	if err := ensureDirector(logger, projectDir); err != nil {
+		return err
+	}
+
 	organization, err := org.LoadProject(projectDir)
 	if err != nil {
 		return err
@@ -113,6 +118,31 @@ func run(logger *slog.Logger, opts options) error {
 	}
 
 	return serve(ctx, logger, addr, d.Handler)
+}
+
+// ensureDirector gives a configured project its director if it lost it: the
+// director is always present (docs/god.md). A project without configuration
+// is left to LoadProject, which says how to create one.
+func ensureDirector(logger *slog.Logger, projectDir string) error {
+	if !org.HasConfig(projectDir) {
+		return nil
+	}
+
+	god, err := catalog.Director()
+	if err != nil {
+		return err
+	}
+
+	created, err := org.EnsureDirector(projectDir, god.Name, god.Recruit())
+	if err != nil {
+		return err
+	}
+
+	if created {
+		logger.Info("the project had no director: created one", "name", god.Name)
+	}
+
+	return nil
 }
 
 // daemonOptions gathers what the daemon needs besides the organization: the
@@ -159,6 +189,7 @@ func daemonOptions(logger *slog.Logger, opts options, organization *org.Org, add
 		ClaudePath:   opts.claudePath,
 		HookPath:     hookPath,
 		DaemonURL:    "http://" + addr,
+		UserClaudeMD: userClaudeMD(),
 		Origins:      strings.Split(opts.origins, ","),
 	}, nil
 }

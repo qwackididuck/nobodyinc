@@ -33,7 +33,7 @@ func TestSystemPrompt(t *testing.T) {
 	o := testOrg()
 	m, _ := o.Member("dev1@dev")
 
-	got, err := SystemPrompt(o, m)
+	got, err := SystemPrompt(o, m, "")
 	if err != nil {
 		t.Fatal(err)
 	}

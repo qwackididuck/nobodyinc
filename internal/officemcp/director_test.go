@@ -26,6 +26,12 @@ func (f *fakeDirector) Templates() ([]catalog.Template, error) {
 	return []catalog.Template{{Name: "dev"}}, nil
 }
 
+func (f *fakeDirector) CreateTeam(_ context.Context, id, goal, prompt string) (org.Team, error) {
+	f.calls = append(f.calls, "team "+id+": "+goal+" / "+prompt)
+
+	return org.Team{ID: id, Goal: goal, Prompt: prompt}, nil
+}
+
 func (f *fakeDirector) Definition(string) (catalog.Definition, error) {
 	return catalog.Definition{Role: "Developer"}, nil
 }
@@ -140,6 +146,7 @@ func TestDirectorToolsCallTheDirector(t *testing.T) {
 		tool string
 		args map[string]any
 	}{
+		{"team_create", map[string]any{"id": "qa", "goal": "Test it", "prompt": "Prove the tests can fail."}},
 		{"agent_recruit", map[string]any{"team": "dev", "name": "dev2", "template": "dev"}},
 		{"agent_create", map[string]any{"team": "qa", "name": "fuzzer", "definition": map[string]any{"role": "Fuzzer"}}},
 		{"agent_edit", map[string]any{"address": "dev1@dev", "definition": map[string]any{"role": "Lead"}}},
@@ -158,7 +165,7 @@ func TestDirectorToolsCallTheDirector(t *testing.T) {
 		}
 	}
 
-	want := "recruit dev2@dev from dev | create fuzzer@qa | edit dev1@dev | leave dev1@dev | return dev1@dev | dismiss tester@qa"
+	want := "team qa: Test it / Prove the tests can fail. | recruit dev2@dev from dev | create fuzzer@qa | edit dev1@dev | leave dev1@dev | return dev1@dev | dismiss tester@qa"
 	if got := strings.Join(director.calls, " | "); got != want {
 		t.Fatalf("calls = %q, want %q", got, want)
 	}

@@ -44,12 +44,18 @@ type Org struct {
 	// God is the director, the agent who talks with the human and leads the
 	// teams; nil when the project has none (see director.go).
 	God *Agent `yaml:"-"`
+	// ProjectPrompt is what every agent of the project should know, read from
+	// .nobody/project.md (docs/agents.md, "The prompt cascade").
+	ProjectPrompt string `yaml:"-"`
 }
 
 // Team is a group of agents sharing a goal.
 type Team struct {
 	ID   string `yaml:"id"`
 	Goal string `yaml:"goal,omitempty"`
+	// Prompt is what every member of the team should know, read from
+	// .nobody/teams/<id>/TEAM.md.
+	Prompt string `yaml:"-"`
 	// Agents are read from .nobody/teams/<id>/*.md.
 	Agents []Agent `yaml:"-"`
 }
@@ -156,6 +162,35 @@ func (o *Org) WithAgent(team string, a Agent) (*Org, error) {
 	}
 
 	return nil, fmt.Errorf("%w: %q (declare it in .nobody/%s)", ErrUnknownTeam, team, orgFile)
+}
+
+// Team finds a team by id.
+func (o *Org) Team(id string) (Team, bool) {
+	i := slices.IndexFunc(o.Teams, func(t Team) bool { return t.ID == id })
+	if i < 0 {
+		return Team{}, false
+	}
+
+	return o.Teams[i], true
+}
+
+// WithTeam returns a copy of the organization with team t added, or, when a
+// team with this id exists, with its goal and prompt replaced: its agents
+// stay. The receiver is left untouched; validate the copy before using it.
+func (o *Org) WithTeam(t Team) *Org {
+	c := o.copyTeams()
+
+	if i := slices.IndexFunc(c.Teams, func(x Team) bool { return x.ID == t.ID }); i >= 0 {
+		c.Teams[i].Goal = t.Goal
+		c.Teams[i].Prompt = t.Prompt
+
+		return c
+	}
+
+	t.Agents = nil
+	c.Teams = append(c.Teams, t)
+
+	return c
 }
 
 // WithoutAgent returns a copy of the organization without the agent at

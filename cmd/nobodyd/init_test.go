@@ -25,13 +25,12 @@ func TestInitProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if god, ok := o.Member("god"); !ok || !o.IsGod("god") || !strings.HasPrefix(god.Agent.From, "god@") {
-		t.Fatalf("director not recruited from the god template: %+v", god)
+	if god, ok := o.Member("god"); !ok || !o.IsGod("god") || god.Agent.Prompt == "" || god.Agent.Model != "opus" {
+		t.Fatalf("director not created from the built-in director: %+v", god)
 	}
 
-	dev, ok := o.Member("dev1@dev")
-	if !ok || !strings.HasPrefix(dev.Agent.From, "dev@") || dev.Agent.Prompt == "" {
-		t.Fatalf("dev1@dev not recruited from the dev template: %+v", dev)
+	if len(o.Teams) != 0 || len(o.Members()) != 1 {
+		t.Fatalf("init should create the director alone, got teams %+v", o.Teams)
 	}
 
 	if _, err := os.Stat(filepath.Join(home, "catalog")); err != nil {

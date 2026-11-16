@@ -19,6 +19,8 @@ The director is an agent like the others (a definition file, a Claude Code sessi
 - it always works in the project's main checkout, even while a feature is active: it reads and plans, it does not deliver code. Starting a feature therefore does not restart it, so it keeps the conversation in which the feature was agreed;
 - `nobodyd init` recruits it from the built-in `god` template; an existing project recruits it from the Recruitment tab or `POST /api/director`.
 
+  *Amended 2026-11-16*: the director is **always present**. It is no longer in the catalog: `nobodyd init` writes it (and nothing else: the user builds the teams), and the daemon writes it at startup when a project has none (`org.EnsureDirector`). `POST /api/director` is gone, and dismissing the director is refused (409); it can still be edited and put on leave. It may also create teams (`team_create`). It is not a source of knowledge about the project: the agents' routing rule treats a question to the director like a question to the human (`docs/agents.md`, "Whom to ask").
+
 ### 2. Its rights
 
 - **Messages**: like the human, it may write to anyone, and anyone may write to it; no channel is needed.

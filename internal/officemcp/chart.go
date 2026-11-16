@@ -29,6 +29,8 @@ type TeamChart struct {
 type ChartMember struct {
 	Address string `json:"address"`
 	Role    string `json:"role,omitempty"`
+	// Expertise: what to ask them about, and what they decide.
+	Expertise string `json:"expertise,omitempty"`
 	// OnLeave: mail to them waits until they return; write to their team
 	// instead if it cannot wait.
 	OnLeave bool `json:"on_leave,omitempty"`
@@ -50,7 +52,9 @@ func Chart(o *org.Org, address string) []TeamChart {
 
 		for _, a := range t.Agents {
 			if member := org.Address(a.Name, t.ID); member != address {
-				chart.Members = append(chart.Members, ChartMember{Address: member, Role: a.Role, OnLeave: a.OnLeave})
+				chart.Members = append(chart.Members, ChartMember{
+					Address: member, Role: a.Role, Expertise: a.Expertise, OnLeave: a.OnLeave,
+				})
 			}
 		}
 
@@ -80,5 +84,5 @@ func DirectorOf(o *org.Org) *ChartMember {
 		return nil
 	}
 
-	return &ChartMember{Address: o.God.Name, Role: o.God.Role}
+	return &ChartMember{Address: o.God.Name, Role: o.God.Role, Expertise: o.God.Expertise}
 }
