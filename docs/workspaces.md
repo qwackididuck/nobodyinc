@@ -4,7 +4,7 @@ This page is about the **project the agents work on** (the directory holding `.n
 
 ## Features
 
-A feature is a request, e.g. "Add the order API". The human starts one directly (Feature panel in the UI, or `POST /api/features`), or the director proposes it and the human starts it (`POST /api/features/{id}/start`) or refuses it (`docs/god.md`). A proposed feature touches neither git nor the agents. Starting one:
+A feature is a request, e.g. "Add the order API". The human starts one directly ("Start a feature" in the banner above the office, or `POST /api/features`), or the director proposes it and the human starts it (`POST /api/features/{id}/start`) or refuses it (`docs/god.md`). A proposed feature touches neither git nor the agents. Starting one:
 
 1. creates the **feature branch** `nobody/<slug>` from a base branch (the project's current branch unless another one is given);
 2. creates one **worktree per team**, on its own branch:

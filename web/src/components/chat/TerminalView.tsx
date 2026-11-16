@@ -5,7 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import { useEffect, useRef } from "react";
 
 import { terminalURL } from "@/lib/api";
-import styles from "./ControlRoom.module.css";
+import styles from "./chat.module.css";
 
 // Terminal reports are answers the emulator sends back to queries found in the
 // output (device attributes, cursor position, keyboard protocol, colours…).
@@ -80,5 +80,5 @@ export function TerminalView({ address }: Props) {
     };
   }, [address]);
 
-  return <div ref={container} className={styles.terminal} />;
+  return <div ref={container} className={styles.xterm} />;
 }

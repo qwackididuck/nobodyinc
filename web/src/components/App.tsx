@@ -7,7 +7,10 @@ import { unreadInBin } from "./chat/agents";
 import { BIN_KEY } from "./chat/AvatarRail";
 import { ChatPanel } from "./chat/ChatPanel";
 import { useReadMarks } from "./chat/readMarks";
+import { Kanban } from "./kanban/Kanban";
 import { Office } from "./office/Office";
+import { Recruitment } from "./recruitment/Recruitment";
+import { Settings } from "./settings/Settings";
 import styles from "./shell/shell.module.css";
 import { type Tab, TopBar } from "./shell/TopBar";
 
@@ -31,35 +34,26 @@ function ControlRoom() {
   const [tab, setTab] = useState<Tab>("office");
   const [target, setTarget] = useState<ChatTarget | null>(null);
   const { marks, markSeen } = useReadMarks(settings?.project_id);
+  const openChat = (address: string) => setTarget({ kind: "agent", address });
 
   return (
     <div className={styles.app}>
       <TopBar tab={tab} onTab={setTab} />
       <ChatPanel target={target} onTarget={setTarget} marks={marks} markSeen={markSeen} />
       <main className={styles.main}>
-        {tab === "office" ? (
+        {tab === "office" && (
           <Office
             selected={target?.kind === "agent" ? target.address : null}
             binUnread={unreadInBin(messages, marks[BIN_KEY])}
-            onSelectAgent={(address) => setTarget({ kind: "agent", address })}
+            onSelectAgent={openChat}
             onOpenBin={() => setTarget({ kind: "bin" })}
             onHireDirector={() => setTarget({ kind: "hire-director" })}
           />
-        ) : (
-          <ComingSoon tab={tab} />
         )}
+        {tab === "kanban" && <Kanban onOpenChat={openChat} />}
+        {tab === "recruitment" && <Recruitment onOpenChat={openChat} />}
+        {tab === "settings" && <Settings />}
       </main>
-    </div>
-  );
-}
-
-// ComingSoon holds the place of the tabs built in the next steps.
-function ComingSoon({ tab }: { tab: Tab }) {
-  const names: Record<Tab, string> = { office: "Office", kanban: "Kanban", recruitment: "Recruitment", settings: "Settings" };
-  return (
-    <div className={styles.placeholder}>
-      <strong>{names[tab]}</strong>
-      <span>This tab arrives in the next step of the redesign.</span>
     </div>
   );
 }

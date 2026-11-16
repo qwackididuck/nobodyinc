@@ -1,6 +1,6 @@
 # Approvals: agents' permission requests in the UI
 
-Agents run with Claude Code's default permission mode: running a command, editing a file or calling an unlisted tool needs a permission. Instead of leaving that prompt hidden in the agent's terminal, Nobody Inc brings it to the control room, where the human allows or denies it.
+Agents run with Claude Code's default permission mode: running a command, editing a file or calling an unlisted tool needs a permission. Instead of leaving that prompt hidden in the agent's terminal, Nobody Inc brings it to the control room, where the human allows or denies it: it shows as a card in the agent's chat, with a badge on its avatar and a "!" above its desk in the office.
 
 ## Flow
 

@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type Agent, type Team } from "@/lib/api";
 import { useAppearance } from "@/lib/appearance";
 import { useDaemonEvents, useLive } from "@/lib/live";
-import { lookOf } from "@/lib/look";
+import { lookOf, teamColors } from "@/lib/look";
 import { betweenAgents, isDirector } from "../chat/agents";
 import { Banner } from "./Banner";
 import { Desk } from "./Desk";
@@ -46,8 +46,6 @@ interface Seen {
   agents: Agent[];
   teams: Team[];
 }
-
-const CARPETS = ["#8fae9a", "#8a9ec2", "#c2a28a", "#b9a4c9", "#a8b88a", "#c99a9a"];
 
 function inputOf(agents: Agent[], teams: Team[], hidden: Set<string> = new Set()) {
   const shown = agents.filter((a) => !hidden.has(a.address));
@@ -219,7 +217,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
             <RoomView
               key={room.id}
               room={room}
-              carpet={room.kind === "director" ? undefined : CARPETS[(i - 1) % CARPETS.length]}
+              carpet={room.kind === "director" ? undefined : teamColors(i - 1).carpet}
               building={building.has(room.id)}
               queue={room.kind === "team" ? queue(room.id) : 0}
             >

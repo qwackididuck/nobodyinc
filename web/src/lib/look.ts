@@ -46,3 +46,13 @@ export function lookOf(address: string, isDirector: boolean): Look {
 export function avatarColor(address: string, isDirector: boolean): string {
   return isDirector ? "#e0a630" : lookOf(address, false).shirt;
 }
+
+// Team colors: the carpet of its room in the office, and a darker shade for
+// labels (Kanban). They follow the team's position in .nobody/org.yaml.
+const CARPETS = ["#8fae9a", "#8a9ec2", "#c2a28a", "#b9a4c9", "#a8b88a", "#c99a9a"];
+const INKS = ["#4f8a64", "#4f6fa8", "#a07a5c", "#7d5fa0", "#6f8a3f", "#a05a5a"];
+
+export function teamColors(index: number): { carpet: string; ink: string } {
+  const i = ((index % CARPETS.length) + CARPETS.length) % CARPETS.length;
+  return { carpet: CARPETS[i], ink: INKS[i] };
+}

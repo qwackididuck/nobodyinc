@@ -61,7 +61,7 @@ Agents on leave are never chosen, neither for a queued ticket nor for `@<team>`.
 
 ## API and UI
 
-`/api/tickets*` (see `api/openapi.yaml`) lets the human list, create, comment and change the status of tickets. The control room has a **Tickets** tab: the list, a creation form, and the selected ticket with its deliverables, comments and messages.
+`/api/tickets*` (see `api/openapi.yaml`) lets the human list, create, comment and change the status of tickets. The control room has a **Kanban** tab: tickets as cards in one column per status (dragging a card changes its status), a creation form, and a drawer with a ticket's deliverables, comments and messages.
 
 ## Not yet
 

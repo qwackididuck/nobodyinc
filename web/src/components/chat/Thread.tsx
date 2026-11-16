@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { type Agent, type Approval, HUMAN, type Message, listConversation, startAgent } from "@/lib/api";
 import { useLive } from "@/lib/live";
-import { TerminalView } from "../TerminalView";
+import { TerminalView } from "./TerminalView";
 import { isAnswered, isDirector, statusKey, statusLabel, teamLabel, timeOf, withHuman } from "./agents";
 import { Avatar } from "./Avatar";
 import { ApprovalCard, FeatureProposal, UrgentQuestion } from "./cards";

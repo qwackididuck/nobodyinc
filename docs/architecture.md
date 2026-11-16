@@ -6,7 +6,7 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 
 ```
             Browser: Next.js UI (web/)
-            teams · xterm.js terminal · mail · composer
+            office · chat · terminal · kanban · recruitment
                  │ REST + SSE events (/api)   │ terminal WebSocket
                  ▼                            ▼
 ┌──────────────────────────── nobodyd (cmd/nobodyd) ─────────────────────────────┐

@@ -74,6 +74,57 @@
   color: var(--accent);
 }
 
+.bannerLink {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.bannerLink:hover {
+  text-decoration: underline;
+}
+
+.startFeature {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bannerInput {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 2px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  font: 13px var(--font-ui);
+}
+
+.bannerInput:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.bannerButton {
+  padding: 6px 14px;
+  border: 2px solid var(--ink-px);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: 11px var(--font-label);
+  box-shadow: 0 3px 0 var(--ink-px);
+}
+
+.bannerError {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-size: 12px;
+}
+
 /* ---- Scene ------------------------------------------------------------------- */
 
 .wrap {
