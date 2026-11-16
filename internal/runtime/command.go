@@ -217,6 +217,8 @@ func SystemPrompt(o *org.Org, m org.Member) (string, error) {
 		"Team":    m.Team,
 		"Agent":   m.Agent,
 		"Chart":   officemcp.Chart(o, m.Address),
+		"IsGod":   o.IsGod(m.Address),
+		"God":     officemcp.DirectorOf(o),
 	})
 	if err != nil {
 		return "", fmt.Errorf("render system prompt of %s: %w", m.Address, err)

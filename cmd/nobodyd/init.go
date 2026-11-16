@@ -17,9 +17,12 @@ import (
 // catalogDirPerm is the mode of ~/.nobody/catalog when init creates it.
 const catalogDirPerm = 0o755
 
-// First team written by init: one developer recruited from the built-in
-// "dev" template, so that the project runs right away.
+// What init writes, so that the project runs right away: a director
+// recruited from the built-in "god" template, and a first team with one
+// developer recruited from the built-in "dev" template.
 const (
+	godName       = "god"
+	godTemplate   = "god"
 	firstTeam     = "dev"
 	firstGoal     = "Implement the requested features with unit tests."
 	firstAgent    = "dev1"
@@ -77,17 +80,25 @@ func initProject(out io.Writer, home, projectDir string) error {
 		return err
 	}
 
-	tmpl, err := catalog.New(userCatalog).Get(firstTemplate)
+	templates := catalog.New(userCatalog)
+
+	dev, err := templates.Get(firstTemplate)
+	if err != nil {
+		return err
+	}
+
+	god, err := templates.Get(godTemplate)
 	if err != nil {
 		return err
 	}
 
 	o := &org.Org{
 		ProjectDir: dir,
+		God:        &org.Agent{Name: godName, Definition: god.Recruit()},
 		Teams: []org.Team{{
 			ID:     firstTeam,
 			Goal:   firstGoal,
-			Agents: []org.Agent{{Name: firstAgent, Definition: tmpl.Recruit()}},
+			Agents: []org.Agent{{Name: firstAgent, Definition: dev.Recruit()}},
 		}},
 	}
 
@@ -101,7 +112,8 @@ func initProject(out io.Writer, home, projectDir string) error {
 }
 
 func printNextSteps(out io.Writer, dir, userCatalog string) {
-	fmt.Fprintf(out, "Created %s with team %q and agent %s.\n\n", org.ConfigDir(dir), firstTeam, org.Address(firstAgent, firstTeam))
+	fmt.Fprintf(out, "Created %s with the director %s, and team %q with agent %s.\n\n",
+		org.ConfigDir(dir), godName, firstTeam, org.Address(firstAgent, firstTeam))
 
 	if _, err := os.Stat(filepath.Join(dir, ".git")); errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(out, "Note: %s is not a git repository; features (branches and worktrees) need one.\n\n", dir)

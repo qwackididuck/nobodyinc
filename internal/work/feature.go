@@ -14,21 +14,43 @@ import (
 // has its own git branch in the project, where every team's work ends up;
 // merging it anywhere is the user's decision (see docs/workspaces.md).
 type Feature struct {
-	ID          string    `json:"id"` // "F-3"
-	Title       string    `json:"title"`
-	Description string    `json:"description,omitempty"`
-	Slug        string    `json:"slug"`
-	BaseBranch  string    `json:"base_branch"`
-	Branch      string    `json:"branch"`
-	Active      bool      `json:"active"`
-	CreatedBy   string    `json:"created_by"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID    string `json:"id"` // "F-3"
+	Title string `json:"title"`
+	// Description is the need: what is wanted and why.
+	Description        string `json:"description,omitempty"`
+	AcceptanceCriteria string `json:"acceptance_criteria,omitempty"`
+	// Slug, BaseBranch and Branch are set when the feature starts.
+	Slug       string        `json:"slug"`
+	BaseBranch string        `json:"base_branch"`
+	Branch     string        `json:"branch"`
+	Active     bool          `json:"active"`
+	Status     FeatureStatus `json:"status"`
+	// ProposalMessage is the "propose" message the director's proposal sent
+	// to the human; the decision answers it.
+	ProposalMessage string    `json:"proposal_message,omitempty"`
+	RefusalReason   string    `json:"refusal_reason,omitempty"`
+	CreatedBy       string    `json:"created_by"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
-// FeatureDraft is what the human provides to start a feature.
+// FeatureStatus is where a feature stands.
+type FeatureStatus string
+
+// Feature statuses: the director proposes, the human starts or refuses
+// (docs/god.md). A feature the human creates starts at once.
+const (
+	FeatureProposed FeatureStatus = "proposed"
+	FeatureStarted  FeatureStatus = "started"
+	FeatureRefused  FeatureStatus = "refused"
+)
+
+// FeatureDraft is what the human provides to start a feature, or the
+// director to propose one.
 type FeatureDraft struct {
 	Title       string
 	Description string
+	// AcceptanceCriteria say how to know the feature is done.
+	AcceptanceCriteria string
 	// BaseBranch is where the feature branch starts; empty means the branch
 	// the project is currently on.
 	BaseBranch string
@@ -49,36 +71,156 @@ type Workspace interface {
 }
 
 // StartFeature creates a feature, prepares its branches and makes it the
-// active one. Only the human starts features.
+// active one. Only the human starts features directly; the director proposes
+// them (ProposeFeature).
 func (s *Service) StartFeature(ctx context.Context, by string, d FeatureDraft) (Feature, error) {
 	if by != org.HumanAddress {
 		return Feature{}, fmt.Errorf("%w: only the human starts features", ErrForbidden)
 	}
 
-	if strings.TrimSpace(d.Title) == "" {
-		return Feature{}, fmt.Errorf("%w: a feature needs a title", ErrInvalid)
-	}
-
-	f := Feature{
-		Title:       strings.TrimSpace(d.Title),
-		Description: d.Description,
-		BaseBranch:  d.BaseBranch,
-		CreatedBy:   by,
-		CreatedAt:   s.now(),
-	}
-
-	if s.Workspace != nil {
-		var err error
-		if f, err = s.Workspace.PrepareFeature(ctx, f); err != nil {
-			return Feature{}, fmt.Errorf("%w: %w", ErrInvalid, err)
-		}
-	}
-
-	f, err := s.Store.InsertFeature(ctx, f)
+	f, err := newFeature(by, d, s.now())
 	if err != nil {
 		return Feature{}, err
 	}
 
+	if f, err = s.prepare(ctx, f); err != nil {
+		return Feature{}, err
+	}
+
+	if f, err = s.Store.InsertFeature(ctx, f); err != nil {
+		return Feature{}, err
+	}
+
+	return s.activate(ctx, f)
+}
+
+// ProposeFeature records a feature the director proposes, without touching
+// git or the agents: it starts only if the human agrees
+// (StartProposedFeature). The proposal is sent to the human through
+// OnFeatureProposed.
+func (s *Service) ProposeFeature(ctx context.Context, by string, d FeatureDraft) (Feature, error) {
+	if !s.Org.Current().IsGod(by) {
+		return Feature{}, fmt.Errorf("%w: only the director proposes features", ErrForbidden)
+	}
+
+	f, err := newFeature(by, d, s.now())
+	if err != nil {
+		return Feature{}, err
+	}
+
+	f.Status = FeatureProposed
+
+	if f, err = s.Store.InsertFeature(ctx, f); err != nil {
+		return Feature{}, err
+	}
+
+	if s.OnFeatureProposed != nil {
+		if f.ProposalMessage = s.OnFeatureProposed(f); f.ProposalMessage != "" {
+			if err := s.Store.UpdateFeature(ctx, f); err != nil {
+				return Feature{}, err
+			}
+		}
+	}
+
+	return f, nil
+}
+
+// StartProposedFeature starts a feature the director proposed: its branches
+// are prepared and it becomes the active one. Only the human decides.
+func (s *Service) StartProposedFeature(ctx context.Context, by, id string) (Feature, error) {
+	f, err := s.proposal(ctx, by, id)
+	if err != nil {
+		return Feature{}, err
+	}
+
+	if f, err = s.prepare(ctx, f); err != nil {
+		return Feature{}, err
+	}
+
+	f.Status = FeatureStarted
+	if err := s.Store.UpdateFeature(ctx, f); err != nil {
+		return Feature{}, err
+	}
+
+	if f, err = s.activate(ctx, f); err != nil {
+		return Feature{}, err
+	}
+
+	s.decided(f)
+
+	return f, nil
+}
+
+// RefuseFeature turns down a feature the director proposed; the reason is
+// passed on to it. Only the human decides.
+func (s *Service) RefuseFeature(ctx context.Context, by, id, reason string) (Feature, error) {
+	f, err := s.proposal(ctx, by, id)
+	if err != nil {
+		return Feature{}, err
+	}
+
+	f.Status = FeatureRefused
+	f.RefusalReason = strings.TrimSpace(reason)
+
+	if err := s.Store.UpdateFeature(ctx, f); err != nil {
+		return Feature{}, err
+	}
+
+	s.decided(f)
+
+	return f, nil
+}
+
+// proposal loads a feature waiting for the human's decision.
+func (s *Service) proposal(ctx context.Context, by, id string) (Feature, error) {
+	if by != org.HumanAddress {
+		return Feature{}, fmt.Errorf("%w: only the human decides on a proposed feature", ErrForbidden)
+	}
+
+	f, err := s.Store.GetFeature(ctx, id)
+	if err != nil {
+		return Feature{}, err
+	}
+
+	if f.Status != FeatureProposed {
+		return Feature{}, fmt.Errorf("%w: %s is %s, not proposed", ErrConflict, f.ID, f.Status)
+	}
+
+	return f, nil
+}
+
+func newFeature(by string, d FeatureDraft, now time.Time) (Feature, error) {
+	if strings.TrimSpace(d.Title) == "" {
+		return Feature{}, fmt.Errorf("%w: a feature needs a title", ErrInvalid)
+	}
+
+	return Feature{
+		Title:              strings.TrimSpace(d.Title),
+		Description:        d.Description,
+		AcceptanceCriteria: d.AcceptanceCriteria,
+		BaseBranch:         d.BaseBranch,
+		Status:             FeatureStarted,
+		CreatedBy:          by,
+		CreatedAt:          now,
+	}, nil
+}
+
+// prepare creates the feature's branch and the teams' worktrees.
+func (s *Service) prepare(ctx context.Context, f Feature) (Feature, error) {
+	if s.Workspace == nil {
+		return f, nil
+	}
+
+	prepared, err := s.Workspace.PrepareFeature(ctx, f)
+	if err != nil {
+		return Feature{}, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	return prepared, nil
+}
+
+// activate makes f the active feature and tells OnFeatureStarted.
+func (s *Service) activate(ctx context.Context, f Feature) (Feature, error) {
 	if err := s.Store.ActivateFeature(ctx, f.ID); err != nil {
 		return Feature{}, err
 	}
@@ -89,6 +231,12 @@ func (s *Service) StartFeature(ctx context.Context, by string, d FeatureDraft) (
 	}
 
 	return f, nil
+}
+
+func (s *Service) decided(f Feature) {
+	if s.OnFeatureDecided != nil {
+		s.OnFeatureDecided(f)
+	}
 }
 
 // FormatFeatureID turns a stored feature number into its ID: 3 → "F-3".

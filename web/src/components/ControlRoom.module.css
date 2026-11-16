@@ -425,3 +425,19 @@
 .narrow {
   width: 64px;
 }
+
+/* --- director --- */
+
+.proposal {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.messageMine {
+  padding: 8px 10px;
+  background: var(--hover);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+}

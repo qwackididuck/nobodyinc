@@ -46,6 +46,9 @@ type FeatureStore interface {
 	InsertFeature(ctx context.Context, f Feature) (Feature, error)
 	GetFeature(ctx context.Context, id string) (Feature, error)
 	ListFeatures(ctx context.Context) ([]Feature, error)
+	// UpdateFeature saves a feature's branches, status, proposal message and
+	// refusal reason.
+	UpdateFeature(ctx context.Context, f Feature) error
 	// ActivateFeature makes one feature the active one (the others are not).
 	ActivateFeature(ctx context.Context, id string) error
 }
@@ -95,6 +98,13 @@ type Service struct {
 	OnEvent func(Event)
 	// OnFeatureStarted, when set, is called once a new feature is active.
 	OnFeatureStarted func(Feature)
+	// OnFeatureProposed, when set, is called once the director's proposal is
+	// stored, e.g. to send it to the human. It returns the ID of the message
+	// carrying it, which the decision will answer ("" if none was sent).
+	OnFeatureProposed func(Feature) string
+	// OnFeatureDecided, when set, is called once the human started or refused
+	// a proposed feature, e.g. to answer the director.
+	OnFeatureDecided func(Feature)
 	Now              func() time.Time
 }
 
@@ -564,8 +574,10 @@ func (s *Service) mayCreateFor(by, team string) bool {
 	return myTeam == team || s.Org.Current().HasChannel(myTeam, team)
 }
 
+// isPrivileged reports whether address may act on any ticket of any team:
+// the human, the system, and the director, who leads the teams.
 func (s *Service) isPrivileged(address string) bool {
-	return address == org.HumanAddress || address == org.SystemAddress
+	return address == org.HumanAddress || address == org.SystemAddress || s.Org.Current().IsGod(address)
 }
 
 func (s *Service) teamExists(team string) bool {

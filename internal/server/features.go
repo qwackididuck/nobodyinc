@@ -44,3 +44,39 @@ func (s *server) startFeature(w http.ResponseWriter, r *http.Request) {
 
 	s.writeJSON(w, http.StatusCreated, f)
 }
+
+// startProposedFeature starts a feature the director proposed.
+func (s *server) startProposedFeature(w http.ResponseWriter, r *http.Request) {
+	f, err := s.Tickets.StartProposedFeature(r.Context(), org.HumanAddress, r.PathValue("id"))
+	if err != nil {
+		s.ticketError(w, err)
+
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, f)
+}
+
+// refusal is the body of POST /api/features/{id}/refuse.
+type refusal struct {
+	Reason string `json:"reason"`
+}
+
+// refuseProposedFeature turns down a feature the director proposed.
+func (s *server) refuseProposedFeature(w http.ResponseWriter, r *http.Request) {
+	var body refusal
+	if err := decodeJSON(w, r, &body, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	f, err := s.Tickets.RefuseFeature(r.Context(), org.HumanAddress, r.PathValue("id"), body.Reason)
+	if err != nil {
+		s.ticketError(w, err)
+
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, f)
+}

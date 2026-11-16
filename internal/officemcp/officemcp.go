@@ -31,34 +31,49 @@ type Sender interface {
 	Send(ctx context.Context, d messaging.Draft) (messaging.Message, error)
 }
 
+// Office gathers the services behind the office tools.
+type Office struct {
+	// Org is the organization; each request sees its current state.
+	Org     org.Source
+	Sender  Sender
+	Tickets Tickets
+	// Director backs the tools only the director gets (director.go); nil
+	// disables them.
+	Director Director
+	Version  string
+}
+
 // Handler returns the HTTP handler serving one MCP server per agent. It must be
 // mounted on a pattern with an {address} wildcard, e.g. "/mcp/{address}".
 // The server is stateless and built for each request, from the organization
 // current at that moment.
-func Handler(source org.Source, sender Sender, tickets Tickets, version string) http.Handler {
+func Handler(office Office) http.Handler {
 	return mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
-		o := source.Current()
+		o := office.Org.Current()
 
 		member, ok := o.Member(r.PathValue("address"))
 		if !ok {
 			return nil // the SDK answers 400 Bad Request
 		}
 
-		return NewServer(o, sender, tickets, member.Address, version)
+		return NewServer(o, office, member.Address)
 	}, &mcp.StreamableHTTPOptions{Stateless: true})
 }
 
-// ToolNames lists the office tools, e.g. to allow them without asking.
+// ToolNames lists the office tools, the director's included, e.g. to allow
+// them without asking. Each agent only gets the tools it may use.
 func ToolNames() []string {
-	return []string{
+	return append([]string{
 		"send_message", "list_contacts",
 		"ticket_list", "ticket_get", "ticket_claim", "ticket_create", "ticket_update", "ticket_comment", "deliverable_add",
-	}
+	}, directorToolNames...)
 }
 
-// NewServer builds the MCP server of one agent.
-func NewServer(o *org.Org, sender Sender, tickets Tickets, address, version string) *mcp.Server {
-	t := tools{org: o, sender: sender, tickets: tickets, self: address}
+// NewServer builds the MCP server of one agent. The director also gets the
+// director's tools.
+func NewServer(o *org.Org, office Office, address string) *mcp.Server {
+	t := tools{org: o, sender: office.Sender, tickets: office.Tickets, director: office.Director, self: address}
+	version := office.Version
 	server := mcp.NewServer(&mcp.Implementation{Name: "nobody-inc", Version: version}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -78,14 +93,19 @@ func NewServer(o *org.Org, sender Sender, tickets Tickets, address, version stri
 
 	t.addTicketTools(server)
 
+	if o.IsGod(address) && t.director != nil {
+		t.addDirectorTools(server)
+	}
+
 	return server
 }
 
 type tools struct {
-	org     *org.Org
-	sender  Sender
-	tickets Tickets
-	self    string
+	org      *org.Org
+	sender   Sender
+	tickets  Tickets
+	director Director
+	self     string
 }
 
 // SendMessageInput is what an agent provides to send_message.
@@ -146,7 +166,10 @@ type Contact struct {
 type ListContactsOutput struct {
 	// Organization is every team, as you see it (see Chart).
 	Organization []TeamChart `json:"organization"`
-	Contacts     []Contact   `json:"contacts"`
+	// Director leads the teams; anyone can write to them. Absent when the
+	// project has no director.
+	Director *ChartMember `json:"director,omitempty"`
+	Contacts []Contact    `json:"contacts"`
 	// Teams can be written to as "@<team>": an available member answers.
 	Teams []string `json:"teams"`
 	Note  string   `json:"note"`
@@ -155,6 +178,7 @@ type ListContactsOutput struct {
 func (t tools) listContacts(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, ListContactsOutput, error) {
 	return nil, ListContactsOutput{
 		Organization: Chart(t.org, t.self),
+		Director:     DirectorOf(t.org),
 		Contacts:     Contacts(t.org, t.self),
 		Teams:        teamAddresses(Contacts(t.org, t.self)),
 		Note: "Write to a team as @<team> when any member can answer. " +

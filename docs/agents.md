@@ -15,6 +15,7 @@ An **agent** is a member of a team that runs as a Claude Code session. A **templ
   org.yaml                                teams and channels
   mcp.yaml                                MCP servers agents may be given
   teams/<team>/<agent>.md                 recruited agents
+  director/<name>.md                      the director (god), at most one; its address is its name (docs/god.md)
 ```
 
 The project directory is the one containing `.nobody/`; agents work in it, or in their team's worktree when a feature is active (`docs/workspaces.md`). The daemon reads `.nobody/` from the main checkout only.
@@ -59,7 +60,7 @@ A recruited agent has the same fields, plus the ones that only make sense in a t
 | `on_leave` | `true` while the agent is on leave. | not started |
 | body | The agent's instructions. | appended to the system prompt, after the office protocol |
 
-The agent's name is the file name, its team the directory name: `teams/dev/dev1.md` is `dev1@dev`.
+The agent's name is the file name, its team the directory name: `teams/dev/dev1.md` is `dev1@dev`. The director's file is `director/<name>.md` and its address is its name alone (`docs/god.md`).
 
 ### Permission profiles
 

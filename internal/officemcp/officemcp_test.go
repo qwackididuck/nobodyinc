@@ -48,7 +48,7 @@ func connect(t *testing.T, address string) (*mcp.ClientSession, memStore) {
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 
 	ctx := context.Background()
-	if _, err := NewServer(o, sender, nil, address, "test").Connect(ctx, serverTransport, nil); err != nil {
+	if _, err := NewServer(o, Office{Sender: sender, Version: "test"}, address).Connect(ctx, serverTransport, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,7 +200,7 @@ func connectWithTickets(t *testing.T, address string) *mcp.ClientSession {
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 
 	ctx := context.Background()
-	if _, err := NewServer(o, sender, tickets, address, "test").Connect(ctx, serverTransport, nil); err != nil {
+	if _, err := NewServer(o, Office{Sender: sender, Tickets: tickets, Version: "test"}, address).Connect(ctx, serverTransport, nil); err != nil {
 		t.Fatal(err)
 	}
 

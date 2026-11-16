@@ -8,6 +8,7 @@ import {
   type Template,
   deleteTemplate,
   listTeams,
+  recruitDirector,
   listTemplates,
   recruitAgent,
   saveTemplate,
@@ -23,20 +24,27 @@ const REFRESH_MS = 5000;
 interface Props {
   // The agent selected in the team list, edited below the catalog.
   selected: Agent | null;
+  // Whether the project already has a director (there is at most one).
+  hasDirector: boolean;
   onChanged: () => void;
 }
+
+// DIRECTOR is the team choice that recruits the director, who has no team.
+const DIRECTOR = "__director__";
 
 // RecruitmentView is the "Recruitment" tab: the catalog of templates (recruit
 // one into a team, or customize it as your own template), creating an agent
 // from scratch, and editing the selected agent. Deliberately plain: the real
 // design pass comes later.
-export function RecruitmentView({ selected, onChanged }: Props) {
+export function RecruitmentView({ selected, hasDirector, onChanged }: Props) {
   const templates = usePolling(listTemplates, REFRESH_MS);
   const teams = usePolling(listTeams, REFRESH_MS);
   const [chosen, setChosen] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   const teamIDs = (teams.data ?? []).map((t) => t.id);
+  // Recruiting targets: the teams, and the director while there is none.
+  const targets = hasDirector ? teamIDs : [...teamIDs, DIRECTOR];
   const template = (templates.data ?? []).find((t) => t.name === chosen) ?? null;
 
   return (
@@ -50,7 +58,7 @@ export function RecruitmentView({ selected, onChanged }: Props) {
         </button>
       </h3>
       {templates.error && <p className={styles.error}>{templates.error}</p>}
-      {creating && <CreateAgent teams={teamIDs} onCreated={() => { setCreating(false); onChanged(); }} />}
+      {creating && <CreateAgent teams={targets} onCreated={() => { setCreating(false); onChanged(); }} />}
 
       <table className={styles.ticketTable}>
         <thead>
@@ -83,7 +91,7 @@ export function RecruitmentView({ selected, onChanged }: Props) {
         <TemplateDetail
           key={template.name}
           template={template}
-          teams={teamIDs}
+          teams={targets}
           onRecruited={onChanged}
           onSaved={() => void templates.refresh()}
           onDeleted={() => {
@@ -135,7 +143,8 @@ function TemplateDetail({
 
   function recruit(event: FormEvent) {
     event.preventDefault();
-    void act(() => recruitAgent(targetTeam, { name, template: template.name }), `${name}@${targetTeam} recruited.`, () => {
+    const recruited = targetTeam === DIRECTOR ? `${name} recruited as the director.` : `${name}@${targetTeam} recruited.`;
+    void act(() => hire(targetTeam, { name, template: template.name }), recruited, () => {
       setName("");
       onRecruited();
     });
@@ -152,11 +161,7 @@ function TemplateDetail({
         <input placeholder="Agent name, e.g. dev2" value={name} onChange={(e) => setName(e.target.value)} />
         <span className={styles.muted}>in</span>
         <select aria-label="Team" value={targetTeam} onChange={(e) => setTeam(e.target.value)}>
-          {teams.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
+          <TeamOptions teams={teams} />
         </select>
         <button type="submit" className={styles.primaryButton} disabled={!name || !targetTeam}>
           Recruit
@@ -217,7 +222,7 @@ function CreateAgent({ teams, onCreated }: { teams: string[]; onCreated: () => v
 
   async function create() {
     try {
-      await recruitAgent(targetTeam, { name, definition: cleanDefinition(definition) });
+      await hire(targetTeam, { name, definition: cleanDefinition(definition) });
       setError(null);
       onCreated();
     } catch (e) {
@@ -231,11 +236,7 @@ function CreateAgent({ teams, onCreated }: { teams: string[]; onCreated: () => v
         <input placeholder="Agent name" value={name} onChange={(e) => setName(e.target.value)} />
         <span className={styles.muted}>in</span>
         <select aria-label="Team" value={targetTeam} onChange={(e) => setTeam(e.target.value)}>
-          {teams.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
+          <TeamOptions teams={teams} />
         </select>
       </div>
       <DefinitionEditor value={definition} onChange={setDefinition} />
@@ -246,6 +247,24 @@ function CreateAgent({ teams, onCreated }: { teams: string[]; onCreated: () => v
         {error && <span className={styles.error}>{error}</span>}
       </div>
     </article>
+  );
+}
+
+// hire recruits into a team, or as the director.
+function hire(team: string, body: { name: string; template: string } | { name: string; definition: AgentDefinition }) {
+  return team === DIRECTOR ? recruitDirector(body) : recruitAgent(team, body);
+}
+
+// TeamOptions lists the recruiting targets of a select.
+function TeamOptions({ teams }: { teams: string[] }) {
+  return (
+    <>
+      {teams.map((t) => (
+        <option key={t} value={t}>
+          {t === DIRECTOR ? "the director (no team)" : t}
+        </option>
+      ))}
+    </>
   );
 }
 

@@ -199,6 +199,34 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/director:
+    post:
+      operationId: recruitDirector
+      summary: Recruit the director (god) from a template, or create it from a definition, and start it
+      description: |
+        The director has no team: its file is .nobody/director/<name>.md and
+        its address is its name. There is at most one (409 otherwise); rename
+        it by dismissing it and recruiting it again under another name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Recruitment"
+      responses:
+        "201":
+          description: Director recruited and starting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
   /api/catalog:
     get:
       operationId: listTemplates
@@ -330,7 +358,7 @@ paths:
   /api/features:
     get:
       operationId: listFeatures
-      summary: Features, oldest first; at most one is active
+      summary: Features, oldest first (proposed, started and refused); at most one is active
       responses:
         "200":
           description: Features
@@ -361,6 +389,59 @@ paths:
               schema:
                 $ref: "#/components/schemas/Feature"
         "400":
+          $ref: "#/components/responses/Error"
+
+  /api/features/{id}/start:
+    post:
+      operationId: startProposedFeature
+      summary: Start a feature the director proposed
+      description: |
+        Prepares its branch and worktrees, makes it the active feature and
+        restarts the team agents in their worktrees (not the director). The
+        director gets an "agree" answer to its proposal.
+      parameters:
+        - $ref: "#/components/parameters/FeatureID"
+      responses:
+        "200":
+          description: Feature started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/features/{id}/refuse:
+    post:
+      operationId: refuseProposedFeature
+      summary: Refuse a feature the director proposed
+      description: The director gets a "refuse" answer to its proposal, with the reason.
+      parameters:
+        - $ref: "#/components/parameters/FeatureID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Feature refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
 
   /api/tickets:
@@ -601,6 +682,15 @@ components:
         type: boolean
         default: false
 
+    FeatureID:
+      name: id
+      in: path
+      required: true
+      description: Feature ID, "F-<number>"
+      schema:
+        type: string
+        example: F-3
+
     TicketID:
       name: id
       in: path
@@ -648,8 +738,10 @@ components:
       properties:
         address:
           type: string
+          description: '"<agent>@<team>", or the name alone for the director.'
         team:
           type: string
+          description: Empty for the director, who has no team.
         name:
           type: string
         role:
@@ -821,7 +913,7 @@ components:
 
     Feature:
       type: object
-      required: [id, title, slug, base_branch, branch, active, created_by, created_at]
+      required: [id, title, slug, base_branch, branch, active, status, created_by, created_at]
       properties:
         id:
           type: string
@@ -829,6 +921,18 @@ components:
         title:
           type: string
         description:
+          type: string
+          description: The need, what is wanted and why.
+        acceptance_criteria:
+          type: string
+        status:
+          type: string
+          enum: [proposed, started, refused]
+          description: The director proposes, the human starts or refuses; a feature the human creates starts at once.
+        proposal_message:
+          type: string
+          description: ID of the "propose" message the director's proposal sent to the human.
+        refusal_reason:
           type: string
         slug:
           type: string

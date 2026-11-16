@@ -4,7 +4,7 @@ This page is about the **project the agents work on** (the directory holding `.n
 
 ## Features
 
-A feature is a request, e.g. "Add the order API". Starting one (Feature panel in the UI, or `POST /api/features`):
+A feature is a request, e.g. "Add the order API". The human starts one directly (Feature panel in the UI, or `POST /api/features`), or the director proposes it and the human starts it (`POST /api/features/{id}/start`) or refuses it (`docs/god.md`). A proposed feature touches neither git nor the agents. Starting one:
 
 1. creates the **feature branch** `nobody/<slug>` from a base branch (the project's current branch unless another one is given);
 2. creates one **worktree per team**, on its own branch:
@@ -17,7 +17,7 @@ A feature is a request, e.g. "Add the order API". Starting one (Feature panel in
    ```
 
    Worktrees live outside the project, next to its database, so they never show in the user's `git status` and agents can be denied any write to the project's `.nobody/` by absolute path (ADR-0004). Throwaway merge worktrees live in `worktrees/_merge/`. Earlier versions kept worktrees in `<project>/.nobody/worktrees/` and hid `.nobody/` in `.git/info/exclude`; that line is removed at the next feature (remove old worktrees with `git worktree remove`);
-3. restarts every agent in its team's worktree.
+3. restarts every team agent in its team's worktree. The director is not restarted: it always works in the project, and keeps its conversation.
 
 New tickets belong to the active feature. Only one feature is active at a time; without one, agents work in the project directory itself and tickets have no branches.
 

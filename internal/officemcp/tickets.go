@@ -18,6 +18,8 @@ type Tickets interface {
 	Get(ctx context.Context, id string) (work.Details, error)
 	// Mine returns the agent's tickets in progress, then its team's queue.
 	Mine(ctx context.Context, agent string) ([]work.Ticket, []work.Ticket, error)
+	// ProposeFeature records a feature the director proposes to the human.
+	ProposeFeature(ctx context.Context, by string, d work.FeatureDraft) (work.Feature, error)
 }
 
 // addTicketTools registers the ticket tools of an agent's office.

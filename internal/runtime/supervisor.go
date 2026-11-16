@@ -138,9 +138,10 @@ func (s *Supervisor) Stop(address string) error {
 	}
 }
 
-// RestartAll stops every agent and starts it again with a fresh session,
+// RestartAll stops every team agent and starts it again with a fresh session,
 // e.g. so that it works in the worktree of a newly activated feature. Agents
-// on leave stay stopped.
+// on leave stay stopped. The director is left alone: it always works in the
+// project, and must keep the conversation in which the feature was agreed.
 //
 // Changes waiting for these agents are taken over: the restart already uses
 // their current definition. An agent whose leave was waiting hands its work
@@ -148,7 +149,13 @@ func (s *Supervisor) Stop(address string) error {
 func (s *Supervisor) RestartAll(ctx context.Context) error {
 	var errs []error
 
-	for _, m := range s.Org.Current().Members() {
+	o := s.Org.Current()
+
+	for _, m := range o.Members() {
+		if o.IsGod(m.Address) {
+			continue
+		}
+
 		hadPending := s.takePending(m.Address)
 
 		if err := s.Stop(m.Address); err != nil {
@@ -280,7 +287,7 @@ func (s *Supervisor) start(ctx context.Context, address, resume string) error {
 		return err
 	}
 
-	terminal, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 120})
+	terminal, err := startInPTY(cmd)
 	if err != nil {
 		return fmt.Errorf("start agent %s: %w", address, err)
 	}
@@ -293,6 +300,33 @@ func (s *Supervisor) start(ctx context.Context, address, resume string) error {
 	go s.watch(address, p)
 
 	return nil
+}
+
+// ptyAttempts and ptyRetryDelay bound the retries of startInPTY.
+const (
+	ptyAttempts   = 3
+	ptyRetryDelay = 50 * time.Millisecond
+)
+
+// startInPTY starts cmd in a new pseudo-terminal. Opening a pseudo-terminal
+// sometimes fails for a moment on macOS when several are opened at once
+// (seen as "errno -6" while agents and tests start together): it is retried
+// briefly, as long as the process itself was not started.
+func startInPTY(cmd *exec.Cmd) (*os.File, error) {
+	var err error
+
+	for range ptyAttempts {
+		var terminal *os.File
+
+		terminal, err = pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 120})
+		if err == nil || cmd.Process != nil {
+			return terminal, err
+		}
+
+		time.Sleep(ptyRetryDelay)
+	}
+
+	return nil, err
 }
 
 // command builds an agent's process, resuming the given session when it can,

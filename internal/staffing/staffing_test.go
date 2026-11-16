@@ -332,3 +332,26 @@ func TestEditStartsAFreshSessionOnlyForNewInstructions(t *testing.T) {
 		})
 	}
 }
+
+func TestRecruitTheDirector(t *testing.T) {
+	t.Parallel()
+
+	s, a := newService(t)
+
+	m, err := s.Recruit(context.Background(), org.DirectorTeam, "god", "god")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if m.Address != "god" || !s.Org.Current().IsGod("god") || a.last() != "god fresh" {
+		t.Fatalf("director = %+v, applied %q", m, a.last())
+	}
+
+	if _, err := s.Recruit(context.Background(), org.DirectorTeam, "boss", "god"); !errors.Is(err, ErrExists) {
+		t.Fatalf("a second director: err = %v, want ErrExists", err)
+	}
+
+	if _, err := s.Edit(context.Background(), "god", catalog.Definition{Role: "Director", Model: "opus"}, runtime.ApplyOptions{}); err != nil {
+		t.Fatalf("editing the director: %v", err)
+	}
+}

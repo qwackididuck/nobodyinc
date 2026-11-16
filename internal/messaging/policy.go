@@ -60,17 +60,19 @@ func (p Policy) Check(msg Message, parent *Message) error {
 
 // allowed applies the conversation rules, from the most to the least common.
 func (p Policy) allowed(msg Message, parent *Message) bool {
+	o := p.Org.Current()
+
 	switch {
-	case msg.From == org.HumanAddress || msg.From == org.SystemAddress:
-		return true // the human and the system may write to anyone
-	case msg.To == org.HumanAddress:
-		return true // anyone may escalate to the human
+	case msg.From == org.HumanAddress || msg.From == org.SystemAddress || o.IsGod(msg.From):
+		return true // the human, the system and the director may write to anyone
+	case msg.To == org.HumanAddress || o.IsGod(msg.To):
+		return true // anyone may escalate to the human or the director
 	case isReplyTo(msg, parent):
 		return true // anyone may answer a message they received
 	case org.TeamOf(msg.From) == org.TeamOf(msg.To):
 		return true // a team always talks to itself
 	default:
-		return p.Org.Current().HasChannel(org.TeamOf(msg.From), org.TeamOf(msg.To))
+		return o.HasChannel(org.TeamOf(msg.From), org.TeamOf(msg.To))
 	}
 }
 

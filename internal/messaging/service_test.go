@@ -91,6 +91,21 @@ func TestSendChannelRules(t *testing.T) {
 	}
 }
 
+func TestDirectorWritesToAnyoneAndAnyoneWritesToIt(t *testing.T) {
+	t.Parallel()
+
+	o := testOrg()
+	o.God = &org.Agent{Name: "god", Role: "Director"}
+	svc := &Service{Store: memStore{}, Policy: Policy{Org: o}}
+
+	for _, route := range [][2]string{{"god", "tester@qa"}, {"tester@qa", "god"}, {"god", "human"}, {"archi@specs", "god"}} {
+		_, err := svc.Send(context.Background(), Draft{From: route[0], To: route[1], Act: ActRequest, Priority: Normal, Subject: "s"})
+		if err != nil {
+			t.Errorf("%s -> %s refused: %v", route[0], route[1], err)
+		}
+	}
+}
+
 func TestReplyIsAllowedWithoutChannel(t *testing.T) {
 	t.Parallel()
 

@@ -73,6 +73,11 @@ export function deleteTemplate(name: string): Promise<void> {
   return send("DELETE", `/api/catalog/${encodeURIComponent(name)}`);
 }
 
+// recruitDirector hires the director (god), who has no team.
+export function recruitDirector(body: { name: string; template: string } | { name: string; definition: AgentDefinition }): Promise<Agent> {
+  return postJSON<Agent>("/api/director", body);
+}
+
 // recruitAgent hires from a template, or creates from a definition.
 export function recruitAgent(
   team: string,
@@ -185,16 +190,33 @@ export async function decideApproval(id: string, allow: boolean, message = ""): 
 }
 
 // A request the organization works on, with its own git branch (see docs/workspaces.md).
+export type FeatureStatus = "proposed" | "started" | "refused";
+
 export interface Feature {
   id: string;
   title: string;
+  // The need: what is wanted and why.
   description?: string;
+  acceptance_criteria?: string;
   slug: string;
   base_branch: string;
   branch: string;
   active: boolean;
+  // The director proposes, the human starts or refuses (docs/god.md).
+  status: FeatureStatus;
+  // The "propose" message the director's proposal sent to the human.
+  proposal_message?: string;
+  refusal_reason?: string;
   created_by: string;
   created_at: string;
+}
+
+export function startProposedFeature(id: string): Promise<Feature> {
+  return postJSON<Feature>(`/api/features/${encodeURIComponent(id)}/start`, {});
+}
+
+export function refuseProposedFeature(id: string, reason: string): Promise<Feature> {
+  return postJSON<Feature>(`/api/features/${encodeURIComponent(id)}/refuse`, { reason });
 }
 
 export function listFeatures(): Promise<Feature[]> {

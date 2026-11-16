@@ -32,6 +32,7 @@ func newService(t *testing.T) (*work.Service, *[]work.Event) {
 				{ID: "qa", Agents: []org.Agent{{Name: "tester"}}},
 			},
 			Channels: []org.Channel{{From: "dev", To: "specs"}},
+			God:      &org.Agent{Name: "god"},
 		},
 		OnEvent: func(e work.Event) { events = append(events, e) },
 	}, &events
@@ -157,6 +158,7 @@ func TestCreateRules(t *testing.T) {
 		{"agent for a team it has a channel to", "dev1@dev", work.Draft{Title: "x", Team: "specs"}, nil},
 		{"agent for a team without channel", "archi@specs", work.Draft{Title: "x", Team: "dev"}, work.ErrForbidden},
 		{"human for any team", org.HumanAddress, work.Draft{Title: "x", Team: "qa"}, nil},
+		{"director for any team, assigned", "god", work.Draft{Title: "x", Team: "qa", Assignee: "tester@qa"}, nil},
 		{"missing title", org.HumanAddress, work.Draft{Team: "qa"}, work.ErrInvalid},
 		{"unknown team", org.HumanAddress, work.Draft{Title: "x", Team: "ghosts"}, work.ErrInvalid},
 		{"assignee from another team", org.HumanAddress, work.Draft{Title: "x", Team: "dev", Assignee: "archi@specs"}, work.ErrInvalid},
@@ -326,5 +328,25 @@ func TestFeatureAndGitHooks(t *testing.T) {
 
 	if len(details.Deliverables) != 1 || details.Deliverables[0].Reference != "abc123" {
 		t.Fatalf("delivered commits should become deliverables: %+v", details.Deliverables)
+	}
+}
+
+func TestDirectorChangesAnyTicketStatus(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newService(t)
+	ctx := context.Background()
+
+	tk := create(t, s, "dev")
+	if _, err := s.Claim(ctx, "dev1@dev", tk.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.SetStatus(ctx, "archi@specs", tk.ID, work.StatusOpen); !errors.Is(err, work.ErrForbidden) {
+		t.Fatalf("another agent released dev1's ticket: err = %v", err)
+	}
+
+	if _, err := s.SetStatus(ctx, "god", tk.ID, work.StatusOpen); err != nil {
+		t.Fatalf("the director should be able to send a ticket back to the queue: %v", err)
 	}
 }
