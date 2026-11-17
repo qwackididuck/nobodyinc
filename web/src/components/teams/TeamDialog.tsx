@@ -165,11 +165,20 @@ function Flows({ team, block, onBlock }: { team: string; block: string[]; onBloc
   );
 }
 
-// DeleteTeam is the dialog's danger zone: deleting the team, after a
-// confirmation that says who is dismissed and what happens to the tickets.
-function DeleteTeam({ team, onDeleted }: { team: Team; onDeleted: () => void }) {
+interface DeleteTeamProps {
+  team: Team;
+  onDeleted: () => void;
+  // When set, the confirmation shows at once and Cancel calls it (the Staff
+  // list's "Delete team", in its own dialog); otherwise a link opens it.
+  onCancel?: () => void;
+}
+
+// DeleteTeam deletes a team after a confirmation that says who is dismissed
+// and what happens to the tickets: the team dialog's danger zone, or the
+// dialog opened by "Delete team" in the Staff list.
+export function DeleteTeam({ team, onDeleted, onCancel }: DeleteTeamProps) {
   const { agents, tickets } = useLive();
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState(Boolean(onCancel));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -228,7 +237,7 @@ function DeleteTeam({ team, onDeleted }: { team: Team; onDeleted: () => void }) 
           Delete {team.id}
           {members.length > 0 ? ` and dismiss ${members.length}` : ""}
         </button>
-        <button type="button" className={ui.link} onClick={() => setConfirming(false)}>
+        <button type="button" className={ui.link} onClick={() => (onCancel ? onCancel() : setConfirming(false))}>
           Cancel
         </button>
       </div>

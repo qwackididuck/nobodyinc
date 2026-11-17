@@ -7,7 +7,8 @@ import { useLive } from "@/lib/live";
 import { lookOf } from "@/lib/look";
 import { isDirector, sortAgents, statusKey, statusLabel } from "../chat/agents";
 import { Sprite } from "../office/sprite";
-import { TeamDialog } from "../teams/TeamDialog";
+import { DeleteTeam, TeamDialog } from "../teams/TeamDialog";
+import { Modal } from "../ui/Modal";
 import ui from "../ui/ui.module.css";
 import styles from "./staff.module.css";
 
@@ -22,13 +23,16 @@ interface Props {
 // to them: open their chat, edit their file, put them on leave or bring them
 // back, dismiss them. A dismissed agent walks out of the office. The director
 // can only be edited. Teams can be created here, and their goal, shared
-// instructions and flows (the teams they block, ADR-0009) edited; each team
+// instructions and flows (the teams they block, ADR-0009) edited, or deleted
+// after a confirmation; each team
 // ends with a slot to add a member, from the catalog or from scratch.
 export function Staff({ onOpenChat, onEdit, onAddMember }: Props) {
   const { agents, teams } = useLive();
   const [now, setNow] = useState(false);
   // The team dialog: null closed, "new" to create one, or the team to edit.
   const [dialog, setDialog] = useState<Team | "new" | null>(null);
+  // The team whose deletion is being confirmed.
+  const [deleting, setDeleting] = useState<Team | null>(null);
   const sorted = sortAgents(agents, teams);
   const director = sorted.filter(isDirector);
   const groups: { team?: Team; label: string; members: Agent[] }[] = [
@@ -60,9 +64,14 @@ export function Staff({ onOpenChat, onEdit, onAddMember }: Props) {
               </span>
             )}
             {g.team && (
-              <button type="button" className={ui.link} onClick={() => setDialog(g.team ?? null)}>
-                Edit team
-              </button>
+              <span className={styles.teamActions}>
+                <button type="button" className={ui.link} onClick={() => setDialog(g.team ?? null)}>
+                  Edit team
+                </button>
+                <button type="button" className={`${ui.link} ${styles.linkDanger}`} onClick={() => setDeleting(g.team ?? null)}>
+                  Delete team
+                </button>
+              </span>
             )}
           </header>
           {g.members.map((a) => (
@@ -73,6 +82,11 @@ export function Staff({ onOpenChat, onEdit, onAddMember }: Props) {
       ))}
       {teams.length === 0 && <p className={ui.sub}>No team yet: create one, then recruit its members from the catalog.</p>}
       {dialog && <TeamDialog team={dialog === "new" ? undefined : dialog} onClose={() => setDialog(null)} />}
+      {deleting && (
+        <Modal label={`Delete team ${deleting.id}`} tone="danger" onClose={() => setDeleting(null)}>
+          <DeleteTeam team={deleting} onDeleted={() => setDeleting(null)} onCancel={() => setDeleting(null)} />
+        </Modal>
+      )}
     </div>
   );
 }

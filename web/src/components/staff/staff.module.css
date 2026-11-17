@@ -307,6 +307,15 @@
   color: var(--muted);
 }
 
+.teamActions {
+  display: flex;
+  gap: 12px;
+}
+
+.teamActions .linkDanger {
+  color: var(--danger);
+}
+
 .teamBlock {
   font-size: 12px;
   color: var(--warn);
