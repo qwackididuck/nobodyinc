@@ -4,21 +4,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/org"
 )
 
-// testOrg: specs (archi, secu), dev (dev1), qa (tester); channel dev -> specs.
+// testOrg: specs (archi, secu), dev (dev1), qa (tester); specs blocks dev.
 func testOrg() *org.Org {
 	return &org.Org{
 		Teams: []org.Team{
-			{ID: "specs", Agents: []org.Agent{{Name: "archi"}, {Name: "secu"}}},
+			{ID: "specs", Agents: []org.Agent{{Name: "archi"}, {Name: "secu"}}, Block: []string{"dev"}},
 			{ID: "dev", Agents: []org.Agent{{Name: "dev1"}}},
 			{ID: "qa", Agents: []org.Agent{{Name: "tester"}}},
 		},
-		Channels: []org.Channel{{From: "dev", To: "specs"}},
 	}
 }
 
@@ -58,7 +58,7 @@ func draft(from, to string) Draft {
 	return Draft{From: from, To: to, Act: ActQuery, Priority: Normal, Subject: "question"}
 }
 
-func TestSendChannelRules(t *testing.T) {
+func TestSendFlowRules(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -68,9 +68,9 @@ func TestSendChannelRules(t *testing.T) {
 		wantErr error
 	}{
 		{"same team", "archi@specs", "secu@specs", nil},
-		{"declared channel dev -> specs", "dev1@dev", "archi@specs", nil},
-		{"channels are one-way: specs cannot start with dev", "archi@specs", "dev1@dev", ErrNoChannel},
-		{"no channel at all", "tester@qa", "dev1@dev", ErrNoChannel},
+		{"open by default", "tester@qa", "dev1@dev", nil},
+		{"specs blocks dev", "archi@specs", "dev1@dev", ErrBlocked},
+		{"a block is one-way: dev may start with specs", "dev1@dev", "archi@specs", nil},
 		{"human writes to anyone", org.HumanAddress, "tester@qa", nil},
 		{"agents may escalate to the human", "tester@qa", org.HumanAddress, nil},
 		{"unknown recipient", "dev1@dev", "ghost@dev", ErrUnknownAddress},
@@ -106,7 +106,24 @@ func TestDirectorWritesToAnyoneAndAnyoneWritesToIt(t *testing.T) {
 	}
 }
 
-func TestReplyIsAllowedWithoutChannel(t *testing.T) {
+// A team address resolves to a member first: a blocked team stays blocked.
+func TestTeamAddressOfABlockedTeamIsRefused(t *testing.T) {
+	t.Parallel()
+
+	svc := newService(0)
+	svc.PickMember = func(team string) string { return "dev1@" + team }
+
+	_, err := svc.Send(context.Background(), draft("archi@specs", "@dev"))
+	if !errors.Is(err, ErrBlocked) {
+		t.Fatalf("Send to @dev from a team blocking dev: error = %v, want ErrBlocked", err)
+	}
+
+	if !strings.Contains(err.Error(), "ask the human") {
+		t.Fatalf("the refusal should tell the agent to ask the human: %v", err)
+	}
+}
+
+func TestReplyIsAllowedDespiteABlock(t *testing.T) {
 	t.Parallel()
 
 	svc := newService(0)
@@ -134,8 +151,8 @@ func TestReplyIsAllowedWithoutChannel(t *testing.T) {
 	hijack := draft("archi@specs", "dev1@dev")
 
 	hijack.InReplyTo = reply.ID // reply went from archi to dev1, not to archi
-	if _, err := svc.Send(ctx, hijack); !errors.Is(err, ErrNoChannel) {
-		t.Fatalf("answering your own message must not open a channel, got %v", err)
+	if _, err := svc.Send(ctx, hijack); !errors.Is(err, ErrBlocked) {
+		t.Fatalf("answering your own message must not lift a block, got %v", err)
 	}
 }
 

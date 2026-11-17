@@ -19,7 +19,7 @@ open ──claim──► in_progress ──done──► done
 
 | Action | Allowed for |
 |---|---|
-| Create | The human and the director (`docs/god.md`) for any team; an agent for its own team or for a team its team has a channel to (same rule as starting a conversation). |
+| Create | Anyone, for any team: the human, the director (`docs/god.md`, who may also assign it) and every agent. A team's block list only limits who its members start conversations with, never tickets (ADR-0009). |
 | Claim | A member of the owning team, once the ticket is open and unblocked. |
 | Done / release / cancel | The assignee, the human or the director. |
 | Comment, attach a deliverable | Anyone in the organisation. |

@@ -6,13 +6,13 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 
 ```
             Browser: Next.js UI (web/)
-            office · chat · terminal · kanban · recruitment
+            office · chat · terminal · kanban · staff
                  │ REST + SSE events (/api)   │ terminal WebSocket
                  ▼                            ▼
 ┌──────────────────────────── nobodyd (cmd/nobodyd) ─────────────────────────────┐
 │ server     /api/* (UI), /internal/* (hooks)          officemcp  /mcp/{address} │
 │ messaging  sending rules, threads, hop cap           runtime    PTYs, statuses,│
-│ org        teams, agents, channels (<project>/.nobody/)         wake-up, terms │
+│ org        teams, agents, block lists (<project>/.nobody/)      wake-up, terms │
 │ store      SQLite: messages, tickets, features (versioned migrations)          │
 └───────────────┬───────────────────────────────▲──────────────────▲─────────────┘
                 │ starts in a PTY               │ hooks (HTTP)     │ MCP (HTTP)
@@ -23,7 +23,7 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 
 | Package | Role |
 |---|---|
-| `internal/org` | Loads and validates the project's `.nobody/` (`agents.md`): teams, agents (`<agent>@<team>`), one-way channels. |
+| `internal/org` | Loads and validates the project's `.nobody/` (`agents.md`): teams, agents (`<agent>@<team>`), each team's block list (ADR-0009). |
 | `internal/catalog` | Agent templates (built-in and `~/.nobody/catalog`) and the agent file format shared with recruits (`agents.md`). |
 | `internal/messaging` | The post office: validates a draft, attaches it to its thread, applies the sending rules (`policy.go`), files it in the recipient's tray. |
 | `internal/store` | SQLite (pure-Go driver), schema evolved by versioned migrations: messages (pending until delivered) and tickets. |
@@ -39,15 +39,14 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 
 ## Conversation rules
 
-Applied by `messaging.Policy`, in this order:
+Flows between teams are open by default; a team may restrict them with a block list (ADR-0009). Applied by `messaging.Policy`, in this order:
 
 1. the human, the director (`docs/god.md`) and the system address `nobody` (notices written by Nobody Inc itself) may write to anyone; nobody can write to `nobody`;
 2. any agent may write to the human or the director (to answer or escalate);
-3. any agent may answer a message it received (`in_reply_to`);
-4. a team can always talk to itself;
-5. otherwise, a channel must be declared from the sender's team to the recipient's team.
+3. any agent may answer a message it received (`in_reply_to`), whatever the blocks;
+4. otherwise, any agent may start a conversation with any agent of any team, its own included, unless its team blocks the recipient's team (`block:` in `org.yaml`, `org.CanStart`). A block is one-way: `dev` blocking `qa` says nothing about `qa` writing to `dev`.
 
-A message to `@<team>` goes to one member of that team (idle first), then follows the same rules.
+A message to `@<team>` goes to one member of that team (idle first), then follows the same rules: a blocked team stays blocked through its team address. A refused message comes back to the agent as an error (`messaging.ErrBlocked`) telling it to ask the human instead. Blocks never apply to tickets (`tickets.md`).
 
 Two guards keep agents from talking forever:
 - a message that expected no answer (`inform`, `agree`, `refuse`, `done`) cannot be answered by another such message: no thank-you notes, no acknowledgements of acknowledgements (the human is exempt);
@@ -60,7 +59,7 @@ Example observed during the first real test: the human asks `dev1@dev` to consul
 1. **The human sends** (UI → `POST /api/messages`). The message is filed in `dev1`'s normal tray.
 2. **Wake-up**: `dev1` is idle. The supervisor types a short prompt into its terminal, which starts a turn. Only keystrokes are ever written: the agent's screen is never read.
 3. **Delivery**: submitting the prompt fires the `UserPromptSubmit` hook; `nobody-hook` asks the daemon what to say, and the daemon attaches the mail to the prompt. `nobody-hook` acknowledges, and the message is marked delivered.
-4. **The agent acts**: `dev1` calls `send_message` (MCP) to send a `query` to `archi@specs`, allowed by the `dev → specs` channel.
+4. **The agent acts**: `dev1` calls `send_message` (MCP) to send a `query` to `archi@specs`: flows are open, and team `dev` does not block `specs`.
 5. Same cycle on `archi`'s side (wake-up, delivery, answer), then back to `dev1`, who finally answers the human.
 
 Hook details, and how urgent questions to busy agents are answered by a fork of their session, are in `hooks.md`.
@@ -76,7 +75,7 @@ Agents see neither the user's global settings nor the environment of a parent Cl
 ## Testing
 
 - Unit tests next to each package.
-- `test/e2e`: whole scenarios (wake-up, delivery, MCP, channel refusals) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
+- `test/e2e`: whole scenarios (wake-up, delivery, MCP, refusals by a block) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
 - `test/contract` (`task contract`): the Claude Code behaviours we rely on, against the real CLI.
 
 ## Changes pushed to the browser

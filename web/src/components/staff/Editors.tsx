@@ -8,7 +8,7 @@ import { TeamSelect } from "../teams/TeamSelect";
 import ui from "../ui/ui.module.css";
 import { cleanDefinition, emptyDefinition, NAME_PATTERN, toDefinition } from "./definition";
 import { DefinitionFields } from "./DefinitionFields";
-import styles from "./recruitment.module.css";
+import styles from "./staff.module.css";
 
 function useAction() {
   const [busy, setBusy] = useState(false);
@@ -82,12 +82,12 @@ export function EditAgent({ address, onDone }: { address: string; onDone: () => 
   );
 }
 
-// NewAgent writes an agent from scratch into a team and starts it, or saves
-// it as a template instead.
-export function NewAgent() {
+// NewAgent writes an agent from scratch into a team (the one given, the first
+// otherwise) and starts it, or saves it as a template instead.
+export function NewAgent({ team: wanted }: { team?: string }) {
   const { teams } = useLive();
   const [name, setName] = useState("");
-  const [team, setTeam] = useState(teams[0]?.id ?? "");
+  const [team, setTeam] = useState(wanted ?? teams[0]?.id ?? "");
   const [definition, setDefinition] = useState<AgentDefinition>(emptyDefinition());
   const { busy, note, error, run } = useAction();
 

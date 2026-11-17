@@ -12,7 +12,7 @@ An **agent** is a member of a team that runs as a Claude Code session. A **templ
   projects/<id>/nobody.db                 runtime state of one project on this machine (never shared)
   projects/<id>/worktrees/                the teams' worktrees, outside the project (docs/workspaces.md)
 <project>/.nobody/                        committed with the project
-  org.yaml                                teams and channels
+  org.yaml                                teams and their block lists
   project.md                              the project prompt, given to every agent (optional)
   mcp.yaml                                MCP servers agents may be given
   teams/<team>/TEAM.md                    the team prompt, given to its members (optional)
@@ -118,12 +118,16 @@ teams:
     goal: Turn the requirement into clear technical and functional specs.
   - id: dev
     goal: Implement the specs with unit tests.
-channels:            # one-way: dev may start conversations with specs
-  - from: dev
-    to: specs
+  - id: qa
+    goal: Test what dev delivers.
+    block: [dev]     # qa's members may not start conversations with dev
 ```
 
-A team exists when it is declared here; its members are the files in `teams/<team>/`. A new project has no team: create them from the control room (the "+" plot of the office, or Recruitment), with `POST /api/teams`, or by asking the director (`team_create`). A team's sign in the office, or "Edit team" in Staff, changes its goal and prompt, or deletes it (see "Lifecycle"). When the daemon writes `org.yaml`, it rewrites the whole file (comments are lost).
+A team exists when it is declared here; its members are the files in `teams/<team>/`. A new project has no team: create them from the control room (the "+" plot of the office, or "+ New team" in the Staff tab), with `POST /api/teams`, or by asking the director (`team_create`). A team's sign in the office, or "Edit team" in Staff, changes its goal and prompt, or deletes it; "Delete team" in Staff deletes it directly (see "Lifecycle").
+
+**Flows between teams** are open (ADR-0009): any agent may start a conversation with any team. `block` lists the teams a team's members may not start a conversation with, `@team` included. A block is one-way (above, `dev` may still write to `qa`), never stops an answer or a ticket, and never applies to the human, `nobody` or the director (`architecture.md`, "Conversation rules"). Set it in the team dialog of the Staff tab, under "Advanced settings" (one box per other team, checked when the flow is open), with `block` in `POST /api/teams` or `PUT /api/teams/{team}`, or through the director (`team_block`, with your agreement). Changing it restarts nobody: the members of both teams get a notice from `nobody`. An `org.yaml` written before ADR-0009 may still have `channels:`: they are ignored, with a warning when the daemon starts, and dropped the next time `org.yaml` is written.
+
+When the daemon writes `org.yaml`, it rewrites the whole file (comments are lost).
 
 ## The prompt cascade
 
@@ -136,7 +140,7 @@ An agent's system prompt goes from the general to the particular (`internal/runt
 5. the agent's **role and instructions**, from its file;
 6. the organization chart (with each colleague's role and expertise), how to communicate, and whom to ask.
 
-Empty levels are left out. Templates stay about a trade, never about a project: put the project's specifics in `project.md` and `TEAM.md`. Changing the project prompt, or a team's goal or prompt, restarts the agents concerned with a fresh session once idle (a resumed session keeps the prompt it started with).
+Empty levels are left out. Templates stay about a trade, never about a project: put the project's specifics in `project.md` and `TEAM.md`. Changing the project prompt, or a team's goal or prompt, restarts the agents concerned with a fresh session once idle (a resumed session keeps the prompt it started with). A team's block list is not part of the prompt cascade: the chart shows each team as open or blocked when the agent starts, `list_contacts` gives the current state, and a change comes as a notice.
 
 ## Whom to ask
 
@@ -144,12 +148,13 @@ The system prompt gives every agent the same rule for its questions, in order:
 
 1. **decide itself** when it can make a sound recommendation within its role, and say what it decided and why;
 2. otherwise **ask a colleague of the same trade**;
-3. when the question is about someone else's work, **ask whoever owns that subject**, from the expertise in the chart (a test that reveals a case the specification does not cover goes to the specification's owner);
-4. only then **ask the human**: when nobody can answer, or when the decision really is theirs (scope, priorities, a trade-off that changes what they get, anything irreversible or outside the project).
+3. before asking another team, **check with its own teammates**: one of them may know the answer or may already have asked it. One asker per team, so that the same question does not reach a team several times (ADR-0009);
+4. when the question is about someone else's work, **ask whoever owns that subject**, from the expertise in the chart (a test that reveals a case the specification does not cover goes to the specification's owner);
+5. only then **ask the human**: when nobody can answer, or when the decision really is theirs (scope, priorities, a trade-off that changes what they get, anything irreversible or outside the project).
 
 The director is not a source of knowledge about the project: asking it counts as asking the human. Its own prompt has a variant: it delegates questions about the project to the teams, and asks the human only what is theirs to decide.
 
-When the organization changes (an arrival, a departure, a leave or return, a new role or expertise, a new team or goal), every other agent gets one `inform` notice from `nobody` summing it up, with the newcomers' expertise (`internal/daemon/orgnotice.go`).
+When the organization changes (an arrival, a departure, a leave or return, a new role or expertise, a new team or goal), every other agent gets one `inform` notice from `nobody` summing it up, with the newcomers' expertise (`internal/daemon/orgnotice.go`). A new or lifted block is only told to the members of the two teams concerned: the one that blocks and the one blocked.
 
 ## `mcp.yaml`
 
@@ -174,7 +179,7 @@ The name `nobody` is reserved for the office server.
 | **Recruit** | Copies a template into `teams/<team>/<name>.md` with `from`, then starts the agent. |
 | **Create** | Writes an agent file directly (no template), then starts it. Or writes a template to `~/.nobody/catalog/`. |
 | **Edit** | Rewrites the agent file. The agent restarts once idle: with a fresh session when its role or instructions changed (a resumed Claude Code session keeps its original instructions), otherwise with `--resume`, keeping its memory; "new session" forces a fresh one. Never touches the template. |
-| **Team** | `POST /api/teams` declares a team in `org.yaml` and writes its `TEAM.md`; `PUT /api/teams/{team}` changes its goal and prompt (its members restart with a fresh session once idle). `DELETE /api/teams/{team}` deletes `teams/<team>/`, then removes the team and its channels from `org.yaml`: every member is dismissed (its ticket in progress goes back to open, its undelivered mail is returned), and the team's tickets stay for you to shred or keep. During a feature, a new team gets its worktree at once, and a deleted team's worktree is removed when the feature is finished. |
+| **Team** | `POST /api/teams` declares a team in `org.yaml` and writes its `TEAM.md`; `PUT /api/teams/{team}` changes its goal and prompt (its members restart with a fresh session once idle) and, when `block` is given, its block list (nobody restarts; both teams get a notice). `DELETE /api/teams/{team}` deletes `teams/<team>/`, then removes the team from `org.yaml` and from the other teams' block lists: every member is dismissed (its ticket in progress goes back to open, its undelivered mail is returned), and the team's tickets stay for you to shred or keep. During a feature, a new team gets its worktree at once, and a deleted team's worktree is removed when the feature is finished. |
 | **Leave** | Sets `on_leave: true`. Once idle the agent stops; its file and session are kept. Its ticket in progress goes back to the team queue, it is skipped by team addressing (`@dev`) and queue notifications, and direct mail waits in its mailbox; senders get a notice from `nobody`. **Return** clears the flag and resumes its session. |
 | **Dismiss** | The file is deleted at once; once idle, the agent stops. During the rest of its current turn it is no longer in the organization, so it can no longer send mail or close its ticket (use `now` to stop it at once). Its ticket in progress goes back to the team queue; undelivered mail is returned to the senders with a notice. History (messages, tickets, commits) is kept. |
 
@@ -190,7 +195,7 @@ All of these go through the daemon's API (`api/openapi.yaml`, `internal/staffing
 | Leave / return | `POST /api/agents/{address}/leave`, `POST /api/agents/{address}/return` |
 | Dismiss | `DELETE /api/agents/{address}` (refused for the director, as is leave) |
 
-The control room's **Recruitment** tab drives these endpoints: the catalog (recruit a template into a team, customize it as your own template, delete your own), the staff (chat, edit, leave, return, dismiss), and creating an agent from scratch. Recruits walk into the office through its door, and dismissed agents walk out. `GET /api/teams` lists the teams, including those without agents yet.
+The control room's **Staff** tab drives these endpoints. Its first view, Staff, lists the teams and their members: create, edit (goal, prompt, and its flows under "Advanced settings") or delete a team, chat with, edit, put on leave, bring back or dismiss an agent, and add a member to a team from the catalog or from scratch. The Catalog view recruits a template into a team, customizes it as your own template, or deletes your own; New agent writes one from scratch. Recruits walk into the office through its door, and dismissed agents walk out. `GET /api/teams` lists the teams, including those without agents yet.
 
 If the daemon stops while a leave or dismissal still waits for the end of a turn, the hand-over happens at its next start: tickets in progress of agents on leave or no longer in the organization go back to their team's queue, and the undelivered mail of departed agents is returned.
 

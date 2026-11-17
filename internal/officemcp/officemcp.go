@@ -156,7 +156,8 @@ type Contact struct {
 	Address string `json:"address"`
 	Role    string `json:"role"`
 	Team    string `json:"team"`
-	// Why says what allows the conversation: "teammate" or "channel".
+	// Why says what allows the conversation: "teammate", or "open" for a
+	// member of another team that the agent's team does not block.
 	Why string `json:"why"`
 	// OnLeave: mail waits until they return.
 	OnLeave bool `json:"on_leave,omitempty"`
@@ -183,7 +184,8 @@ func (t tools) listContacts(context.Context, *mcp.CallToolRequest, struct{}) (*m
 		Teams:        teamAddresses(Contacts(t.org, t.self)),
 		Note: "Write to a team as @<team> when any member can answer. " +
 			"You can also answer any message you received, whoever sent it, by setting in_reply_to. " +
-			"Teams marked answer_only cannot be reached first: go through the human if you need them. " +
+			"Before you send a question to another team, check with your teammates: one of them may know the answer or have asked it already. " +
+			"Teams marked blocked cannot be reached first (you can still answer them): ask the human if you need them. " +
 			"Mail to a member on leave waits until they return.",
 	}, nil
 }
@@ -203,7 +205,7 @@ func teamAddresses(contacts []Contact) []string {
 }
 
 // Contacts lists who address may start a conversation with: its teammates,
-// then the members of the teams its team has a channel to.
+// then the members of the other teams, except those its team blocks.
 func Contacts(o *org.Org, address string) []Contact {
 	myTeam := org.TeamOf(address)
 	contacts := []Contact{}
@@ -214,8 +216,8 @@ func Contacts(o *org.Org, address string) []Contact {
 			continue
 		case m.Team.ID == myTeam:
 			contacts = append(contacts, Contact{Address: m.Address, Role: m.Agent.Role, Team: m.Team.ID, Why: "teammate", OnLeave: m.Agent.OnLeave})
-		case o.HasChannel(myTeam, m.Team.ID):
-			contacts = append(contacts, Contact{Address: m.Address, Role: m.Agent.Role, Team: m.Team.ID, Why: "channel", OnLeave: m.Agent.OnLeave})
+		case o.CanStart(myTeam, m.Team.ID):
+			contacts = append(contacts, Contact{Address: m.Address, Role: m.Agent.Role, Team: m.Team.ID, Why: "open", OnLeave: m.Agent.OnLeave})
 		}
 	}
 

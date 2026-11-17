@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -18,7 +19,7 @@ import (
 
 // directorToolNames are the tools only the director gets.
 var directorToolNames = []string{
-	"feature_propose", "org_overview", "template_list", "team_create", "team_delete",
+	"feature_propose", "org_overview", "template_list", "team_create", "team_delete", "team_block",
 	"agent_get", "agent_recruit", "agent_create", "agent_edit", "agent_leave", "agent_return", "agent_dismiss",
 }
 
@@ -42,10 +43,14 @@ type Director interface {
 	Dismiss(ctx context.Context, address string) error
 }
 
-// TeamDirector is the part of Director that creates and deletes teams.
+// TeamDirector is the part of Director that creates, deletes and restricts
+// teams.
 type TeamDirector interface {
 	CreateTeam(ctx context.Context, id, goal, prompt string) (org.Team, error)
 	DeleteTeam(ctx context.Context, id string) error
+	// BlockTeam replaces the teams team id may not start a conversation with
+	// (ADR-0009).
+	BlockTeam(ctx context.Context, id string, block []string) (org.Team, error)
 }
 
 // Overview is the state of the organization, for the director.
@@ -112,6 +117,20 @@ type TeamCreateInput struct {
 	Goal string `json:"goal" jsonschema:"what the team is for, in one sentence"`
 	//nolint:lll // a struct tag cannot be split
 	Prompt string `json:"prompt,omitempty" jsonschema:"instructions every member shares, written from the goal: how the team works, its conventions; omit for the goal alone"`
+}
+
+// TeamBlockInput is a team's new block list.
+type TeamBlockInput struct {
+	ID string `json:"id" jsonschema:"the team whose members are restricted"`
+	//nolint:lll // a struct tag cannot be split
+	Block []string `json:"block" jsonschema:"the whole new list of teams its members may not start a conversation with; empty opens every flow again"`
+}
+
+// TeamBlockOutput is the team after the change.
+type TeamBlockOutput struct {
+	Team  string   `json:"team"`
+	Block []string `json:"block"`
+	Note  string   `json:"note"`
 }
 
 // TeamDeleteInput names the team to delete.
@@ -196,6 +215,13 @@ func (t tools) addDirectorTools(server *mcp.Server) {
 			"Only with the human's explicit agreement: ask them first.",
 	}, t.teamDelete)
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "team_block",
+		Description: "Replace a team's block list: the teams its members may not start a conversation with (flows are " +
+			"open by default). A block is one-way and never stops an answer, a ticket, or a message to or from the human " +
+			"or you. Nobody restarts: the members of the teams concerned get a notice. " +
+			"Only with the human's explicit agreement: ask them first.",
+	}, t.teamBlock)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "agent_get",
 		Description: "Read an agent's definition: role, model, permissions, tools, MCP servers and instructions (prompt).",
 	}, t.agentGet)
@@ -271,6 +297,22 @@ func (t tools) teamDelete(ctx context.Context, _ *mcp.CallToolRequest, in TeamDe
 	}
 
 	return nil, DoneOutput{Note: "team " + in.ID + " deleted; its members stop once their turn is over"}, nil
+}
+
+func (t tools) teamBlock(ctx context.Context, _ *mcp.CallToolRequest, in TeamBlockInput) (
+	*mcp.CallToolResult, TeamBlockOutput, error,
+) {
+	team, err := t.director.BlockTeam(ctx, in.ID, in.Block)
+	if err != nil {
+		return nil, TeamBlockOutput{}, err
+	}
+
+	note := "team " + team.ID + " may start conversations with every team"
+	if len(team.Block) > 0 {
+		note = "team " + team.ID + " may no longer start conversations with: " + strings.Join(team.Block, ", ")
+	}
+
+	return nil, TeamBlockOutput{Team: team.ID, Block: append([]string{}, team.Block...), Note: note}, nil
 }
 
 func (t tools) agentGet(_ context.Context, _ *mcp.CallToolRequest, in AddressInput) (*mcp.CallToolResult, catalog.Definition, error) {

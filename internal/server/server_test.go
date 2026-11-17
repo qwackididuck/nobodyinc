@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -44,10 +45,9 @@ func newTestEnvWithWait(t *testing.T, approvalWait time.Duration) testEnv {
 
 	o := &org.Org{
 		Teams: []org.Team{
-			{ID: "specs", Agents: []org.Agent{{Name: "archi", Role: "Architect"}}},
+			{ID: "specs", Agents: []org.Agent{{Name: "archi", Role: "Architect"}}, Block: []string{"dev"}},
 			{ID: "dev", Agents: []org.Agent{{Name: "dev1", Role: "Developer"}}},
 		},
-		Channels: []org.Channel{{From: "dev", To: "specs"}},
 	}
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
@@ -131,8 +131,9 @@ func TestListAgentsTeamsAndMessages(t *testing.T) {
 	var teams []teamView
 	decode(t, env.do(t, http.MethodGet, "/api/teams", ""), &teams)
 
-	if len(teams) != 2 || teams[0].ID != "specs" || teams[1].ID != "dev" {
-		t.Fatalf("teams = %+v", teams)
+	if len(teams) != 2 || teams[0].ID != "specs" || teams[1].ID != "dev" ||
+		!slices.Equal(teams[0].Block, []string{"dev"}) || teams[1].Block == nil {
+		t.Fatalf("teams = %+v, want specs blocking dev, and dev's block list empty, not null", teams)
 	}
 
 	var messages []messaging.Message

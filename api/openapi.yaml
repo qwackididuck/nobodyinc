@@ -205,10 +205,13 @@ paths:
   /api/teams/{team}:
     put:
       operationId: updateTeam
-      summary: Change a team's goal and shared prompt
+      summary: Change a team's goal, shared prompt and block list
       description: |
-        The team's agents restart with a fresh session once their current
+        goal and prompt are replaced (absent means empty). When they change,
+        the team's agents restart with a fresh session once their current
         turn is over: a resumed session keeps the prompt it started with.
+        block replaces the team's block list when present, and is left as it
+        is when absent; changing it restarts nobody (ADR-0009).
       parameters:
         - name: team
           in: path
@@ -227,6 +230,8 @@ paths:
                   type: string
                 prompt:
                   type: string
+                block:
+                  $ref: "#/components/schemas/TeamBlock"
       responses:
         "200":
           description: Team after the change
@@ -242,8 +247,9 @@ paths:
       operationId: deleteTeam
       summary: Delete a team and dismiss its members
       description: |
-        Removes the team from .nobody/org.yaml, with its channels, and deletes
-        .nobody/teams/<id>/ (its agents' files and TEAM.md). Every member is
+        Removes the team from .nobody/org.yaml and from the other teams' block
+        lists, and deletes .nobody/teams/<id>/ (its agents' files and
+        TEAM.md). Every member is
         dismissed: each stops once its current turn is over (or at once with
         now=true), its ticket in progress goes back to open, and its
         undelivered mail is returned to the senders. The team's tickets stay,
@@ -1114,6 +1120,20 @@ components:
         prompt:
           type: string
           description: Instructions shared by the team's agents (.nobody/teams/<id>/TEAM.md); empty means the goal alone.
+        block:
+          $ref: "#/components/schemas/TeamBlock"
+
+    TeamBlock:
+      type: array
+      uniqueItems: true
+      items:
+        type: string
+      description: |
+        Teams this team's members may not start a conversation with, "@team"
+        included (ADR-0009). Flows are open by default; a block is one-way,
+        never stops an answer nor a ticket, and never applies to the human,
+        nobody or the director. Each entry is another existing team. Changing
+        it does not restart anyone: the members of both teams get a notice.
 
     Project:
       type: object

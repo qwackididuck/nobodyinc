@@ -18,10 +18,9 @@ func testOrg() *org.Org {
 	return &org.Org{
 		Teams: []org.Team{
 			{ID: "specs", Agents: []org.Agent{{Name: "archi", Role: "Architect"}, {Name: "secu", Role: "Security"}}},
-			{ID: "dev", Agents: []org.Agent{{Name: "dev1", Role: "Developer"}}},
+			{ID: "dev", Agents: []org.Agent{{Name: "dev1", Role: "Developer"}}, Block: []string{"qa"}},
 			{ID: "qa", Agents: []org.Agent{{Name: "tester", Role: "Tester"}}},
 		},
-		Channels: []org.Channel{{From: "dev", To: "specs"}},
 	}
 }
 
@@ -72,15 +71,20 @@ func TestSendMessage(t *testing.T) {
 		wantError string
 	}{
 		{
-			name: "dev questions specs through the channel",
+			name: "dev questions specs: flows are open",
 			from: "dev1@dev",
 			args: map[string]any{"to": "archi@specs", "act": "query", "subject": "Which DB?", "urgent": true},
 		},
 		{
-			name:      "specs cannot start a conversation with dev",
-			from:      "archi@specs",
-			args:      map[string]any{"to": "dev1@dev", "act": "inform", "subject": "FYI"},
-			wantError: "no channel",
+			name: "specs starts a conversation with dev",
+			from: "archi@specs",
+			args: map[string]any{"to": "dev1@dev", "act": "inform", "subject": "FYI", "urgent": true},
+		},
+		{
+			name:      "dev blocks qa",
+			from:      "dev1@dev",
+			args:      map[string]any{"to": "tester@qa", "act": "query", "subject": "Ready?"},
+			wantError: "ask the human",
 		},
 		{
 			name:      "unknown act is refused",
@@ -150,22 +154,26 @@ func TestListContacts(t *testing.T) {
 		got[c.Address] = c.Why
 	}
 
-	want := map[string]string{"archi@specs": "channel", "secu@specs": "channel"}
-	if len(got) != len(want) || got["archi@specs"] != "channel" || got["secu@specs"] != "channel" {
-		t.Fatalf("contacts = %v, want %v (no qa: no channel)", got, want)
+	want := map[string]string{"archi@specs": "open", "secu@specs": "open"}
+	if len(got) != len(want) || got["archi@specs"] != "open" || got["secu@specs"] != "open" {
+		t.Fatalf("contacts = %v, want %v (no qa: dev blocks it)", got, want)
 	}
 
-	if len(out.Organization) != 3 || out.Organization[2].Team != "qa" || out.Organization[2].Reach != ReachAnswerOnly {
-		t.Fatalf("organization = %+v, want every team, qa answer-only", out.Organization)
+	if len(out.Organization) != 3 || out.Organization[2].Team != "qa" || out.Organization[2].Reach != ReachBlocked {
+		t.Fatalf("organization = %+v, want every team, qa blocked", out.Organization)
 	}
 }
 
-func TestContactsIncludeTeammates(t *testing.T) {
+func TestContactsIncludeTeammatesThenOpenTeams(t *testing.T) {
 	t.Parallel()
 
-	contacts := Contacts(testOrg(), "archi@specs")
-	if len(contacts) != 1 || contacts[0].Address != "secu@specs" || contacts[0].Why != "teammate" {
-		t.Fatalf("contacts = %+v", contacts)
+	var got []string
+	for _, c := range Contacts(testOrg(), "archi@specs") {
+		got = append(got, c.Address+":"+c.Why)
+	}
+
+	if want := "secu@specs:teammate dev1@dev:open tester@qa:open"; strings.Join(got, " ") != want {
+		t.Fatalf("contacts = %q, want %q", strings.Join(got, " "), want)
 	}
 }
 
@@ -254,8 +262,8 @@ func TestTicketTools(t *testing.T) {
 		t.Fatalf("ticket_get should show the deliverable and the comment: %s", text)
 	}
 
-	if text, isErr := call(t, dev, "ticket_create", map[string]any{"title": "x", "team": "qa"}); !isErr || !strings.Contains(text, "not allowed") {
-		t.Fatalf("creating a ticket for a team without channel should be refused: %s", text)
+	if text, isErr := call(t, dev, "ticket_create", map[string]any{"title": "x", "team": "qa"}); isErr {
+		t.Fatalf("tickets are open, even for a team dev blocks: %s", text)
 	}
 }
 
@@ -272,8 +280,8 @@ func TestChart(t *testing.T) {
 		got = append(got, team.Team+":"+team.Reach)
 	}
 
-	if want := "dev:own_team specs:channel qa:answer_only"; strings.Join(got, " ") != want {
-		t.Fatalf("chart = %q, want %q (own team, then channels, then the others)", strings.Join(got, " "), want)
+	if want := "dev:own_team specs:open qa:blocked"; strings.Join(got, " ") != want {
+		t.Fatalf("chart = %q, want %q (own team, then open teams, then blocked ones)", strings.Join(got, " "), want)
 	}
 
 	if len(chart[0].Members) != 0 {

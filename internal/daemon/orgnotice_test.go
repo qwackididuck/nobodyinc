@@ -17,8 +17,13 @@ func TestOrgChanges(t *testing.T) {
 		}}}}
 	}
 
+	// devBlocksQA is a starting point where team dev blocks team qa.
+	devBlocksQA := func(o *org.Org) *org.Org { return withBlock(o.WithTeam(org.Team{ID: "qa"}), "dev", "qa") }
+
 	tests := []struct {
-		name   string
+		name string
+		// setup, when set, changes base before the change.
+		setup  func(o *org.Org) *org.Org
 		change func(o *org.Org) *org.Org
 		want   []orgChange
 	}{
@@ -74,6 +79,33 @@ func TestOrgChanges(t *testing.T) {
 			},
 		},
 		{
+			name: "new block: told to both teams",
+			change: func(o *org.Org) *org.Org {
+				return withBlock(o.WithTeam(org.Team{ID: "qa"}), "dev", "qa")
+			},
+			want: []orgChange{
+				{Teams: []string{"dev", "qa"}, Text: "Team dev may no longer start conversations with team qa; " +
+					"its members can still answer messages from qa."},
+				{Text: "New team qa."},
+			},
+		},
+		{
+			name:  "block lifted: told to both teams",
+			setup: devBlocksQA,
+			change: func(o *org.Org) *org.Org {
+				return withBlock(o, "dev")
+			},
+			want: []orgChange{{Teams: []string{"dev", "qa"}, Text: "Team dev may start conversations with team qa again."}},
+		},
+		{
+			name:  "blocked team closed: its closure says enough",
+			setup: devBlocksQA,
+			change: func(o *org.Org) *org.Org {
+				return o.WithoutTeam("qa")
+			},
+			want: []orgChange{{Text: "Team qa was closed, with its members."}},
+		},
+		{
 			name: "new instructions only: nothing to tell",
 			change: func(o *org.Org) *org.Org {
 				c, _ := o.WithAgent("dev", org.Agent{Name: "dev1", Role: "Developer", Prompt: "New."})
@@ -88,8 +120,51 @@ func TestOrgChanges(t *testing.T) {
 			t.Parallel()
 
 			before := base()
+			if tt.setup != nil {
+				before = tt.setup(before)
+			}
+
 			if got := orgChanges(before, tt.change(before)); !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("changes = %#v\nwant %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+// withBlock returns a copy of o where team id blocks the given teams.
+func withBlock(o *org.Org, id string, block ...string) *org.Org {
+	t, _ := o.Team(id)
+	t.Block = block
+
+	return o.WithTeam(t)
+}
+
+func TestOrgChangeToldTo(t *testing.T) {
+	t.Parallel()
+
+	block := orgChange{Teams: []string{"dev", "qa"}, Text: "blocked"}
+	arrival := orgChange{About: "dev1@dev", Text: "arrived"}
+
+	tests := []struct {
+		name          string
+		change        orgChange
+		address, team string
+		want          bool
+	}{
+		{"a block, to the team that blocks", block, "dev2@dev", "dev", true},
+		{"a block, to the team blocked", block, "tester@qa", "qa", true},
+		{"a block, not to another team", block, "archi@specs", "specs", false},
+		{"a block, not to the director", block, "god", "", false},
+		{"an arrival, to everyone else", arrival, "archi@specs", "specs", true},
+		{"an arrival, not to the agent itself", arrival, "dev1@dev", "dev", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := tt.change.toldTo(tt.address, tt.team); got != tt.want {
+				t.Fatalf("toldTo(%q) = %v, want %v", tt.address, got, tt.want)
 			}
 		})
 	}

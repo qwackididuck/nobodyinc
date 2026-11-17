@@ -9,7 +9,7 @@ import { ChatPanel } from "./chat/ChatPanel";
 import { useReadMarks } from "./chat/readMarks";
 import { Kanban } from "./kanban/Kanban";
 import { Office } from "./office/Office";
-import { Recruitment } from "./recruitment/Recruitment";
+import { StaffScreen } from "./staff/StaffScreen";
 import { Settings } from "./settings/Settings";
 import styles from "./shell/shell.module.css";
 import { type Tab, TopBar } from "./shell/TopBar";
@@ -49,7 +49,7 @@ function ControlRoom() {
           />
         )}
         {tab === "kanban" && <Kanban onOpenChat={openChat} />}
-        {tab === "recruitment" && <Recruitment onOpenChat={openChat} />}
+        {tab === "staff" && <StaffScreen onOpenChat={openChat} />}
         {tab === "settings" && <Settings />}
       </main>
     </div>

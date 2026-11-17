@@ -1,4 +1,5 @@
-/* Recruitment: a character select screen, the staff and the editors.
+/* Staff: the staff of the office, the catalog as a character select screen,
+   and the editors.
    Design reference: docs/mockups/ui-design/c-pixel-office.html#recruitment. */
 
 .screen {
@@ -306,6 +307,20 @@
   color: var(--muted);
 }
 
+.teamActions {
+  display: flex;
+  gap: 12px;
+}
+
+.teamActions .linkDanger {
+  color: var(--danger);
+}
+
+.teamBlock {
+  font-size: 12px;
+  color: var(--warn);
+}
+
 .member {
   display: grid;
   grid-template-columns: auto minmax(120px, 1fr) auto auto auto;
@@ -315,6 +330,31 @@
   padding: 10px 12px;
   border: 2px solid var(--line);
   background: var(--panel);
+}
+
+/* The empty desk at the end of a team (AddMember). */
+.addMember {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 2px dashed var(--line);
+}
+
+.addMemberLabel {
+  display: grid;
+}
+
+.addMemberLabel strong {
+  font: 600 15px var(--font-display);
+  color: var(--accent);
+}
+
+.addMemberLabel span {
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .memberWho {

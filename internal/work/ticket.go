@@ -11,8 +11,8 @@
 //
 // Who may do what (see Service):
 //   - the human and the system may do anything;
-//   - an agent may create tickets for its own team, or for a team its team
-//     has a channel to (the same rule as for starting a conversation);
+//   - anyone may create a ticket for any team: a team's block list only
+//     limits who its members start conversations with (ADR-0009);
 //   - only a member of the owning team can claim a ticket;
 //   - only the assignee (or the human) can release, finish or cancel it;
 //   - anyone in the organization can comment or attach a deliverable.
