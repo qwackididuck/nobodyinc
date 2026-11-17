@@ -20,10 +20,12 @@ func testOrg() *org.Org {
 	return &org.Org{
 		ProjectDir: "/tmp/project",
 		Teams: []org.Team{
-			{ID: "specs", Goal: "Write the specs", Agents: []org.Agent{{Name: "archi", Role: "Architect", Prompt: "Design things.", Model: "sonnet"}}},
+			{
+				ID: "specs", Goal: "Write the specs", Block: []string{"dev"},
+				Agents: []org.Agent{{Name: "archi", Role: "Architect", Prompt: "Design things.", Model: "sonnet"}},
+			},
 			{ID: "dev", Goal: "Build it", Agents: []org.Agent{{Name: "dev1", Role: "Developer"}}},
 		},
-		Channels: []org.Channel{{From: "dev", To: "specs"}},
 	}
 }
 
@@ -40,11 +42,35 @@ func TestSystemPrompt(t *testing.T) {
 
 	for _, want := range []string{
 		"dev1@dev", "Build it", "Developer", "archi@specs (Architect)", "send_message", "legitimate",
-		"### Team dev (your team)", "you can start conversations with them", "call `list_contacts`",
+		"### Team dev (your team)", "You can start conversations with this team.", "call `list_contacts`",
+		"Check with your teammates before asking another team",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("system prompt misses %q:\n%s", want, got)
 		}
+	}
+}
+
+// A blocked team is shown as such, and the agent is sent to the human, not
+// to the director (ADR-0009).
+func TestSystemPromptShowsBlockedTeams(t *testing.T) {
+	t.Parallel()
+
+	o := testOrg()
+	m, _ := o.Member("archi@specs")
+
+	got, err := SystemPrompt(o, m, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if want := "Your team blocks this team: you cannot start conversations with them, only answer their messages; " +
+		"if you need them, ask the human."; !strings.Contains(got, want) {
+		t.Fatalf("system prompt misses %q:\n%s", want, got)
+	}
+
+	if strings.Contains(got, "or the director") {
+		t.Fatalf("a blocked agent must ask the human, not the director:\n%s", got)
 	}
 }
 

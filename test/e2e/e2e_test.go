@@ -52,7 +52,8 @@ func build(dir, name, pkg string) string {
 	return out
 }
 
-// testOrg: specs (archi) and dev (dev1), with a dev → specs channel only.
+// testOrg: specs (archi) and dev (dev1), with no flow configured: any agent
+// may start a conversation with any team (ADR-0009).
 func testOrg(t *testing.T) *org.Org {
 	t.Helper()
 
@@ -62,7 +63,6 @@ func testOrg(t *testing.T) *org.Org {
 			{ID: "specs", Agents: []org.Agent{{Name: "archi", Role: "Architect"}}},
 			{ID: "dev", Agents: []org.Agent{{Name: "dev1", Role: "Developer"}}},
 		},
-		Channels: []org.Channel{{From: "dev", To: "specs"}},
 	}
 }
 
@@ -141,7 +141,7 @@ func sendAsHuman(t *testing.T, d *daemon.Daemon, to, subject, body string) {
 }
 
 // The human asks dev1 to consult the specs team: dev1 is woken up, asks archi
-// through the dev → specs channel, archi is woken up and answers, and dev1
+// (no flow needs to be declared), archi is woken up and answers, and dev1
 // reports back to the human.
 func TestDevConsultsSpecsAndReportsToHuman(t *testing.T) {
 	t.Parallel()
@@ -168,12 +168,38 @@ func TestDevConsultsSpecsAndReportsToHuman(t *testing.T) {
 	}
 }
 
-// Channels are one-way: archi may not start a conversation with dev1. The
-// refusal reaches archi as a tool error, which it escalates to the human.
-func TestOneWayChannelRefusalIsEscalated(t *testing.T) {
+// Two teams without any configuration talk both ways: archi starts a
+// conversation with dev1, as dev1 can with archi.
+func TestTeamsWithoutConfigurationTalk(t *testing.T) {
 	t.Parallel()
 
 	d := startDaemon(t, testOrg(t))
+	sendAsHuman(t, d, "archi@specs", "Check with dev", "ASK dev1@dev: Did you start?")
+
+	want := []string{
+		"human -> archi@specs [request]",
+		"archi@specs -> dev1@dev [query]",
+		"dev1@dev -> archi@specs [inform]",
+		"archi@specs -> human [done]",
+	}
+
+	eventually(t, "the full exchange", func() bool { return len(exchange(t, d)) >= len(want) })
+
+	if got := exchange(t, d); strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("exchange:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// A block is one-way: with specs blocking dev, archi may not start a
+// conversation with dev1. The refusal reaches archi as a tool error telling
+// it to ask the human, which it does.
+func TestBlockRefusalIsEscalated(t *testing.T) {
+	t.Parallel()
+
+	o := testOrg(t)
+	o.Teams[0].Block = []string{"dev"}
+
+	d := startDaemon(t, o)
 	sendAsHuman(t, d, "archi@specs", "Tell dev", "ASK dev1@dev: Did you start?")
 
 	eventually(t, "escalation to the human", func() bool { return len(exchange(t, d)) >= 2 })
@@ -188,7 +214,7 @@ func TestOneWayChannelRefusalIsEscalated(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(messages[1].Body, "no channel") {
+	if !strings.Contains(messages[1].Body, "may not start conversations with this team") {
 		t.Fatalf("escalation should explain the refusal, got %q", messages[1].Body)
 	}
 }

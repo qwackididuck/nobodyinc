@@ -20,8 +20,7 @@ func TestValidate(t *testing.T) {
 		{
 			name: "valid",
 			org: Org{
-				Teams:    []Team{{ID: "specs", Agents: []Agent{agent("archi")}}, {ID: "dev", Agents: []Agent{agent("dev1")}}},
-				Channels: []Channel{{From: "dev", To: "specs"}},
+				Teams: []Team{{ID: "specs", Agents: []Agent{agent("archi")}, Block: []string{"dev"}}, {ID: "dev", Agents: []Agent{agent("dev1")}}},
 			},
 		},
 		{
@@ -52,13 +51,18 @@ func TestValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "channel to unknown team",
-			org:     Org{Teams: []Team{{ID: "dev"}}, Channels: []Channel{{From: "dev", To: "ghosts"}}},
+			name:    "block of an unknown team",
+			org:     Org{Teams: []Team{{ID: "dev", Block: []string{"ghosts"}}}},
 			wantErr: true,
 		},
 		{
-			name:    "channel to itself",
-			org:     Org{Teams: []Team{{ID: "dev"}}, Channels: []Channel{{From: "dev", To: "dev"}}},
+			name:    "a team blocking itself",
+			org:     Org{Teams: []Team{{ID: "dev", Block: []string{"dev"}}}},
+			wantErr: true,
+		},
+		{
+			name:    "a team blocked twice",
+			org:     Org{Teams: []Team{{ID: "dev", Block: []string{"qa", "qa"}}, {ID: "qa"}}},
 			wantErr: true,
 		},
 	}
@@ -75,12 +79,11 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestMembersAndChannels(t *testing.T) {
+func TestMembers(t *testing.T) {
 	t.Parallel()
 
 	o := &Org{
-		Teams:    []Team{{ID: "specs", Agents: []Agent{{Name: "archi"}}}, {ID: "dev", Agents: []Agent{{Name: "dev1"}}}},
-		Channels: []Channel{{From: "dev", To: "specs"}},
+		Teams: []Team{{ID: "specs", Agents: []Agent{{Name: "archi"}}}, {ID: "dev", Agents: []Agent{{Name: "dev1"}}}},
 	}
 
 	if _, ok := o.Member("archi@specs"); !ok {
@@ -90,9 +93,34 @@ func TestMembersAndChannels(t *testing.T) {
 	if len(o.Members()) != 2 {
 		t.Fatalf("members = %v", o.Members())
 	}
+}
 
-	if !o.HasChannel("dev", "specs") || o.HasChannel("specs", "dev") {
-		t.Fatal("channels are one-way: dev -> specs only")
+func TestCanStart(t *testing.T) {
+	t.Parallel()
+
+	o := &Org{Teams: []Team{{ID: "specs"}, {ID: "dev", Block: []string{"qa"}}, {ID: "qa"}}}
+
+	tests := []struct {
+		name     string
+		from, to string
+		want     bool
+	}{
+		{"open by default", "specs", "dev", true},
+		{"blocked", "dev", "qa", false},
+		{"a block is one-way", "qa", "dev", true},
+		{"a team always talks to itself", "dev", "dev", true},
+		{"no team (human, nobody, director) is never blocked", "", "qa", true},
+		{"nobody is blocked from reaching no team", "dev", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := o.CanStart(tt.from, tt.to); got != tt.want {
+				t.Fatalf("CanStart(%q, %q) = %v, want %v", tt.from, tt.to, got, tt.want)
+			}
+		})
 	}
 }
 

@@ -382,7 +382,7 @@ func TestStartupHandsOverWhatDepartedAgentsLeft(t *testing.T) {
 	})
 }
 
-// The director, having no team, talks to any agent without a channel: asked
+// The director, having no team, is never blocked: asked
 // by the human, it questions dev1@dev and gets the answer. It is always
 // present: it cannot be dismissed, and its file cannot be removed through the API.
 func TestDirector(t *testing.T) {
@@ -407,7 +407,7 @@ func TestDirector(t *testing.T) {
 }
 
 // The director's office tools, called by a real MCP client as the director
-// would: recruit an agent, create a ticket for a team (no channel needed),
+// would: recruit an agent, create a ticket for a team,
 // read the overview, dismiss the agent.
 func TestDirectorToolsThroughMCP(t *testing.T) {
 	t.Parallel()

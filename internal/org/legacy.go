@@ -13,7 +13,7 @@ import (
 type legacyOrg struct {
 	ProjectDir string       `yaml:"project_dir"`
 	Teams      []legacyTeam `yaml:"teams"`
-	Channels   []Channel    `yaml:"channels"`
+	// Its channels are dropped: flows are open by default (ADR-0009).
 }
 
 type legacyTeam struct {
@@ -72,7 +72,7 @@ func loadLegacy(path string) (*Org, error) {
 		return nil, err
 	}
 
-	o := &Org{ProjectDir: projectDir, Channels: legacy.Channels}
+	o := &Org{ProjectDir: projectDir}
 
 	for _, lt := range legacy.Teams {
 		t := Team{ID: lt.ID, Goal: lt.Goal}

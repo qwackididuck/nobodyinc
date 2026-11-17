@@ -3,6 +3,7 @@ package org
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
@@ -119,8 +120,11 @@ func TestWithoutTeam(t *testing.T) {
 	t.Parallel()
 
 	o := &Org{
-		Teams:    []Team{{ID: "specs"}, {ID: "dev", Agents: []Agent{{Name: "dev1"}}}, {ID: "qa"}},
-		Channels: []Channel{{From: "dev", To: "specs"}, {From: "qa", To: "dev"}, {From: "qa", To: "specs"}},
+		Teams: []Team{
+			{ID: "specs", Block: []string{"dev"}},
+			{ID: "dev", Agents: []Agent{{Name: "dev1"}}, Block: []string{"specs"}},
+			{ID: "qa", Block: []string{"dev", "specs"}},
+		},
 	}
 
 	c := o.WithoutTeam("dev")
@@ -129,15 +133,19 @@ func TestWithoutTeam(t *testing.T) {
 		t.Fatalf("teams = %+v", c.Teams)
 	}
 
-	if len(c.Channels) != 1 || c.Channels[0] != (Channel{From: "qa", To: "specs"}) {
-		t.Fatalf("channels = %+v, want only qa -> specs", c.Channels)
+	if specs, _ := c.Team("specs"); len(specs.Block) != 0 {
+		t.Fatalf("specs blocks %v, want nothing: dev left the block lists", specs.Block)
+	}
+
+	if qa, _ := c.Team("qa"); !slices.Equal(qa.Block, []string{"specs"}) {
+		t.Fatalf("qa blocks %v, want only specs", qa.Block)
 	}
 
 	if _, ok := c.Member("dev1@dev"); ok {
 		t.Fatal("the team's members should go with it")
 	}
 
-	if len(o.Teams) != 3 || len(o.Channels) != 3 {
+	if qa, _ := o.Team("qa"); len(o.Teams) != 3 || len(qa.Block) != 2 {
 		t.Fatal("the receiver changed")
 	}
 

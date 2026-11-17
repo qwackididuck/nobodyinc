@@ -125,7 +125,7 @@ type Service struct {
 
 // Create files a new ticket in a team's queue, or assigns it directly.
 func (s *Service) Create(ctx context.Context, by string, d Draft) (Ticket, error) {
-	if err := s.validateDraft(ctx, by, d); err != nil {
+	if err := s.validateDraft(ctx, d); err != nil {
 		return Ticket{}, err
 	}
 
@@ -400,17 +400,13 @@ func (s *Service) Unblocked(ctx context.Context, done Ticket) ([]Ticket, error) 
 }
 
 // validateDraft applies the creation rules to a draft.
-func (s *Service) validateDraft(ctx context.Context, by string, d Draft) error {
+func (s *Service) validateDraft(ctx context.Context, d Draft) error {
 	if strings.TrimSpace(d.Title) == "" {
 		return fmt.Errorf("%w: a ticket needs a title", ErrInvalid)
 	}
 
 	if !s.teamExists(d.Team) {
 		return fmt.Errorf("%w: unknown team %q", ErrInvalid, d.Team)
-	}
-
-	if !s.mayCreateFor(by, d.Team) {
-		return fmt.Errorf("%w: you can create tickets for your own team and for teams your team has a channel to", ErrForbidden)
 	}
 
 	if d.Assignee != "" && org.TeamOf(d.Assignee) != d.Team {
@@ -577,16 +573,6 @@ func (s *Service) emit(kind EventKind, t Ticket, by string) {
 	if s.OnEvent != nil {
 		s.OnEvent(Event{Kind: kind, Ticket: t, By: by})
 	}
-}
-
-func (s *Service) mayCreateFor(by, team string) bool {
-	if s.isPrivileged(by) {
-		return true
-	}
-
-	myTeam := org.TeamOf(by)
-
-	return myTeam == team || s.Org.Current().HasChannel(myTeam, team)
 }
 
 // isPrivileged reports whether address may act on any ticket of any team:

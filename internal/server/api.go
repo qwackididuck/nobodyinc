@@ -44,6 +44,14 @@ type teamView struct {
 	ID     string `json:"id"`
 	Goal   string `json:"goal,omitempty"`
 	Prompt string `json:"prompt,omitempty"`
+	// Block lists the teams its members may not start a conversation with
+	// (ADR-0009); always present, empty when flows are fully open.
+	Block []string `json:"block"`
+}
+
+// viewTeam turns a team into its view.
+func viewTeam(t org.Team) teamView {
+	return teamView{ID: t.ID, Goal: t.Goal, Prompt: t.Prompt, Block: append([]string{}, t.Block...)}
 }
 
 // listTeams lists the declared teams, so that the UI can recruit into a team
@@ -53,7 +61,7 @@ func (s *server) listTeams(w http.ResponseWriter, _ *http.Request) {
 
 	views := make([]teamView, 0, len(teams))
 	for _, t := range teams {
-		views = append(views, teamView{ID: t.ID, Goal: t.Goal, Prompt: t.Prompt})
+		views = append(views, viewTeam(t))
 	}
 
 	s.writeJSON(w, http.StatusOK, views)
@@ -232,7 +240,7 @@ func (s *server) sendMessageAsHuman(w http.ResponseWriter, r *http.Request) {
 // sendErrorStatus maps a refused message to an HTTP status: forbidden when the
 // rules refuse it, bad request when the message itself is wrong.
 func sendErrorStatus(err error) int {
-	if errors.Is(err, messaging.ErrNoChannel) || errors.Is(err, messaging.ErrTooManyHops) || errors.Is(err, messaging.ErrNothingToReply) {
+	if errors.Is(err, messaging.ErrBlocked) || errors.Is(err, messaging.ErrTooManyHops) || errors.Is(err, messaging.ErrNothingToReply) {
 		return http.StatusForbidden
 	}
 

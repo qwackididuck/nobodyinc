@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
@@ -13,19 +14,29 @@ import (
 // was when its session started; when it changes (an arrival, a departure, a
 // leave, a new team...), the other agents get one inform notice from nobody
 // summing it up, so that they know whom to ask (docs/agents.md, "Whom to
-// ask"). The agent the change is about is not told about itself.
+// ask"). The agent the change is about is not told about itself. A change of
+// a team's block list (ADR-0009) is only told to the members of the teams it
+// concerns: the team that blocks, and the team blocked.
 
 // orgChange is one change of the organization, as told to the agents.
 type orgChange struct {
 	// About is the address of the agent the change is about, who is not told;
 	// "" when it is about no agent (a team).
 	About string
+	// Teams, when set, are the only teams whose members are told.
+	Teams []string
 	Text  string
 }
 
+// toldTo reports whether the member at address, of team, is told about c.
+func (c orgChange) toldTo(address, team string) bool {
+	return c.About != address && (len(c.Teams) == 0 || slices.Contains(c.Teams, team))
+}
+
 // orgChanges lists what changed between two snapshots of the organization:
-// arrivals, departures, leaves and returns, new roles or expertise, and new,
-// changed or closed teams. It is pure: the order follows the organization.
+// arrivals, departures, leaves and returns, new roles or expertise, new,
+// changed or closed teams, and new or lifted blocks. It is pure: the order
+// follows the organization.
 func orgChanges(before, after *org.Org) []orgChange {
 	var changes []orgChange
 
@@ -38,6 +49,8 @@ func orgChanges(before, after *org.Org) []orgChange {
 		case old.Goal != t.Goal:
 			changes = append(changes, orgChange{Text: "Team " + t.ID + " has a new goal" + withDetail(": ", t.Goal) + "."})
 		}
+
+		changes = append(changes, blockChanges(old, t, after)...)
 	}
 
 	for _, m := range after.Members() {
@@ -56,6 +69,29 @@ func orgChanges(before, after *org.Org) []orgChange {
 	for _, m := range before.Members() {
 		if _, stays := after.Member(m.Address); !stays {
 			changes = append(changes, orgChange{About: m.Address, Text: m.Address + withRole(m.Agent.Role) + " left the organization."})
+		}
+	}
+
+	return changes
+}
+
+// blockChanges describes the blocks team t gained or lost: each is told to
+// both teams. A block lifted because the blocked team was closed goes
+// unsaid: the closure says enough.
+func blockChanges(old, t org.Team, after *org.Org) []orgChange {
+	var changes []orgChange
+
+	for _, b := range t.Block {
+		if !slices.Contains(old.Block, b) {
+			changes = append(changes, orgChange{Teams: []string{t.ID, b}, Text: "Team " + t.ID +
+				" may no longer start conversations with team " + b + "; its members can still answer messages from " + b + "."})
+		}
+	}
+
+	for _, b := range old.Block {
+		if _, stays := after.Team(b); stays && !slices.Contains(t.Block, b) {
+			changes = append(changes, orgChange{Teams: []string{t.ID, b}, Text: "Team " + t.ID +
+				" may start conversations with team " + b + " again."})
 		}
 	}
 
@@ -99,7 +135,7 @@ func (n *orgNotices) send(ctx context.Context, before, after *org.Org) {
 		var lines []string
 
 		for _, c := range changes {
-			if c.About != m.Address {
+			if c.toldTo(m.Address, m.Team.ID) {
 				lines = append(lines, "- "+c.Text)
 			}
 		}

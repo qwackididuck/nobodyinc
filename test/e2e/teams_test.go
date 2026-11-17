@@ -2,10 +2,12 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -107,6 +109,69 @@ func TestTeamPromptsReachTheAgent(t *testing.T) {
 		}
 
 		rest = rest[i+len(want):]
+	}
+}
+
+// A team's block list is changed through the API without restarting
+// anyone: the members of the team that blocks and of the team blocked get a
+// notice, and the block is enforced at once. Deleting the blocked team takes
+// it out of the block list.
+func TestBlockThroughTheAPI(t *testing.T) {
+	t.Parallel()
+
+	live := staffProject(t)
+	d := startDaemon(t, live)
+
+	call(t, d, http.MethodPost, "/api/teams", `{"id":"qa","goal":"Test it"}`, http.StatusCreated)
+	call(t, d, http.MethodPost, "/api/teams/qa/agents", `{"name":"tester","template":"reviewer"}`, http.StatusCreated)
+	eventually(t, "tester@qa started", func() bool { return d.Statuses.Get("tester@qa") == runtime.StatusIdle })
+
+	testerBefore, _ := d.Supervisor.Output("tester@qa")
+
+	call(t, d, http.MethodPut, "/api/teams/dev", `{"block":["ghosts"]}`, http.StatusBadRequest)
+	call(t, d, http.MethodPut, "/api/teams/dev", `{"block":["dev"]}`, http.StatusBadRequest)
+
+	if team := string(call(t, d, http.MethodPut, "/api/teams/dev", `{"block":["qa"]}`, http.StatusOK)); !strings.Contains(team, `"block":["qa"]`) {
+		t.Fatalf("PUT /api/teams/dev = %s", team)
+	}
+
+	// Without block, the block list stays (the new goal restarts dev's members,
+	// not qa's).
+	call(t, d, http.MethodPut, "/api/teams/dev", `{"goal":"Build"}`, http.StatusOK)
+
+	if dev, _ := live.Current().Team("dev"); !slices.Equal(dev.Block, []string{"qa"}) || dev.Goal != "Build" {
+		t.Fatalf("dev = %+v, want goal Build and qa still blocked", dev)
+	}
+
+	blocked := "Team dev may no longer start conversations with team qa"
+
+	for _, member := range []string{"dev2@dev", "tester@qa"} {
+		eventually(t, member+" told of the block", func() bool {
+			return strings.Contains(strings.Join(orgNotices(t, d, member), "\n"), blocked)
+		})
+	}
+
+	if testerAfter, _ := d.Supervisor.Output("tester@qa"); testerAfter != testerBefore {
+		t.Fatal("tester@qa restarted: a block change is a notice, not a new session")
+	}
+
+	_, err := d.Messages.Send(context.Background(), messaging.Draft{
+		From: "dev1@dev", To: "@qa", Act: messaging.ActQuery, Priority: messaging.Normal, Subject: "Ready?",
+	})
+	if !errors.Is(err, messaging.ErrBlocked) {
+		t.Fatalf("dev1@dev -> @qa: %v, want ErrBlocked", err)
+	}
+
+	if _, err := d.Messages.Send(context.Background(), messaging.Draft{
+		From: "tester@qa", To: "dev1@dev", Act: messaging.ActQuery, Priority: messaging.Normal, Subject: "Ready?",
+	}); err != nil {
+		t.Fatalf("a block is one-way: tester@qa -> dev1@dev refused: %v", err)
+	}
+
+	call(t, d, http.MethodDelete, "/api/teams/qa", "", http.StatusAccepted)
+
+	if dev, _ := live.Current().Team("dev"); len(dev.Block) != 0 {
+		t.Fatalf("dev still blocks %v after qa was deleted", dev.Block)
 	}
 }
 

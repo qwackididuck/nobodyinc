@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -391,7 +392,7 @@ func TestCreateTeam(t *testing.T) {
 
 			s, _ := newService(t)
 
-			team, err := s.CreateTeam(context.Background(), tt.id, "Write the docs", "Plain English.")
+			team, err := s.CreateTeam(context.Background(), org.Team{ID: tt.id, Goal: "Write the docs", Prompt: "Plain English."})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
@@ -433,7 +434,7 @@ func TestSharedPromptChangesRestartFresh(t *testing.T) {
 		{
 			name: "team prompt",
 			change: func(s *Service) error {
-				_, err := s.UpdateTeam(context.Background(), "dev", "", "Use TDD.")
+				_, err := s.UpdateTeam(context.Background(), org.Team{ID: "dev", Prompt: "Use TDD."})
 
 				return err
 			},
@@ -442,7 +443,7 @@ func TestSharedPromptChangesRestartFresh(t *testing.T) {
 		{
 			name: "team goal",
 			change: func(s *Service) error {
-				_, err := s.UpdateTeam(context.Background(), "dev", "Ship it", "")
+				_, err := s.UpdateTeam(context.Background(), org.Team{ID: "dev", Goal: "Ship it"})
 
 				return err
 			},
@@ -456,15 +457,34 @@ func TestSharedPromptChangesRestartFresh(t *testing.T) {
 		{
 			name: "another team",
 			change: func(s *Service) error {
-				_, err := s.UpdateTeam(context.Background(), "qa", "Test it", "Prove the tests can fail.")
+				_, err := s.UpdateTeam(context.Background(), org.Team{ID: "qa", Goal: "Test it", Prompt: "Prove the tests can fail."})
 
 				return err
 			},
 		},
 		{
+			name: "block list: nobody restarts (ADR-0009)",
+			change: func(s *Service) error {
+				_, err := s.SetBlock(context.Background(), "dev", []string{"qa"})
+
+				return err
+			},
+		},
+		{
+			name: "block of an unknown team",
+			change: func(s *Service) error {
+				_, err := s.SetBlock(context.Background(), "dev", []string{"ghosts"})
+				if !errors.Is(err, ErrInvalid) {
+					return errors.New("want ErrInvalid, got " + errString(err))
+				}
+
+				return nil
+			},
+		},
+		{
 			name: "unknown team",
 			change: func(s *Service) error {
-				_, err := s.UpdateTeam(context.Background(), "ghosts", "", "")
+				_, err := s.UpdateTeam(context.Background(), org.Team{ID: "ghosts"})
 				if !errors.Is(err, ErrNotFound) {
 					return errors.New("want ErrNotFound, got " + errString(err))
 				}
@@ -494,6 +514,39 @@ func TestSharedPromptChangesRestartFresh(t *testing.T) {
 	}
 }
 
+func TestSetBlock(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newService(t)
+	ctx := context.Background()
+
+	if _, err := s.SetBlock(ctx, "dev", []string{" qa ", ""}); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := org.LoadProject(s.Org.Current().ProjectDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if dev, _ := reloaded.Team("dev"); !slices.Equal(dev.Block, []string{"qa"}) || reloaded.CanStart("dev", "qa") {
+		t.Fatalf("dev blocks %v on disk, want [qa]", dev.Block)
+	}
+
+	if _, err := s.SetBlock(ctx, "ghosts", nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("SetBlock on an unknown team: %v, want ErrNotFound", err)
+	}
+
+	// Deleting the blocked team takes it out of the block list.
+	if err := s.DeleteTeam(ctx, "qa", runtime.ApplyOptions{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if dev, _ := s.Org.Current().Team("dev"); len(dev.Block) != 0 {
+		t.Fatalf("dev still blocks %v after qa was deleted", dev.Block)
+	}
+}
+
 func TestOnReloadGetsBothSnapshots(t *testing.T) {
 	t.Parallel()
 
@@ -503,7 +556,7 @@ func TestOnReloadGetsBothSnapshots(t *testing.T) {
 
 	s.OnReload = func(b, a *org.Org) { before, after = b, a }
 
-	if _, err := s.CreateTeam(context.Background(), "docs", "", ""); err != nil {
+	if _, err := s.CreateTeam(context.Background(), org.Team{ID: "docs"}); err != nil {
 		t.Fatal(err)
 	}
 

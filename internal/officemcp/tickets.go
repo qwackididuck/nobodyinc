@@ -39,7 +39,7 @@ func (t tools) addTicketTools(server *mcp.Server) {
 	}, t.ticketClaim)
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "ticket_create",
-		Description: "Create a ticket for your own team or for a team your team has a channel to. " +
+		Description: "Create a ticket for any team, your own included (a team your team blocks too). " +
 			"Without an assignee it waits in that team's queue.",
 	}, t.ticketCreate)
 	mcp.AddTool(server, &mcp.Tool{

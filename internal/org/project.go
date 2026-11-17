@@ -32,7 +32,7 @@ const (
 )
 
 // orgFileHeader opens the org.yaml written by Nobody Inc.
-const orgFileHeader = "# Nobody Inc organization: teams and channels.\n" +
+const orgFileHeader = "# Nobody Inc organization: teams and the teams they block (ADR-0009).\n" +
 	"# Each agent is a file in teams/<team>/<agent>.md.\n"
 
 // ErrNoConfig means the project has no .nobody/org.yaml yet.
@@ -51,7 +51,7 @@ func HasConfig(projectDir string) bool {
 }
 
 // LoadProject reads the organization of a project from its .nobody/
-// directory: org.yaml for teams and channels, one file per agent in
+// directory: org.yaml for teams and their block lists, one file per agent in
 // teams/<team>/, the team prompts (teams/<team>/TEAM.md), the project prompt
 // (project.md) and the MCP registry mcp.yaml. It returns ErrNoConfig when
 // org.yaml is missing.
@@ -127,7 +127,7 @@ func WriteProject(o *Org) error {
 }
 
 // WriteOrgFile validates the organization and writes .nobody/org.yaml alone:
-// teams (id, goal) and channels. Agent files and prompts are untouched.
+// teams (id, goal, block list). Agent files and prompts are untouched.
 func WriteOrgFile(o *Org) error {
 	if err := o.Validate(); err != nil {
 		return err
@@ -276,15 +276,25 @@ func readOrgFile(dir string) (*Org, error) {
 		return nil, err
 	}
 
-	o := &Org{ProjectDir: dir}
+	// file is org.yaml with the "channels:" of before ADR-0009, still read so
+	// that an old project loads; they are counted, never written back.
+	var file struct {
+		Org `yaml:",inline"`
+
+		Channels []any `yaml:"channels"`
+	}
 
 	dec := yaml.NewDecoder(strings.NewReader(string(data)))
 	dec.KnownFields(true)
 
 	// An empty file decodes to io.EOF: an organization without teams yet.
-	if err := dec.Decode(o); err != nil && strings.TrimSpace(string(data)) != "" {
+	if err := dec.Decode(&file); err != nil && strings.TrimSpace(string(data)) != "" {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
+
+	o := &file.Org
+	o.ProjectDir = dir
+	o.IgnoredChannels = len(file.Channels)
 
 	return o, nil
 }

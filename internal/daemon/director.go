@@ -71,7 +71,16 @@ func (d *directorOffice) CreateTeam(ctx context.Context, id, goal, prompt string
 		return org.Team{}, errFixedOrg
 	}
 
-	return d.staff.CreateTeam(context.WithoutCancel(ctx), id, goal, prompt)
+	return d.staff.CreateTeam(context.WithoutCancel(ctx), org.Team{ID: id, Goal: goal, Prompt: prompt})
+}
+
+// BlockTeam replaces the teams a team may not start a conversation with.
+func (d *directorOffice) BlockTeam(ctx context.Context, id string, block []string) (org.Team, error) {
+	if d.staff == nil {
+		return org.Team{}, errFixedOrg
+	}
+
+	return d.staff.SetBlock(context.WithoutCancel(ctx), id, block)
 }
 
 // DeleteTeam deletes a team and dismisses its members.

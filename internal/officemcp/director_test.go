@@ -38,6 +38,12 @@ func (f *fakeDirector) DeleteTeam(_ context.Context, id string) error {
 	return nil
 }
 
+func (f *fakeDirector) BlockTeam(_ context.Context, id string, block []string) (org.Team, error) {
+	f.calls = append(f.calls, "block "+id+": "+strings.Join(block, ","))
+
+	return org.Team{ID: id, Block: block}, nil
+}
+
 func (f *fakeDirector) Definition(string) (catalog.Definition, error) {
 	return catalog.Definition{Role: "Developer"}, nil
 }
@@ -159,6 +165,7 @@ func TestDirectorToolsCallTheDirector(t *testing.T) {
 		{"agent_leave", map[string]any{"address": "dev1@dev"}},
 		{"agent_return", map[string]any{"address": "dev1@dev"}},
 		{"agent_dismiss", map[string]any{"address": "tester@qa"}},
+		{"team_block", map[string]any{"id": "dev", "block": []string{"qa", "specs"}}},
 		{"team_delete", map[string]any{"id": "qa"}},
 		{"org_overview", nil},
 		{"template_list", nil},
@@ -172,7 +179,7 @@ func TestDirectorToolsCallTheDirector(t *testing.T) {
 		}
 	}
 
-	want := "team qa: Test it / Prove the tests can fail. | recruit dev2@dev from developer | create fuzzer@qa | edit dev1@dev | leave dev1@dev | return dev1@dev | dismiss tester@qa | delete team qa"
+	want := "team qa: Test it / Prove the tests can fail. | recruit dev2@dev from developer | create fuzzer@qa | edit dev1@dev | leave dev1@dev | return dev1@dev | dismiss tester@qa | block dev: qa,specs | delete team qa"
 	if got := strings.Join(director.calls, " | "); got != want {
 		t.Fatalf("calls = %q, want %q", got, want)
 	}

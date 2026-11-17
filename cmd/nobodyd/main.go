@@ -97,6 +97,7 @@ func run(logger *slog.Logger, opts options) error {
 	}
 
 	warnIfUntrusted(logger, organization.ProjectDir)
+	warnIfChannels(logger, organization)
 
 	addr := listenAddr()
 
@@ -259,4 +260,17 @@ func serve(ctx context.Context, logger *slog.Logger, addr string, handler http.H
 	defer cancel()
 
 	return srv.Shutdown(shutdownCtx)
+}
+
+// warnIfChannels tells that the "channels:" of an org.yaml written before
+// ADR-0009 are ignored: any team may now start a conversation with any
+// other, unless it blocks it.
+func warnIfChannels(logger *slog.Logger, o *org.Org) {
+	if o.IgnoredChannels == 0 {
+		return
+	}
+
+	logger.Warn("org.yaml still declares channels: they are ignored (flows are open by default, restrict them "+
+		"with a team's block list) and will be dropped the next time org.yaml is written",
+		"channels", o.IgnoredChannels, "see", "docs/adr/0009-open-flows-with-a-block-list.md")
 }

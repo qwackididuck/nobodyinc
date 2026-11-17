@@ -19,13 +19,12 @@ func TestWriteThenLoadProject(t *testing.T) {
 			{ID: "specs", Goal: "Write specs", Agents: []Agent{
 				{Name: "archi", Role: "Architect", From: "archi@1", Prompt: "Design."},
 			}},
-			{ID: "dev", Goal: "Build", Agents: []Agent{
+			{ID: "dev", Goal: "Build", Block: []string{"qa"}, Agents: []Agent{
 				{Name: "dev1", Role: "Developer", Model: "sonnet", Tools: []string{"Read"}},
 				{Name: "dev2", Role: "Developer", OnLeave: true},
 			}},
 			{ID: "qa"},
 		},
-		Channels: []Channel{{From: "dev", To: "specs"}},
 	}
 
 	if err := WriteProject(want); err != nil {
@@ -78,6 +77,11 @@ func TestLoadProjectErrors(t *testing.T) {
 			wantErr: "ghosts",
 		},
 		{
+			name:    "block of an unknown team",
+			files:   map[string]string{"org.yaml": "teams: [{id: dev, block: [ghosts]}]\n"},
+			wantErr: "ghosts",
+		},
+		{
 			name: "broken agent file",
 			files: map[string]string{
 				"org.yaml":          "teams: [{id: dev}]\n",
@@ -109,6 +113,39 @@ func TestLoadProjectErrors(t *testing.T) {
 				t.Fatalf("error = %v, want one mentioning %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// An org.yaml written before ADR-0009 still loads: its channels are counted,
+// ignored, and dropped by the next write.
+func TestLoadProjectIgnoresChannels(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".nobody", "org.yaml"),
+		"teams: [{id: specs}, {id: dev, block: [specs]}]\nchannels:\n  - {from: dev, to: specs}\n  - {from: specs, to: dev}\n")
+
+	o, err := LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if o.IgnoredChannels != 2 || o.CanStart("dev", "specs") || !o.CanStart("specs", "dev") {
+		t.Fatalf("ignored channels = %d, dev->specs %v, specs->dev %v: want 2, blocked, open",
+			o.IgnoredChannels, o.CanStart("dev", "specs"), o.CanStart("specs", "dev"))
+	}
+
+	if err := WriteOrgFile(o); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, ".nobody", "org.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(data), "channels") || !strings.Contains(string(data), "block:") {
+		t.Fatalf("org.yaml after a write:\n%s\nwant the block list kept and no channels", data)
 	}
 }
 
@@ -164,8 +201,12 @@ channels:
 		t.Fatalf("archi migrated as %+v", archi.Agent)
 	}
 
-	if !o.HasChannel("dev", "specs") || o.Teams[0].Goal != "Write specs" {
-		t.Fatalf("teams or channels lost: %+v", o)
+	if o.Teams[0].Goal != "Write specs" || len(o.Teams) != 2 {
+		t.Fatalf("teams lost: %+v", o)
+	}
+
+	if !o.CanStart("specs", "dev") {
+		t.Fatal("the legacy channels should be dropped: flows are open (ADR-0009)")
 	}
 
 	// A second run leaves the existing configuration alone.

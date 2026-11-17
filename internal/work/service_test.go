@@ -10,7 +10,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/work"
 )
 
-// newService: specs (archi), dev (dev1, dev2), qa (tester); channel dev → specs.
+// newService: specs (archi), dev (dev1, dev2), qa (tester); specs blocks dev.
 func newService(t *testing.T) (*work.Service, *[]work.Event) {
 	t.Helper()
 
@@ -27,12 +27,11 @@ func newService(t *testing.T) (*work.Service, *[]work.Event) {
 		Store: st,
 		Org: &org.Org{
 			Teams: []org.Team{
-				{ID: "specs", Agents: []org.Agent{{Name: "archi"}}},
+				{ID: "specs", Agents: []org.Agent{{Name: "archi"}}, Block: []string{"dev"}},
 				{ID: "dev", Agents: []org.Agent{{Name: "dev1"}, {Name: "dev2"}}},
 				{ID: "qa", Agents: []org.Agent{{Name: "tester"}}},
 			},
-			Channels: []org.Channel{{From: "dev", To: "specs"}},
-			God:      &org.Agent{Name: "god"},
+			God: &org.Agent{Name: "god"},
 		},
 		OnEvent: func(e work.Event) { events = append(events, e) },
 	}, &events
@@ -155,8 +154,8 @@ func TestCreateRules(t *testing.T) {
 		wantErr error
 	}{
 		{"agent for its own team", "dev1@dev", work.Draft{Title: "x", Team: "dev"}, nil},
-		{"agent for a team it has a channel to", "dev1@dev", work.Draft{Title: "x", Team: "specs"}, nil},
-		{"agent for a team without channel", "archi@specs", work.Draft{Title: "x", Team: "dev"}, work.ErrForbidden},
+		{"agent for another team", "dev1@dev", work.Draft{Title: "x", Team: "specs"}, nil},
+		{"agent for a team its team blocks: tickets are open", "archi@specs", work.Draft{Title: "x", Team: "dev"}, nil},
 		{"human for any team", org.HumanAddress, work.Draft{Title: "x", Team: "qa"}, nil},
 		{"director for any team, assigned", "god", work.Draft{Title: "x", Team: "qa", Assignee: "tester@qa"}, nil},
 		{"missing title", org.HumanAddress, work.Draft{Team: "qa"}, work.ErrInvalid},

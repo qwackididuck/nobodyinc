@@ -5,10 +5,10 @@
 //
 //   - teams group agents around a common goal;
 //   - every agent has an address "<agent>@<team>", e.g. "archi@specs";
-//   - agents of the same team can always talk to each other;
-//   - a channel "from: dev, to: specs" lets the dev team ask the specs team
-//     questions. Channels are one-way: specs can answer dev, but cannot start
-//     a conversation with dev unless a "from: specs, to: dev" channel exists.
+//   - any agent may start a conversation with any team (ADR-0009), unless
+//     its team blocks that team: "block: [qa]" under the dev team stops dev's
+//     members from starting conversations with qa. A block is one-way (qa may
+//     still write to dev) and never stops an answer (see CanStart).
 package org
 
 import (
@@ -35,9 +35,12 @@ const SystemAddress = "nobody"
 type Org struct {
 	// ProjectDir is the repository the agents work in: the directory holding
 	// .nobody/.
-	ProjectDir string    `yaml:"-"`
-	Teams      []Team    `yaml:"teams"`
-	Channels   []Channel `yaml:"channels,omitempty"`
+	ProjectDir string `yaml:"-"`
+	Teams      []Team `yaml:"teams"`
+	// IgnoredChannels counts the "channels:" entries read from an org.yaml
+	// written before ADR-0009. They are ignored (flows are open by default)
+	// and dropped by the next write of org.yaml; the daemon warns about them.
+	IgnoredChannels int `yaml:"-"`
 	// MCP is the project's MCP registry, read from .nobody/mcp.yaml: the
 	// servers agents may be given (see mcp.go).
 	MCP map[string]MCPServer `yaml:"-"`
@@ -53,6 +56,9 @@ type Org struct {
 type Team struct {
 	ID   string `yaml:"id"`
 	Goal string `yaml:"goal,omitempty"`
+	// Block lists the teams this team's members may not start a conversation
+	// with (ADR-0009). Answers and tickets are not affected.
+	Block []string `yaml:"block,omitempty"`
 	// Prompt is what every member of the team should know, read from
 	// .nobody/teams/<id>/TEAM.md.
 	Prompt string `yaml:"-"`
@@ -68,12 +74,6 @@ type Agent struct {
 	Name string
 }
 
-// Channel allows team From to start conversations with team To.
-type Channel struct {
-	From string `yaml:"from"`
-	To   string `yaml:"to"`
-}
-
 // Member is an agent together with its team, as seen from outside.
 type Member struct {
 	Address string
@@ -81,11 +81,11 @@ type Member struct {
 	Agent   Agent
 }
 
-// Validate checks names, uniqueness and that channels point to real teams.
+// Validate checks names, uniqueness and that block lists name real teams.
 func (o *Org) Validate() error {
 	teams, errs := o.validateTeams()
 	errs = append(errs, o.validateGod()...)
-	errs = append(errs, o.validateChannels(teams)...)
+	errs = append(errs, o.validateBlocks(teams)...)
 	errs = append(errs, o.validateMCP()...)
 
 	return errors.Join(errs...)
@@ -119,15 +119,18 @@ func (o *Org) Member(address string) (Member, bool) {
 	return Member{}, false
 }
 
-// HasChannel reports whether team from may start conversations with team to.
-func (o *Org) HasChannel(from, to string) bool {
-	for _, c := range o.Channels {
-		if c.From == from && c.To == to {
-			return true
-		}
+// CanStart reports whether a member of team from may start a conversation
+// with team to: always, unless team from blocks team to. A team never blocks
+// itself, and "" (the human, nobody, the director) is never blocked; answers
+// are not this method's business (messaging.Policy lets them through).
+func (o *Org) CanStart(from, to string) bool {
+	if from == "" || to == "" || from == to {
+		return true
 	}
 
-	return false
+	t, ok := o.Team(from)
+
+	return !ok || !slices.Contains(t.Block, to)
 }
 
 // ErrUnknownTeam is returned when a team is not declared in org.yaml.
@@ -175,31 +178,37 @@ func (o *Org) Team(id string) (Team, bool) {
 }
 
 // WithTeam returns a copy of the organization with team t added, or, when a
-// team with this id exists, with its goal and prompt replaced: its agents
-// stay. The receiver is left untouched; validate the copy before using it.
+// team with this id exists, with its goal, block list and prompt replaced:
+// its agents stay. The receiver is left untouched; validate the copy before
+// using it.
 func (o *Org) WithTeam(t Team) *Org {
 	c := o.copyTeams()
 
 	if i := slices.IndexFunc(c.Teams, func(x Team) bool { return x.ID == t.ID }); i >= 0 {
 		c.Teams[i].Goal = t.Goal
+		c.Teams[i].Block = slices.Clone(t.Block)
 		c.Teams[i].Prompt = t.Prompt
 
 		return c
 	}
 
 	t.Agents = nil
+	t.Block = slices.Clone(t.Block)
 	c.Teams = append(c.Teams, t)
 
 	return c
 }
 
 // WithoutTeam returns a copy of the organization without team id: its
-// members and the channels from or to it go with it. The receiver is left
-// untouched.
+// members go with it, and it leaves the other teams' block lists. The
+// receiver is left untouched.
 func (o *Org) WithoutTeam(id string) *Org {
 	c := o.copyTeams()
 	c.Teams = slices.DeleteFunc(c.Teams, func(t Team) bool { return t.ID == id })
-	c.Channels = slices.DeleteFunc(slices.Clone(c.Channels), func(ch Channel) bool { return ch.From == id || ch.To == id })
+
+	for i := range c.Teams {
+		c.Teams[i].Block = slices.DeleteFunc(c.Teams[i].Block, func(b string) bool { return b == id })
+	}
 
 	return c
 }
@@ -269,17 +278,25 @@ func validateAgents(t Team) []error {
 	return errs
 }
 
-// validateChannels checks that channels join two different, known teams.
-func (o *Org) validateChannels(teams map[string]bool) []error {
+// validateBlocks checks that every team blocks known teams other than
+// itself, each once.
+func (o *Org) validateBlocks(teams map[string]bool) []error {
 	var errs []error
 
-	for _, c := range o.Channels {
-		if !teams[c.From] || !teams[c.To] {
-			errs = append(errs, fmt.Errorf("channel %s -> %s refers to an unknown team", c.From, c.To))
-		}
+	for _, t := range o.Teams {
+		seen := map[string]bool{}
 
-		if c.From == c.To {
-			errs = append(errs, fmt.Errorf("channel %s -> %s is useless: a team can always talk to itself", c.From, c.To))
+		for _, b := range t.Block {
+			switch {
+			case b == t.ID:
+				errs = append(errs, fmt.Errorf("team %q cannot block itself: a team always talks to itself", t.ID))
+			case !teams[b]:
+				errs = append(errs, fmt.Errorf("team %q blocks %q: %w", t.ID, b, ErrUnknownTeam))
+			case seen[b]:
+				errs = append(errs, fmt.Errorf("team %q blocks %q twice", t.ID, b))
+			}
+
+			seen[b] = true
 		}
 	}
 
@@ -319,6 +336,7 @@ func (o *Org) copyTeams() *Org {
 
 	for i, t := range o.Teams {
 		t.Agents = slices.Clone(t.Agents)
+		t.Block = slices.Clone(t.Block)
 		c.Teams[i] = t
 	}
 

@@ -15,8 +15,8 @@ const DefaultMaxHops = 10
 // sending agent, so they explain what to do instead.
 var (
 	ErrUnknownAddress = errors.New("unknown address")
-	ErrNoChannel      = errors.New("no channel allows this conversation: you can only start conversations " +
-		"with your own team or teams your team has a channel to, and answer messages you received")
+	ErrBlocked        = errors.New("your team may not start conversations with this team (ADR-0009): " +
+		"you can still answer the messages its members send you; to reach them, ask the human instead")
 	ErrTooManyHops    = errors.New("this conversation is too long: stop exchanging and escalate to the human")
 	ErrNothingToReply = errors.New("the message you are answering did not ask for an answer: do not reply to it; " +
 		"send a request, query or propose only if you have something new to ask")
@@ -55,10 +55,12 @@ func (p Policy) Check(msg Message, parent *Message) error {
 		return nil
 	}
 
-	return ErrNoChannel
+	return fmt.Errorf("%w (team %s blocks team %s)", ErrBlocked, org.TeamOf(msg.From), org.TeamOf(msg.To))
 }
 
-// allowed applies the conversation rules, from the most to the least common.
+// allowed applies the conversation rules (ADR-0009), from the most to the
+// least common: flows are open, and only a team's block list stops one of its
+// members from starting a conversation.
 func (p Policy) allowed(msg Message, parent *Message) bool {
 	o := p.Org.Current()
 
@@ -69,10 +71,8 @@ func (p Policy) allowed(msg Message, parent *Message) bool {
 		return true // anyone may escalate to the human or the director
 	case isReplyTo(msg, parent):
 		return true // anyone may answer a message they received
-	case org.TeamOf(msg.From) == org.TeamOf(msg.To):
-		return true // a team always talks to itself
 	default:
-		return o.HasChannel(org.TeamOf(msg.From), org.TeamOf(msg.To))
+		return o.CanStart(org.TeamOf(msg.From), org.TeamOf(msg.To)) // unless blocked; a team always talks to itself
 	}
 }
 

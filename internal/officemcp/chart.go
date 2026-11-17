@@ -8,11 +8,12 @@ import (
 const (
 	// ReachOwnTeam: the agent's own team; it talks to them freely.
 	ReachOwnTeam = "own_team"
-	// ReachChannel: a channel lets the agent start conversations with them.
-	ReachChannel = "channel"
-	// ReachAnswerOnly: the agent can only answer their messages; to reach
-	// them otherwise, it goes through the human.
-	ReachAnswerOnly = "answer_only"
+	// ReachOpen: the agent may start conversations with them (ADR-0009:
+	// flows are open by default).
+	ReachOpen = "open"
+	// ReachBlocked: the agent's team blocks them; it can only answer their
+	// messages, and goes through the human to reach them otherwise.
+	ReachBlocked = "blocked"
 	// ReachDirector: the director's view of every team; it writes to anyone.
 	ReachDirector = "director"
 )
@@ -38,7 +39,7 @@ type ChartMember struct {
 
 // Chart is the whole organization as seen by the agent at address: its own
 // team first, then the teams it can start conversations with, then the
-// others. The agent itself is left out.
+// teams its team blocks. The agent itself is left out.
 //
 // It goes into the agent's system prompt when it starts, and list_contacts
 // returns it up to date: the organization changes while agents run.
@@ -65,11 +66,11 @@ func Chart(o *org.Org, address string) []TeamChart {
 		case t.ID == myTeam:
 			chart.Reach = ReachOwnTeam
 			own = append(own, chart)
-		case o.HasChannel(myTeam, t.ID):
-			chart.Reach = ReachChannel
+		case o.CanStart(myTeam, t.ID):
+			chart.Reach = ReachOpen
 			reachable = append(reachable, chart)
 		default:
-			chart.Reach = ReachAnswerOnly
+			chart.Reach = ReachBlocked
 			others = append(others, chart)
 		}
 	}
