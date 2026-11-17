@@ -14,14 +14,17 @@ import styles from "./staff.module.css";
 interface Props {
   onOpenChat: (address: string) => void;
   onEdit: (address: string) => void;
+  // Opens the catalog or the new agent form to recruit into team.
+  onAddMember: (team: string, from: "catalog" | "scratch") => void;
 }
 
 // Staff lists everyone in the office, team by team, with what can be done
 // to them: open their chat, edit their file, put them on leave or bring them
 // back, dismiss them. A dismissed agent walks out of the office. The director
 // can only be edited. Teams can be created here, and their goal, shared
-// instructions and flows (the teams they block, ADR-0009) edited.
-export function Staff({ onOpenChat, onEdit }: Props) {
+// instructions and flows (the teams they block, ADR-0009) edited; each team
+// ends with a slot to add a member, from the catalog or from scratch.
+export function Staff({ onOpenChat, onEdit, onAddMember }: Props) {
   const { agents, teams } = useLive();
   const [now, setNow] = useState(false);
   // The team dialog: null closed, "new" to create one, or the team to edit.
@@ -65,11 +68,32 @@ export function Staff({ onOpenChat, onEdit }: Props) {
           {g.members.map((a) => (
             <Member key={a.address} agent={a} now={now} onOpenChat={onOpenChat} onEdit={onEdit} />
           ))}
-          {g.members.length === 0 && <p className={ui.sub}>No member yet: recruit one from the catalog.</p>}
+          {g.team && <AddMember team={g.team.id} empty={g.members.length === 0} onAdd={(from) => onAddMember(g.team?.id ?? "", from)} />}
         </section>
       ))}
       {teams.length === 0 && <p className={ui.sub}>No team yet: create one, then recruit its members from the catalog.</p>}
       {dialog && <TeamDialog team={dialog === "new" ? undefined : dialog} onClose={() => setDialog(null)} />}
+    </div>
+  );
+}
+
+// AddMember is the empty desk at the end of a team: recruit from the catalog,
+// or write an agent from scratch, straight into this team.
+function AddMember({ team, empty, onAdd }: { team: string; empty: boolean; onAdd: (from: "catalog" | "scratch") => void }) {
+  return (
+    <div className={styles.addMember}>
+      <span className={styles.addMemberLabel}>
+        <strong>+ Add a member</strong>
+        <span>{empty ? `No one in ${team} yet.` : `Recruit into ${team}.`}</span>
+      </span>
+      <div className={styles.memberActions}>
+        <button type="button" className={ui.btnPrimary} onClick={() => onAdd("catalog")}>
+          From the catalog
+        </button>
+        <button type="button" className={ui.btn} onClick={() => onAdd("scratch")}>
+          From scratch
+        </button>
+      </div>
     </div>
   );
 }

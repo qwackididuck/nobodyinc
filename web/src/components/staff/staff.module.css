@@ -323,6 +323,31 @@
   background: var(--panel);
 }
 
+/* The empty desk at the end of a team (AddMember). */
+.addMember {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 2px dashed var(--line);
+}
+
+.addMemberLabel {
+  display: grid;
+}
+
+.addMemberLabel strong {
+  font: 600 15px var(--font-display);
+  color: var(--accent);
+}
+
+.addMemberLabel span {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .memberWho {
   display: grid;
   min-width: 0;

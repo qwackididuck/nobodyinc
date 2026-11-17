@@ -19,8 +19,9 @@ export function templateLook(name: string) {
 
 // Catalog shows the templates as a character select screen: built-in ones
 // and the user's own (~/.nobody/catalog, a same name replaces a built-in
-// one), and the chosen template's sheet with the recruiting form.
-export function Catalog() {
+// one), and the chosen template's sheet with the recruiting form, into team
+// when given (opened from a team's "Add a member").
+export function Catalog({ team }: { team?: string }) {
   const { templates } = useLive();
   const [picked, setPicked] = useState<string | null>(null);
   const chosen = templates.find((t) => t.name === picked) ?? templates.find((t) => t.name === "developer") ?? templates[0];
@@ -58,19 +59,20 @@ export function Catalog() {
         )}
         {templates.length === 0 && <p className={ui.sub}>No template in the catalog.</p>}
       </div>
-      {chosen && <Sheet key={chosen.name} template={chosen} />}
+      {chosen && <Sheet key={chosen.name} template={chosen} team={team} />}
     </div>
   );
 }
 
 // Sheet is the chosen template: its character, what it is given, its
 // instructions, and how to recruit it, customize it or delete it.
-function Sheet({ template }: { template: Template }) {
+function Sheet({ template, team: wanted }: { template: Template; team?: string }) {
   const { teams } = useLive();
   const [name, setName] = useState("");
-  // The team named like the template when there is one, the first otherwise.
+  // The team asked for; else the team named like the template when there is
+  // one, the first otherwise.
   const sameName = teams.find((t) => t.id === template.name)?.id;
-  const [team, setTeam] = useState(sameName ?? teams[0]?.id ?? "");
+  const [team, setTeam] = useState(wanted ?? sameName ?? teams[0]?.id ?? "");
   const [customizing, setCustomizing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [note, setNote] = useState<string | null>(null);

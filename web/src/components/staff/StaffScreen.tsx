@@ -8,7 +8,9 @@ import { EditAgent, NewAgent } from "./Editors";
 import styles from "./staff.module.css";
 import { Staff } from "./Staff";
 
-type View = { kind: "catalog" } | { kind: "staff" } | { kind: "new" } | { kind: "edit"; address: string };
+// The catalog and the new agent form may come with a team to recruit into,
+// when opened from a team's "Add a member".
+type View = { kind: "catalog"; team?: string } | { kind: "staff" } | { kind: "new"; team?: string } | { kind: "edit"; address: string };
 
 interface Props {
   onOpenChat: (address: string) => void;
@@ -29,9 +31,9 @@ export function StaffScreen({ onOpenChat }: Props) {
   const [view, setView] = useState<View>({ kind: "staff" });
 
   const heading = {
-    catalog: ["Choose your recruit", "Templates from Nobody Inc and from ~/.nobody/catalog. A recruit is a copy: later changes to the template never touch it."],
+    catalog: [view.kind === "catalog" && view.team ? `Choose a recruit for ${view.team}` : "Choose your recruit", "Templates from Nobody Inc and from ~/.nobody/catalog. A recruit is a copy: later changes to the template never touch it."],
     staff: ["Your staff", "Everyone in the office, team by team, and whom each team may start conversations with. Changes apply once the agent is idle, unless you ask for now."],
-    new: ["New agent", "Writes the agent's file in .nobody/ and starts it, or saves it as a template."],
+    new: [view.kind === "new" && view.team ? `New agent for ${view.team}` : "New agent", "Writes the agent's file in .nobody/ and starts it, or saves it as a template."],
     edit: ["Edit an agent", "Changing the role or the instructions starts a new session: a resumed session keeps its original instructions."],
   }[view.kind];
 
@@ -53,9 +55,15 @@ export function StaffScreen({ onOpenChat }: Props) {
         </div>
       </header>
       <div className={styles.body}>
-        {view.kind === "catalog" && <Catalog />}
-        {view.kind === "staff" && <Staff onOpenChat={onOpenChat} onEdit={(address) => setView({ kind: "edit", address })} />}
-        {view.kind === "new" && <NewAgent />}
+        {view.kind === "catalog" && <Catalog team={view.team} />}
+        {view.kind === "staff" && (
+          <Staff
+            onOpenChat={onOpenChat}
+            onEdit={(address) => setView({ kind: "edit", address })}
+            onAddMember={(team, from) => setView({ kind: from === "catalog" ? "catalog" : "new", team })}
+          />
+        )}
+        {view.kind === "new" && <NewAgent key={view.team} team={view.team} />}
         {view.kind === "edit" && <EditAgent key={view.address} address={view.address} onDone={() => setView({ kind: "staff" })} />}
       </div>
     </div>
