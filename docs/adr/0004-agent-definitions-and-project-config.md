@@ -1,6 +1,6 @@
 # ADR-0004 — Agent definitions, catalog and per-project configuration
 
-- Status: accepted
+- Status: accepted; its channels are superseded by ADR-0009 (open flows with a block list)
 - Date: 2026-11-12
 
 ## Context
