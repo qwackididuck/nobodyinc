@@ -13,6 +13,7 @@ export function toDefinition(t: Template): AgentDefinition {
     description: t.description,
     version: t.version,
     role: t.role,
+    expertise: t.expertise,
     model: t.model,
     permissions: t.permissions,
     tools: t.tools,

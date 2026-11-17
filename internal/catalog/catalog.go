@@ -30,6 +30,25 @@ import (
 //go:embed builtin/*.md
 var builtinFiles embed.FS
 
+// The director is not in the catalog: every project has one, created from
+// this definition (docs/god.md). Its name is also its address.
+//
+//go:embed director/god.md
+var directorFile []byte
+
+// DirectorName is the name, and address, of the director a project gets.
+const DirectorName = "god"
+
+// Director returns the built-in director as a template, ready to recruit.
+func Director() (Template, error) {
+	d, err := Parse(directorFile)
+	if err != nil {
+		return Template{}, fmt.Errorf("built-in director: %w", err)
+	}
+
+	return Template{Definition: d, Name: DirectorName, Builtin: true}, nil
+}
+
 // Errors returned by the catalog.
 var (
 	ErrNotFound = errors.New("template not found")

@@ -3,6 +3,7 @@
 import { type DragEvent, useState } from "react";
 
 import { deleteTicket, type Ticket } from "@/lib/api";
+import { Modal } from "../ui/Modal";
 import ui from "../ui/ui.module.css";
 import styles from "./kanban.module.css";
 
@@ -73,8 +74,7 @@ export function Shredder({ tickets, onShredded }: Props) {
       </div>
 
       {chosen && (
-        <div className={styles.modalBackdrop}>
-          <div className={styles.modal} role="dialog" aria-modal="true" aria-label={`Shred ${chosen.id}`}>
+        <Modal label={`Shred ${chosen.id}`} tone="danger" onClose={() => setChosen(null)}>
             <h3 className={ui.title}>Shred {chosen.id}?</h3>
             <p className={styles.modalTicket}>{chosen.title}</p>
             <p className={ui.sub}>The ticket, its comments and its deliverables are deleted for good. Messages about it stay.</p>
@@ -103,8 +103,7 @@ export function Shredder({ tickets, onShredded }: Props) {
                 Cancel
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </>
   );

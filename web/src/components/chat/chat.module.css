@@ -162,13 +162,6 @@
   opacity: 0.6;
 }
 
-.avatarGhost {
-  border: 2px dashed var(--accent);
-  background: none;
-  color: var(--accent);
-  font-size: 22px;
-}
-
 .avatarBin {
   background: var(--panel-2);
   color: var(--muted);

@@ -14,10 +14,9 @@ import { Settings } from "./settings/Settings";
 import styles from "./shell/shell.module.css";
 import { type Tab, TopBar } from "./shell/TopBar";
 
-// What the chat panel shows: an agent's thread (by address), the
-// wastebasket of messages between agents, or how to recruit the director
-// while the project has none.
-export type ChatTarget = { kind: "agent"; address: string } | { kind: "bin" } | { kind: "hire-director" };
+// What the chat panel shows: an agent's thread (by address), or the
+// wastebasket of messages between agents.
+export type ChatTarget = { kind: "agent"; address: string } | { kind: "bin" };
 
 // App is the control room: the top bar with its tabs, the chat panel on the
 // left, and the selected tab (the office by default) in the main area.
@@ -47,7 +46,6 @@ function ControlRoom() {
             binUnread={unreadInBin(messages, marks[BIN_KEY])}
             onSelectAgent={openChat}
             onOpenBin={() => setTarget({ kind: "bin" })}
-            onHireDirector={() => setTarget({ kind: "hire-director" })}
           />
         )}
         {tab === "kanban" && <Kanban onOpenChat={openChat} />}

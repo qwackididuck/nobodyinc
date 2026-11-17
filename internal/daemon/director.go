@@ -65,6 +65,24 @@ func (d *directorOffice) Templates() ([]catalog.Template, error) {
 	return d.catalog.List()
 }
 
+// CreateTeam declares a new team.
+func (d *directorOffice) CreateTeam(ctx context.Context, id, goal, prompt string) (org.Team, error) {
+	if d.staff == nil {
+		return org.Team{}, errFixedOrg
+	}
+
+	return d.staff.CreateTeam(context.WithoutCancel(ctx), id, goal, prompt)
+}
+
+// DeleteTeam deletes a team and dismisses its members.
+func (d *directorOffice) DeleteTeam(ctx context.Context, id string) error {
+	if d.staff == nil {
+		return errFixedOrg
+	}
+
+	return d.staff.DeleteTeam(context.WithoutCancel(ctx), id, runtime.ApplyOptions{})
+}
+
 // Definition reads an agent's definition.
 func (d *directorOffice) Definition(address string) (catalog.Definition, error) {
 	if d.staff == nil {
@@ -142,14 +160,14 @@ var errNoTeam = errors.New("give the team to recruit into")
 
 func (d *directorOffice) teamOverview(t org.Team, tickets []work.Ticket) officemcp.TeamOverview {
 	team := officemcp.TeamOverview{
-		Team: t.ID, Goal: t.Goal,
+		Team: t.ID, Goal: t.Goal, Prompt: t.Prompt,
 		Agents: []officemcp.AgentState{}, Open: []officemcp.TicketSummary{}, InProgress: []officemcp.TicketSummary{},
 	}
 
 	for _, a := range t.Agents {
 		address := org.Address(a.Name, t.ID)
 		team.Agents = append(team.Agents, officemcp.AgentState{
-			Address: address, Role: a.Role, Status: string(d.statuses.Get(address)), OnLeave: a.OnLeave,
+			Address: address, Role: a.Role, Expertise: a.Expertise, Status: string(d.statuses.Get(address)), OnLeave: a.OnLeave,
 		})
 	}
 

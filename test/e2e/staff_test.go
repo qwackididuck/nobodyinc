@@ -13,6 +13,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -43,6 +44,27 @@ func staffProject(t *testing.T) *org.Live {
 	}
 
 	return org.NewLive(loaded)
+}
+
+// withDirector gives the project its director, as the daemon does when it
+// starts (org.EnsureDirector), and reloads the organization.
+func withDirector(t *testing.T, live *org.Live) *org.Live {
+	t.Helper()
+
+	god, err := catalog.Director()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := org.EnsureDirector(live.Current().ProjectDir, god.Name, god.Recruit()); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := live.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	return live
 }
 
 // changeDev1 rewrites dev1's agent file (nil removes it: dismissal), reloads
@@ -360,17 +382,16 @@ func TestStartupHandsOverWhatDepartedAgentsLeft(t *testing.T) {
 	})
 }
 
-// The director is recruited through the API and, having no team, talks to
-// any agent without a channel: asked by the human, it questions dev1@dev and
-// gets the answer. There can be only one.
+// The director, having no team, talks to any agent without a channel: asked
+// by the human, it questions dev1@dev and gets the answer. It is always
+// present: it cannot be dismissed, and its file cannot be removed through the API.
 func TestDirector(t *testing.T) {
 	t.Parallel()
 
-	d := startDaemon(t, staffProject(t))
+	d := startDaemon(t, withDirector(t, staffProject(t)))
 
-	call(t, d, http.MethodPost, "/api/director", `{"name":"god","template":"god"}`, http.StatusCreated)
 	eventually(t, "god started", func() bool { return d.Statuses.Get("god") == runtime.StatusIdle })
-	call(t, d, http.MethodPost, "/api/director", `{"name":"boss","template":"god"}`, http.StatusConflict)
+	call(t, d, http.MethodDelete, "/api/agents/god", "", http.StatusConflict)
 
 	sendAsHuman(t, d, "god", "Check with dev", "ASK dev1@dev: Is the build green?")
 
@@ -391,8 +412,7 @@ func TestDirector(t *testing.T) {
 func TestDirectorToolsThroughMCP(t *testing.T) {
 	t.Parallel()
 
-	d := startDaemon(t, staffProject(t))
-	call(t, d, http.MethodPost, "/api/director", `{"name":"god","template":"god"}`, http.StatusCreated)
+	d := startDaemon(t, withDirector(t, staffProject(t)))
 	eventually(t, "god started", func() bool { return d.Statuses.Get("god") == runtime.StatusIdle })
 
 	srv := httptest.NewServer(d.Handler)
@@ -471,8 +491,7 @@ func TestFeatureProposal(t *testing.T) {
 	live := staffProject(t)
 	initGitProject(t, live.Current().ProjectDir)
 
-	d := startDaemon(t, live)
-	call(t, d, http.MethodPost, "/api/director", `{"name":"god","template":"god"}`, http.StatusCreated)
+	d := startDaemon(t, withDirector(t, live))
 	eventually(t, "god started", func() bool { return d.Statuses.Get("god") == runtime.StatusIdle })
 
 	srv := httptest.NewServer(d.Handler)

@@ -66,3 +66,25 @@ func (o *Org) validateGod() []error {
 
 	return errs
 }
+
+// EnsureDirector gives the project its director when it has none: it writes
+// .nobody/director/<name>.md from definition d. The director is always
+// present (it is not in the catalog): `nobodyd init` and the daemon's start
+// both call this. It reports whether it created the file; an existing
+// director, whatever its name, is left alone.
+func EnsureDirector(projectDir, name string, d catalog.Definition) (bool, error) {
+	god, err := readGod(projectDir)
+	if err != nil {
+		return false, err
+	}
+
+	if god != nil {
+		return false, nil
+	}
+
+	if err := WriteAgent(projectDir, DirectorTeam, Agent{Name: name, Definition: d}); err != nil {
+		return false, fmt.Errorf("write the director: %w", err)
+	}
+
+	return true, nil
+}

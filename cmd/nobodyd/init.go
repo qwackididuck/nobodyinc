@@ -17,24 +17,13 @@ import (
 // catalogDirPerm is the mode of ~/.nobody/catalog when init creates it.
 const catalogDirPerm = 0o755
 
-// What init writes, so that the project runs right away: a director
-// recruited from the built-in "god" template, and a first team with one
-// developer recruited from the built-in "dev" template.
-const (
-	godName       = "god"
-	godTemplate   = "god"
-	firstTeam     = "dev"
-	firstGoal     = "Implement the requested features with unit tests."
-	firstAgent    = "dev1"
-	firstTemplate = "dev"
-)
-
 // runInit implements `nobodyd init [project-dir]`.
 func runInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.Usage = func() {
 		fmt.Fprintln(fs.Output(), "Usage: nobodyd init [project-dir]\n\n"+
-			"Creates <project-dir>/.nobody/ with a first team (default: current directory).")
+			"Creates <project-dir>/.nobody/ with its director (default: current directory).\n"+
+			"Teams are created afterwards, from the control room or by asking the director.")
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -54,8 +43,9 @@ func runInit(args []string) error {
 	return initProject(os.Stdout, home, projectDir)
 }
 
-// initProject creates the .nobody/ directory of a project with a first team,
-// and the user's template directory if it does not exist yet. It refuses to
+// initProject creates the .nobody/ directory of a project with its director
+// and no team (the user builds the teams), and the user's template directory
+// if it does not exist yet. It refuses to
 // touch a project that already has a configuration.
 func initProject(out io.Writer, home, projectDir string) error {
 	dir, err := filepath.Abs(projectDir)
@@ -80,26 +70,14 @@ func initProject(out io.Writer, home, projectDir string) error {
 		return err
 	}
 
-	templates := catalog.New(userCatalog)
-
-	dev, err := templates.Get(firstTemplate)
-	if err != nil {
-		return err
-	}
-
-	god, err := templates.Get(godTemplate)
+	god, err := catalog.Director()
 	if err != nil {
 		return err
 	}
 
 	o := &org.Org{
 		ProjectDir: dir,
-		God:        &org.Agent{Name: godName, Definition: god.Recruit()},
-		Teams: []org.Team{{
-			ID:     firstTeam,
-			Goal:   firstGoal,
-			Agents: []org.Agent{{Name: firstAgent, Definition: dev.Recruit()}},
-		}},
+		God:        &org.Agent{Name: god.Name, Definition: god.Recruit()},
 	}
 
 	if err := org.WriteProject(o); err != nil {
@@ -112,8 +90,7 @@ func initProject(out io.Writer, home, projectDir string) error {
 }
 
 func printNextSteps(out io.Writer, dir, userCatalog string) {
-	fmt.Fprintf(out, "Created %s with the director %s, and team %q with agent %s.\n\n",
-		org.ConfigDir(dir), godName, firstTeam, org.Address(firstAgent, firstTeam))
+	fmt.Fprintf(out, "Created %s with the director %s and no team yet.\n\n", org.ConfigDir(dir), catalog.DirectorName)
 
 	if _, err := os.Stat(filepath.Join(dir, ".git")); errors.Is(err, os.ErrNotExist) {
 		fmt.Fprintf(out, "Note: %s is not a git repository; features (branches and worktrees) need one.\n\n", dir)
@@ -127,6 +104,7 @@ func printNextSteps(out io.Writer, dir, userCatalog string) {
 	}
 
 	fmt.Fprintf(out, "  - start the daemon: nobodyd -project %s\n"+
+		"  - create your teams in the control room, or ask the director to.\n"+
 		"Your own agent templates go in %s; your settings are in %s.\n",
 		dir, userCatalog, filepath.Join(filepath.Dir(userCatalog), settings.FileName))
 }

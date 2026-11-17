@@ -128,10 +128,10 @@ func TestRecruitRefusals(t *testing.T) {
 		name, team, agent, template string
 		want                        error
 	}{
-		{name: "agent exists", team: "dev", agent: "dev1", template: "dev", want: ErrExists},
-		{name: "unknown team", team: "ghosts", agent: "a", template: "dev", want: ErrNotFound},
+		{name: "agent exists", team: "dev", agent: "dev1", template: "developer", want: ErrExists},
+		{name: "unknown team", team: "ghosts", agent: "a", template: "developer", want: ErrNotFound},
 		{name: "unknown template", team: "dev", agent: "a", template: "astronaut", want: ErrNotFound},
-		{name: "invalid name", team: "dev", agent: "Dev 2", template: "dev", want: ErrInvalid},
+		{name: "invalid name", team: "dev", agent: "Dev 2", template: "developer", want: ErrInvalid},
 	}
 
 	for _, tt := range tests {
@@ -262,7 +262,7 @@ func TestRecruitWaitsForAPendingDismissal(t *testing.T) {
 	s, a := newService(t)
 	a.pending = map[string]bool{"old@qa": true} // dismissed, still finishing its turn
 
-	if _, err := s.Recruit(context.Background(), "qa", "old", "dev"); !errors.Is(err, ErrExists) {
+	if _, err := s.Recruit(context.Background(), "qa", "old", "developer"); !errors.Is(err, ErrExists) {
 		t.Fatalf("err = %v, want ErrExists while the dismissal is pending", err)
 	}
 }
@@ -273,7 +273,7 @@ func TestRecruitRefusesAFileOnDisk(t *testing.T) {
 	s, _ := newService(t)
 	writeFile(t, filepath.Join(s.Org.Current().ProjectDir, ".nobody", "teams", "qa", "tester.md"), "---\n---\n")
 
-	if _, err := s.Recruit(context.Background(), "qa", "tester", "dev"); !errors.Is(err, ErrExists) {
+	if _, err := s.Recruit(context.Background(), "qa", "tester", "developer"); !errors.Is(err, ErrExists) {
 		t.Fatalf("err = %v, want ErrExists: a file not loaded yet must not be overwritten", err)
 	}
 }
@@ -288,7 +288,7 @@ func TestHandEditsAreAppliedWithTheNextChange(t *testing.T) {
 	writeFile(t, filepath.Join(dir, ".nobody", "teams", "dev", "dev2.md"), "---\nrole: Developer\n---\n")
 	writeFile(t, filepath.Join(dir, ".nobody", "teams", "dev", "dev1.md"), "---\nrole: Developer\non_leave: true\n---\n")
 
-	if _, err := s.Recruit(context.Background(), "qa", "tester", "dev"); err != nil {
+	if _, err := s.Recruit(context.Background(), "qa", "tester", "developer"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -333,25 +333,229 @@ func TestEditStartsAFreshSessionOnlyForNewInstructions(t *testing.T) {
 	}
 }
 
-func TestRecruitTheDirector(t *testing.T) {
+func TestTheDirectorIsAlwaysPresent(t *testing.T) {
 	t.Parallel()
 
 	s, a := newService(t)
 
-	m, err := s.Recruit(context.Background(), org.DirectorTeam, "god", "god")
+	god, err := catalog.Director()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if m.Address != "god" || !s.Org.Current().IsGod("god") || a.last() != "god fresh" {
-		t.Fatalf("director = %+v, applied %q", m, a.last())
+	if _, err := org.EnsureDirector(s.Org.Current().ProjectDir, god.Name, god.Recruit()); err != nil {
+		t.Fatal(err)
 	}
 
-	if _, err := s.Recruit(context.Background(), org.DirectorTeam, "boss", "god"); !errors.Is(err, ErrExists) {
-		t.Fatalf("a second director: err = %v, want ErrExists", err)
+	if _, err := s.Org.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.Create(context.Background(), org.DirectorTeam, "boss", catalog.Definition{Role: "Director"}); !errors.Is(err, ErrRefused) {
+		t.Fatalf("hiring a second director: err = %v, want ErrRefused", err)
+	}
+
+	if err := s.Dismiss(context.Background(), "god", runtime.ApplyOptions{}); !errors.Is(err, ErrRefused) {
+		t.Fatalf("dismissing the director: err = %v, want ErrRefused", err)
+	}
+
+	if err := s.Leave(context.Background(), "god", runtime.ApplyOptions{}); !errors.Is(err, ErrRefused) {
+		t.Fatalf("putting the director on leave: err = %v, want ErrRefused", err)
 	}
 
 	if _, err := s.Edit(context.Background(), "god", catalog.Definition{Role: "Director", Model: "opus"}, runtime.ApplyOptions{}); err != nil {
 		t.Fatalf("editing the director: %v", err)
+	}
+
+	if a.last() != "god fresh" {
+		t.Fatalf("applied %q, want the director restarted fresh (new role)", a.last())
+	}
+}
+
+func TestCreateTeam(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		id      string
+		wantErr error
+	}{
+		{name: "new team", id: "docs"},
+		{name: "existing team", id: "dev", wantErr: ErrExists},
+		{name: "bad id", id: "Big Team", wantErr: ErrInvalid},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := newService(t)
+
+			team, err := s.CreateTeam(context.Background(), tt.id, "Write the docs", "Plain English.")
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr != nil {
+				return
+			}
+
+			if team.ID != tt.id || team.Goal != "Write the docs" || team.Prompt != "Plain English." {
+				t.Fatalf("team = %+v", team)
+			}
+
+			reloaded, err := org.LoadProject(s.Org.Current().ProjectDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got, ok := reloaded.Team(tt.id); !ok || got.Prompt != "Plain English." || len(reloaded.Teams) != 3 {
+				t.Fatalf("on disk: %+v (found %v), %d teams", got, ok, len(reloaded.Teams))
+			}
+
+			if _, ok := reloaded.Member("dev1@dev"); !ok {
+				t.Fatal("dev1@dev lost when the team was created")
+			}
+		})
+	}
+}
+
+// A new team or project prompt is part of the system prompt of the agents it
+// concerns: they restart with a fresh session; the others are untouched.
+func TestSharedPromptChangesRestartFresh(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		change func(s *Service) error
+		want   []string
+	}{
+		{
+			name: "team prompt",
+			change: func(s *Service) error {
+				_, err := s.UpdateTeam(context.Background(), "dev", "", "Use TDD.")
+
+				return err
+			},
+			want: []string{"dev1@dev fresh"},
+		},
+		{
+			name: "team goal",
+			change: func(s *Service) error {
+				_, err := s.UpdateTeam(context.Background(), "dev", "Ship it", "")
+
+				return err
+			},
+			want: []string{"dev1@dev fresh"},
+		},
+		{
+			name:   "project prompt",
+			change: func(s *Service) error { return s.SetProjectPrompt(context.Background(), "A shop in Go.") },
+			want:   []string{"dev1@dev fresh"},
+		},
+		{
+			name: "another team",
+			change: func(s *Service) error {
+				_, err := s.UpdateTeam(context.Background(), "qa", "Test it", "Prove the tests can fail.")
+
+				return err
+			},
+		},
+		{
+			name: "unknown team",
+			change: func(s *Service) error {
+				_, err := s.UpdateTeam(context.Background(), "ghosts", "", "")
+				if !errors.Is(err, ErrNotFound) {
+					return errors.New("want ErrNotFound, got " + errString(err))
+				}
+
+				return nil
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, a := newService(t)
+
+			if err := tt.change(s); err != nil {
+				t.Fatal(err)
+			}
+
+			a.mu.Lock()
+			defer a.mu.Unlock()
+
+			if strings.Join(a.calls, ",") != strings.Join(tt.want, ",") {
+				t.Fatalf("applied %v, want %v", a.calls, tt.want)
+			}
+		})
+	}
+}
+
+func TestOnReloadGetsBothSnapshots(t *testing.T) {
+	t.Parallel()
+
+	s, _ := newService(t)
+
+	var before, after *org.Org
+
+	s.OnReload = func(b, a *org.Org) { before, after = b, a }
+
+	if _, err := s.CreateTeam(context.Background(), "docs", "", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := before.Team("docs"); ok {
+		t.Fatal("before already has the new team")
+	}
+
+	if _, ok := after.Team("docs"); !ok {
+		t.Fatal("after misses the new team")
+	}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return "nil"
+	}
+
+	return err.Error()
+}
+
+func TestDeleteTeam(t *testing.T) {
+	t.Parallel()
+
+	s, a := newService(t)
+	dir := s.Org.Current().ProjectDir
+
+	if err := org.WriteTeamPrompt(dir, "dev", "Use TDD."); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteTeam(context.Background(), "ghosts", runtime.ApplyOptions{}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown team: err = %v, want ErrNotFound", err)
+	}
+
+	if err := s.DeleteTeam(context.Background(), "dev", runtime.ApplyOptions{Now: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, org.ConfigDirName, "teams", "dev")); !os.IsNotExist(err) {
+		t.Fatalf("the team's directory is still there (err %v)", err)
+	}
+
+	reloaded, err := org.LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := reloaded.Team("dev"); ok || len(reloaded.Teams) != 1 {
+		t.Fatalf("teams on disk = %+v", reloaded.Teams)
+	}
+
+	if a.last() != "dev1@dev now" {
+		t.Fatalf("applied %q, want the member stopped at once", a.last())
 	}
 }

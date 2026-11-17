@@ -15,7 +15,7 @@ func TestDirectorInTheSystemPrompts(t *testing.T) {
 
 	god, _ := o.Member("god")
 
-	godPrompt, err := SystemPrompt(o, god)
+	godPrompt, err := SystemPrompt(o, god, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestDirectorInTheSystemPrompts(t *testing.T) {
 
 	dev, _ := o.Member("dev1@dev")
 
-	devPrompt, err := SystemPrompt(o, dev)
+	devPrompt, err := SystemPrompt(o, dev, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -162,6 +162,32 @@ func (g *gitWorkspace) cleanup(ctx context.Context, f work.Feature) error {
 	return g.repo.Cleanup(ctx, toWorkspace(f), g.teams())
 }
 
+// prepareNewTeams gives the teams created while a feature is active their
+// worktree and branch, before their first agent starts in it.
+func (g *gitWorkspace) prepareNewTeams(ctx context.Context, before, after *org.Org) error {
+	g.mu.Lock()
+	active := g.active
+	g.mu.Unlock()
+
+	if active == nil {
+		return nil
+	}
+
+	var added []string
+
+	for _, t := range after.Teams {
+		if _, existed := before.Team(t.ID); !existed {
+			added = append(added, t.ID)
+		}
+	}
+
+	if len(added) == 0 {
+		return nil
+	}
+
+	return g.repo.Prepare(ctx, toWorkspace(*active), added)
+}
+
 // activate records the feature agents now work on.
 func (g *gitWorkspace) activate(f work.Feature) {
 	g.mu.Lock()

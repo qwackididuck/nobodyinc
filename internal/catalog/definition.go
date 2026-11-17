@@ -35,6 +35,10 @@ type Definition struct {
 	Version int `json:"version,omitempty" yaml:"version,omitempty"`
 	// Role is a one-line description, e.g. "Software architect".
 	Role string `json:"role,omitempty" yaml:"role,omitempty"`
+	// Expertise is public and short: what colleagues should ask this agent
+	// about, and what it decides. Every colleague sees it in the
+	// organization chart, which tells them whom to ask.
+	Expertise string `json:"expertise,omitempty" yaml:"expertise,omitempty"`
 	// Model is the Claude model; empty means the Claude Code default.
 	Model       string      `json:"model,omitempty"      yaml:"model,omitempty"`
 	Permissions Permissions `json:"permissions,omitzero" yaml:"permissions,omitempty"`

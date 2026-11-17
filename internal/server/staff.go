@@ -31,12 +31,7 @@ func (s *server) recruitAgent(w http.ResponseWriter, r *http.Request) {
 	s.recruit(w, r, r.PathValue("team"))
 }
 
-// recruitDirector recruits the director (god), who has no team.
-func (s *server) recruitDirector(w http.ResponseWriter, r *http.Request) {
-	s.recruit(w, r, org.DirectorTeam)
-}
-
-// recruit hires an agent into team (org.DirectorTeam for the director).
+// recruit hires an agent into team.
 func (s *server) recruit(w http.ResponseWriter, r *http.Request, team string) {
 	if !s.hasStaff(w) {
 		return
@@ -277,7 +272,7 @@ func (s *server) staffError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, staffing.ErrNotFound):
 		s.writeError(w, http.StatusNotFound, err)
-	case errors.Is(err, staffing.ErrExists):
+	case errors.Is(err, staffing.ErrExists), errors.Is(err, staffing.ErrRefused):
 		s.writeError(w, http.StatusConflict, err)
 	case errors.Is(err, staffing.ErrInvalid):
 		s.writeError(w, http.StatusBadRequest, err)

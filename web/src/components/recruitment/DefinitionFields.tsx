@@ -18,7 +18,7 @@ interface Props {
 }
 
 // DefinitionFields edits the fields of an agent or template file: role,
-// model, permission profile and rules, tools, MCP servers, skills and the
+// expertise, model, permission profile and rules, tools, MCP servers, skills and the
 // instructions (docs/agents.md).
 export function DefinitionFields({ value, onChange, template = false }: Props) {
   const [servers, setServers] = useState<string[]>([]);
@@ -74,6 +74,17 @@ export function DefinitionFields({ value, onChange, template = false }: Props) {
             <option key={m} value={m} />
           ))}
         </datalist>
+      </label>
+      <label className={`${ui.label} ${styles.wide}`}>
+        EXPERTISE
+        <input
+          id="def-expertise"
+          className={ui.input}
+          placeholder="What colleagues should ask about, and what this agent decides"
+          value={value.expertise ?? ""}
+          onChange={(e) => set({ expertise: e.target.value })}
+        />
+        <span className={styles.hint}>Public: shown next to the name in every colleague&apos;s organization chart, so that questions reach the right agent.</span>
       </label>
       <div className={`${ui.label} ${styles.wide}`}>
         PERMISSIONS

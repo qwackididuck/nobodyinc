@@ -72,6 +72,10 @@ type Launch struct {
 	// WorkDir returns the directory an agent works in: its team's worktree
 	// for the active feature, or the project itself (see docs/workspaces.md).
 	WorkDir func(address string) string
+	// UserInstructions returns the text of the user's own CLAUDE.md, read at
+	// each launch and given to every agent as information (ADR-0008); nil or
+	// "" for none.
+	UserInstructions func() string
 }
 
 // Command builds the claude command for one agent, from its definition
@@ -96,7 +100,12 @@ type Launch struct {
 // session (claude --resume): it keeps its memory and system prompt, and gets
 // its current launch flags (see resumePrompt).
 func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, error) {
-	systemPrompt, err := SystemPrompt(o, m)
+	var user string
+	if l.UserInstructions != nil {
+		user = l.UserInstructions()
+	}
+
+	systemPrompt, err := SystemPrompt(o, m, user)
 	if err != nil {
 		return nil, err
 	}
@@ -208,12 +217,19 @@ func isParentSessionVar(name string) bool {
 	return false
 }
 
-// SystemPrompt renders the system prompt appended to an agent's session.
-func SystemPrompt(o *org.Org, m org.Member) (string, error) {
+// SystemPrompt renders the system prompt appended to an agent's session. It
+// goes from the general to the particular (docs/agents.md, "The prompt
+// cascade"): Nobody Inc and who the agent is, the user's own instructions
+// (userInstructions, ADR-0008), the project prompt, the team's goal and
+// prompt, the agent's role and instructions, then the organization chart and
+// how to communicate, including whom to ask. Empty sections are left out.
+func SystemPrompt(o *org.Org, m org.Member, userInstructions string) (string, error) {
 	var b bytes.Buffer
 
 	err := prompt.Execute(&b, map[string]any{
 		"Address": m.Address,
+		"User":    strings.TrimSpace(userInstructions),
+		"Project": strings.TrimSpace(o.ProjectPrompt),
 		"Team":    m.Team,
 		"Agent":   m.Agent,
 		"Chart":   officemcp.Chart(o, m.Address),

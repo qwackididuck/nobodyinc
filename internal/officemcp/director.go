@@ -18,7 +18,7 @@ import (
 
 // directorToolNames are the tools only the director gets.
 var directorToolNames = []string{
-	"feature_propose", "org_overview", "template_list",
+	"feature_propose", "org_overview", "template_list", "team_create", "team_delete",
 	"agent_get", "agent_recruit", "agent_create", "agent_edit", "agent_leave", "agent_return", "agent_dismiss",
 }
 
@@ -30,6 +30,7 @@ var errSelf = errors.New("you cannot change your own definition, leave or dismis
 // internal/daemon on top of the staffing service). Changes are written by
 // the daemon, never by the director itself (ADR-0004).
 type Director interface {
+	TeamDirector
 	Overview(ctx context.Context) (Overview, error)
 	Templates() ([]catalog.Template, error)
 	Definition(address string) (catalog.Definition, error)
@@ -39,6 +40,12 @@ type Director interface {
 	Leave(ctx context.Context, address string) error
 	Return(ctx context.Context, address string) error
 	Dismiss(ctx context.Context, address string) error
+}
+
+// TeamDirector is the part of Director that creates and deletes teams.
+type TeamDirector interface {
+	CreateTeam(ctx context.Context, id, goal, prompt string) (org.Team, error)
+	DeleteTeam(ctx context.Context, id string) error
 }
 
 // Overview is the state of the organization, for the director.
@@ -59,6 +66,7 @@ type FeatureSummary struct {
 type TeamOverview struct {
 	Team       string          `json:"team"`
 	Goal       string          `json:"goal,omitempty"`
+	Prompt     string          `json:"prompt,omitempty"`
 	Agents     []AgentState    `json:"agents"`
 	Open       []TicketSummary `json:"open"`
 	InProgress []TicketSummary `json:"in_progress"`
@@ -68,8 +76,9 @@ type TeamOverview struct {
 
 // AgentState is an agent in the overview.
 type AgentState struct {
-	Address string `json:"address"`
-	Role    string `json:"role,omitempty"`
+	Address   string `json:"address"`
+	Role      string `json:"role,omitempty"`
+	Expertise string `json:"expertise,omitempty"`
 	// Status: stopped, starting, working, idle, exited or awaiting_approval.
 	Status  string `json:"status"`
 	OnLeave bool   `json:"on_leave,omitempty"`
@@ -94,6 +103,25 @@ type FeatureProposeInput struct {
 // FeatureProposeOutput confirms the proposal.
 type FeatureProposeOutput struct {
 	ID   string `json:"id"`
+	Note string `json:"note"`
+}
+
+// TeamCreateInput declares a new team.
+type TeamCreateInput struct {
+	ID   string `json:"id"   jsonschema:"the team's id, used in addresses (agent@id): lowercase letters, digits and dashes"`
+	Goal string `json:"goal" jsonschema:"what the team is for, in one sentence"`
+	//nolint:lll // a struct tag cannot be split
+	Prompt string `json:"prompt,omitempty" jsonschema:"instructions every member shares, written from the goal: how the team works, its conventions; omit for the goal alone"`
+}
+
+// TeamDeleteInput names the team to delete.
+type TeamDeleteInput struct {
+	ID string `json:"id" jsonschema:"the team's id"`
+}
+
+// TeamCreateOutput confirms the new team.
+type TeamCreateOutput struct {
+	Team string `json:"team"`
 	Note string `json:"note"`
 }
 
@@ -157,6 +185,17 @@ func (t tools) addDirectorTools(server *mcp.Server) {
 		Description: "List the agent templates you can recruit from.",
 	}, t.templateList)
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "team_create",
+		Description: "Create a team: a new room of the office, with its goal and the instructions its members share. " +
+			"It has no agent yet: recruit some with agent_recruit. When this is your own idea, get the human's agreement first.",
+	}, t.teamCreate)
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "team_delete",
+		Description: "Delete a team: its room goes, and every member is dismissed (each stops once its turn is over; " +
+			"its ticket in progress goes back to open, its undelivered mail is returned). The team's tickets stay. " +
+			"Only with the human's explicit agreement: ask them first.",
+	}, t.teamDelete)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "agent_get",
 		Description: "Read an agent's definition: role, model, permissions, tools, MCP servers and instructions (prompt).",
 	}, t.agentGet)
@@ -213,6 +252,25 @@ func (t tools) templateList(context.Context, *mcp.CallToolRequest, struct{}) (*m
 	templates, err := t.director.Templates()
 
 	return nil, TemplateListOutput{Templates: append([]catalog.Template{}, templates...)}, err
+}
+
+func (t tools) teamCreate(ctx context.Context, _ *mcp.CallToolRequest, in TeamCreateInput) (
+	*mcp.CallToolResult, TeamCreateOutput, error,
+) {
+	team, err := t.director.CreateTeam(ctx, in.ID, in.Goal, in.Prompt)
+	if err != nil {
+		return nil, TeamCreateOutput{}, err
+	}
+
+	return nil, TeamCreateOutput{Team: team.ID, Note: "created, without agents: recruit into it with agent_recruit"}, nil
+}
+
+func (t tools) teamDelete(ctx context.Context, _ *mcp.CallToolRequest, in TeamDeleteInput) (*mcp.CallToolResult, DoneOutput, error) {
+	if err := t.director.DeleteTeam(ctx, in.ID); err != nil {
+		return nil, DoneOutput{}, err
+	}
+
+	return nil, DoneOutput{Note: "team " + in.ID + " deleted; its members stop once their turn is over"}, nil
 }
 
 func (t tools) agentGet(_ context.Context, _ *mcp.CallToolRequest, in AddressInput) (*mcp.CallToolResult, catalog.Definition, error) {

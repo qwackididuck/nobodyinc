@@ -12,7 +12,7 @@ Go 1.27+, Node 22+, pnpm, [Task](https://taskfile.dev), golangci-lint v2, Claude
 
 ```bash
 task build                              # bin/nobodyd and bin/nobody-hook
-./bin/nobodyd init /path/to/project     # creates .nobody/ with a first team
+./bin/nobodyd init /path/to/project     # creates .nobody/ with the director; build the teams from the control room
 task web:install
 task dev:daemon PROJECT=/path/to/project   # starts the agents
 task dev:web                            # control room on http://localhost:3000

@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 
-import { type Agent, dismissAgent, putOnLeave, returnFromLeave } from "@/lib/api";
+import { type Agent, dismissAgent, putOnLeave, returnFromLeave, type Team } from "@/lib/api";
 import { useLive } from "@/lib/live";
 import { lookOf } from "@/lib/look";
 import { isDirector, sortAgents, statusKey, statusLabel } from "../chat/agents";
 import { Sprite } from "../office/sprite";
+import { TeamDialog } from "../teams/TeamDialog";
 import ui from "../ui/ui.module.css";
 import styles from "./recruitment.module.css";
 
@@ -17,33 +18,53 @@ interface Props {
 
 // Staff lists everyone in the office, team by team, with what can be done
 // to them: open their chat, edit their file, put them on leave or bring them
-// back, dismiss them. A dismissed agent walks out of the office.
+// back, dismiss them. A dismissed agent walks out of the office. The director
+// can only be edited. Teams can be created here, and their goal and shared
+// instructions edited.
 export function Staff({ onOpenChat, onEdit }: Props) {
   const { agents, teams } = useLive();
   const [now, setNow] = useState(false);
+  // The team dialog: null closed, "new" to create one, or the team to edit.
+  const [dialog, setDialog] = useState<Team | "new" | null>(null);
   const sorted = sortAgents(agents, teams);
-  const groups = [
-    { id: "director", label: "Director", members: sorted.filter(isDirector) },
-    ...teams.map((t) => ({ id: t.id, label: t.id, members: sorted.filter((a) => a.team === t.id) })),
-  ].filter((g) => g.members.length > 0);
+  const director = sorted.filter(isDirector);
+  const groups: { team?: Team; label: string; members: Agent[] }[] = [
+    ...(director.length > 0 ? [{ label: "Director", members: director }] : []),
+    ...teams.map((t) => ({ team: t, label: t.id, members: sorted.filter((a) => a.team === t.id) })),
+  ];
 
   return (
     <div className={styles.staff}>
-      <label className={styles.nowToggle}>
-        <button type="button" role="switch" className={ui.switch} aria-checked={now} aria-label="Apply at once" onClick={() => setNow(!now)} />
-        Apply at once, without waiting for the end of the current turn
-      </label>
+      <div className={styles.staffBar}>
+        <label className={styles.nowToggle}>
+          <button type="button" role="switch" className={ui.switch} aria-checked={now} aria-label="Apply at once" onClick={() => setNow(!now)} />
+          Apply at once, without waiting for the end of the current turn
+        </label>
+        <button type="button" className={ui.btn} onClick={() => setDialog("new")}>
+          + New team
+        </button>
+      </div>
       {groups.map((g) => (
-        <section key={g.id} className={styles.staffTeam}>
-          <h3>
-            {g.label.toUpperCase()} · {g.members.length}
-          </h3>
+        <section key={g.label} className={styles.staffTeam}>
+          <header className={styles.staffTeamHead}>
+            <h3>
+              {g.label.toUpperCase()} · {g.members.length}
+            </h3>
+            {g.team?.goal && <span className={styles.teamGoal}>{g.team.goal}</span>}
+            {g.team && (
+              <button type="button" className={ui.link} onClick={() => setDialog(g.team ?? null)}>
+                Edit team
+              </button>
+            )}
+          </header>
           {g.members.map((a) => (
             <Member key={a.address} agent={a} now={now} onOpenChat={onOpenChat} onEdit={onEdit} />
           ))}
+          {g.members.length === 0 && <p className={ui.sub}>No member yet: recruit one from the catalog.</p>}
         </section>
       ))}
-      {groups.length === 0 && <p className={ui.sub}>Nobody yet: recruit someone from the catalog.</p>}
+      {teams.length === 0 && <p className={ui.sub}>No team yet: create one, then recruit its members from the catalog.</p>}
+      {dialog && <TeamDialog team={dialog === "new" ? undefined : dialog} onClose={() => setDialog(null)} />}
     </div>
   );
 }
@@ -54,6 +75,8 @@ function Member({ agent: a, now, onOpenChat, onEdit }: { agent: Agent; now: bool
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const when = now ? "now" : "once its turn is over";
+  // The director is always present: it can be edited, never sent away.
+  const director = isDirector(a);
 
   async function act(action: () => Promise<unknown>, done: string) {
     setBusy(true);
@@ -76,7 +99,7 @@ function Member({ agent: a, now, onOpenChat, onEdit }: { agent: Agent; now: bool
       </span>
       <div className={styles.memberWho}>
         <strong>{a.name}</strong>
-        <span>
+        <span title={a.expertise ? `Ask about: ${a.expertise}` : undefined}>
           {a.role || "Agent"}
           {a.pending_change && " · change waiting for the end of its turn"}
         </span>
@@ -99,13 +122,17 @@ function Member({ agent: a, now, onOpenChat, onEdit }: { agent: Agent; now: bool
             Return
           </button>
         ) : (
-          <button type="button" className={ui.btn} disabled={busy} onClick={() => void act(() => putOnLeave(a.address, { now }), `${a.name} goes on leave ${when}.`)}>
-            Leave
+          !director && (
+            <button type="button" className={ui.btn} disabled={busy} onClick={() => void act(() => putOnLeave(a.address, { now }), `${a.name} goes on leave ${when}.`)}>
+              Leave
+            </button>
+          )
+        )}
+        {!director && (
+          <button type="button" className={ui.btnDanger} disabled={busy} onClick={() => setConfirming(true)}>
+            Dismiss
           </button>
         )}
-        <button type="button" className={ui.btnDanger} disabled={busy} onClick={() => setConfirming(true)}>
-          Dismiss
-        </button>
       </div>
       {confirming && (
         <div className={styles.confirm}>

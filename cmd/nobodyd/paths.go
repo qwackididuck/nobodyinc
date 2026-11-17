@@ -31,6 +31,22 @@ func nobodyHome() (string, error) {
 	return filepath.Join(home, ".nobody"), nil
 }
 
+// userClaudeMD is the user's own CLAUDE.md, whose text the agents get
+// (ADR-0008): in $CLAUDE_CONFIG_DIR when set, as Claude Code does, otherwise
+// in ~/.claude. "" when the home directory cannot be found.
+func userClaudeMD() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, "CLAUDE.md")
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+
+	return filepath.Join(home, ".claude", "CLAUDE.md")
+}
+
 // resolveProject returns the project to run. With -org, the former
 // nobody.yaml is first migrated into its project's .nobody/.
 func resolveProject(logger *slog.Logger, opts options) (string, error) {

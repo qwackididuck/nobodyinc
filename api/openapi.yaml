@@ -65,7 +65,9 @@ paths:
       description: |
         Deletes the agent's file. Once idle (or at once with now=true) the agent
         stops; its ticket in progress goes back to its team's queue and its
-        undelivered mail is returned to the senders. History is kept.
+        undelivered mail is returned to the senders. History is kept. The
+        director cannot be dismissed (409): it is always present; edit it
+        instead.
       parameters:
         - $ref: "#/components/parameters/Address"
         - $ref: "#/components/parameters/Now"
@@ -75,6 +77,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
 
   /api/agents/{address}/definition:
@@ -128,7 +132,8 @@ paths:
       description: |
         The agent stops once idle; its file and session are kept. Its ticket in
         progress goes back to its team's queue, team addressing skips it, and
-        mail sent to it waits until it returns.
+        mail sent to it waits until it returns. The director cannot go on
+        leave: it is always present (409).
       parameters:
         - $ref: "#/components/parameters/Address"
         - $ref: "#/components/parameters/Now"
@@ -138,6 +143,8 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
         "404":
+          $ref: "#/components/responses/Error"
+        "409":
           $ref: "#/components/responses/Error"
 
   /api/agents/{address}/return:
@@ -170,6 +177,120 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Team"
+    post:
+      operationId: createTeam
+      summary: Create a team (a room of the office) with its goal and shared prompt
+      description: |
+        Adds the team to .nobody/org.yaml and writes its shared prompt to
+        .nobody/teams/<id>/TEAM.md (docs/agents.md, "Prompts"). An empty
+        prompt means the goal alone. The team has no agent yet: recruit some.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Team"
+      responses:
+        "201":
+          description: Team created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/teams/{team}:
+    put:
+      operationId: updateTeam
+      summary: Change a team's goal and shared prompt
+      description: |
+        The team's agents restart with a fresh session once their current
+        turn is over: a resumed session keeps the prompt it started with.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                goal:
+                  type: string
+                prompt:
+                  type: string
+      responses:
+        "200":
+          description: Team after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team and dismiss its members
+      description: |
+        Removes the team from .nobody/org.yaml, with its channels, and deletes
+        .nobody/teams/<id>/ (its agents' files and TEAM.md). Every member is
+        dismissed: each stops once its current turn is over (or at once with
+        now=true), its ticket in progress goes back to open, and its
+        undelivered mail is returned to the senders. The team's tickets stay,
+        open ones included, for the human to delete or keep. History is kept.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Team deleted; its members stop once idle
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/project:
+    get:
+      operationId: getProject
+      summary: The project's shared prompt (.nobody/project.md), given to every agent
+      responses:
+        "200":
+          description: The project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    put:
+      operationId: updateProject
+      summary: Change the project's shared prompt
+      description: Every agent restarts with a fresh session once its current turn is over.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Project"
+      responses:
+        "200":
+          description: The project after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
 
   /api/teams/{team}/agents:
     post:
@@ -190,34 +311,6 @@ paths:
       responses:
         "201":
           description: Agent recruited and starting
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Agent"
-        "400":
-          $ref: "#/components/responses/Error"
-        "404":
-          $ref: "#/components/responses/Error"
-        "409":
-          $ref: "#/components/responses/Error"
-
-  /api/director:
-    post:
-      operationId: recruitDirector
-      summary: Recruit the director (god) from a template, or create it from a definition, and start it
-      description: |
-        The director has no team: its file is .nobody/director/<name>.md and
-        its address is its name. There is at most one (409 otherwise); rename
-        it by dismissing it and recruiting it again under another name.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/Recruitment"
-      responses:
-        "201":
-          description: Director recruited and starting
           content:
             application/json:
               schema:
@@ -995,6 +1088,9 @@ components:
           type: string
         role:
           type: string
+        expertise:
+          type: string
+          description: What to ask this agent about, and what it decides.
         status:
           type: string
           enum: [stopped, starting, working, idle, exited, awaiting_approval]
@@ -1015,6 +1111,18 @@ components:
           type: string
         goal:
           type: string
+        prompt:
+          type: string
+          description: Instructions shared by the team's agents (.nobody/teams/<id>/TEAM.md); empty means the goal alone.
+
+    Project:
+      type: object
+      required: [prompt]
+      additionalProperties: false
+      properties:
+        prompt:
+          type: string
+          description: Context shared by every agent of the project (.nobody/project.md).
 
     PermissionProfile:
       type: string
@@ -1036,6 +1144,11 @@ components:
           minimum: 0
         role:
           type: string
+        expertise:
+          type: string
+          description: |
+            Public, short: what colleagues should ask this agent about, and
+            what it decides. Shown to every colleague in the organization chart.
         model:
           type: string
           description: Claude model; empty for Claude Code's default.

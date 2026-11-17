@@ -2,9 +2,9 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 
-import { type AgentDefinition, editDefinition, getDefinition, recruitAgent, recruitDirector, saveTemplate, type Template } from "@/lib/api";
+import { type AgentDefinition, editDefinition, getDefinition, recruitAgent, saveTemplate, type Template } from "@/lib/api";
 import { useLive } from "@/lib/live";
-import { isDirector } from "../chat/agents";
+import { TeamSelect } from "../teams/TeamSelect";
 import ui from "../ui/ui.module.css";
 import { cleanDefinition, emptyDefinition, NAME_PATTERN, toDefinition } from "./definition";
 import { DefinitionFields } from "./DefinitionFields";
@@ -82,11 +82,10 @@ export function EditAgent({ address, onDone }: { address: string; onDone: () => 
   );
 }
 
-// NewAgent writes an agent from scratch into a team (or as the director
-// while there is none) and starts it, or saves it as a template instead.
+// NewAgent writes an agent from scratch into a team and starts it, or saves
+// it as a template instead.
 export function NewAgent() {
-  const { teams, agents } = useLive();
-  const hasDirector = agents.some(isDirector);
+  const { teams } = useLive();
   const [name, setName] = useState("");
   const [team, setTeam] = useState(teams[0]?.id ?? "");
   const [definition, setDefinition] = useState<AgentDefinition>(emptyDefinition());
@@ -96,7 +95,7 @@ export function NewAgent() {
     e.preventDefault();
     const body = { name: name.trim(), definition: cleanDefinition(definition) };
     void run(
-      () => (team === "" ? recruitDirector(body) : recruitAgent(team, body)),
+      () => recruitAgent(team, body),
       `${body.name} is created. Watch the office: they walk in through the door.`,
     );
   }
@@ -110,19 +109,12 @@ export function NewAgent() {
         </label>
         <label className={ui.label}>
           TEAM
-          <select id="new-team" className={ui.select} value={team} onChange={(e) => setTeam(e.target.value)}>
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.id}
-              </option>
-            ))}
-            {!hasDirector && <option value="">Director (no team)</option>}
-          </select>
+          <TeamSelect id="new-team" value={team} onChange={setTeam} />
         </label>
       </div>
       <DefinitionFields value={definition} onChange={setDefinition} />
       <div className={styles.recruitActions}>
-        <button type="submit" className={ui.btnPrimary} disabled={busy || !name.trim()}>
+        <button type="submit" className={ui.btnPrimary} disabled={busy || !name.trim() || !team}>
           Create and start
         </button>
         <button

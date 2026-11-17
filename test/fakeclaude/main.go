@@ -17,7 +17,8 @@
 //   - a request whose body is "ASK <address>: <question>" makes it send that
 //     question as a query to <address>;
 //   - a request whose body is "WORK <seconds>" keeps it busy that long;
-//   - a query gets an inform answer;
+//   - a query gets an inform answer; the query "SYSTEM PROMPT?" is answered
+//     with the system prompt it was started with (--append-system-prompt);
 //   - an inform answering one of its queries is forwarded, as done, to whoever
 //     made the original request;
 //   - when send_message fails, the error is escalated to the human;
@@ -92,6 +93,8 @@ type options struct {
 	mcpURL string
 	prompt string
 	fork   bool
+	// systemPrompt is --append-system-prompt.
+	systemPrompt string
 }
 
 func parseArgs(args []string) (options, error) {
@@ -126,23 +129,30 @@ func parseArgs(args []string) (options, error) {
 
 		i++
 
-		var err error
-
-		switch arg {
-		case "-p":
-			opts.prompt = args[i]
-		case "--settings":
-			opts.hooks, err = parseHooks(args[i])
-		case "--mcp-config":
-			opts.mcpURL, err = parseMCPURL(args[i])
-		}
-
-		if err != nil {
+		if err := opts.set(arg, args[i]); err != nil {
 			return opts, err
 		}
 	}
 
 	return opts, nil
+}
+
+// set records the value of an option we use; the others are ignored.
+func (opts *options) set(name, value string) error {
+	var err error
+
+	switch name {
+	case "-p":
+		opts.prompt = value
+	case "--settings":
+		opts.hooks, err = parseHooks(value)
+	case "--mcp-config":
+		opts.mcpURL, err = parseMCPURL(value)
+	case "--append-system-prompt":
+		opts.systemPrompt = value
+	}
+
+	return err
 }
 
 func parseHooks(settings string) (map[string]string, error) {
@@ -282,12 +292,21 @@ func (a *agent) react(text string) {
 		case m.Act == "request":
 			a.reactToRequest(m)
 		case m.Act == "query":
-			a.send(map[string]any{"to": m.From, "act": "inform", "subject": "Re: " + m.Subject,
-				"body": "answer to: " + m.Body, "in_reply_to": m.ID})
+			a.answer(m)
 		case m.Act == "inform":
 			a.forwardAnswer(m)
 		}
 	}
+}
+
+// answer answers a query: with the system prompt when asked for it.
+func (a *agent) answer(m mail) {
+	body := "answer to: " + m.Body
+	if strings.TrimSpace(m.Body) == "SYSTEM PROMPT?" {
+		body = a.opts.systemPrompt
+	}
+
+	a.send(map[string]any{"to": m.From, "act": "inform", "subject": "Re: " + m.Subject, "body": body, "in_reply_to": m.ID})
 }
 
 // reactToRequest handles "ASK <address>: <question>" and "WORK <seconds>".

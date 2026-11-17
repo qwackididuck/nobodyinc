@@ -2,23 +2,19 @@
 
 import { type FormEvent, useState } from "react";
 
-import { deleteTemplate, recruitAgent, recruitDirector, type Template } from "@/lib/api";
+import { deleteTemplate, recruitAgent, type Template } from "@/lib/api";
 import { useLive } from "@/lib/live";
 import { lookOf } from "@/lib/look";
-import { isDirector } from "../chat/agents";
 import { Sprite } from "../office/sprite";
+import { TeamSelect } from "../teams/TeamSelect";
 import ui from "../ui/ui.module.css";
 import { NAME_PATTERN } from "./definition";
 import { TemplateEditor } from "./Editors";
 import styles from "./recruitment.module.css";
 
-// The recruiting target that makes the recruit the director (no team).
-const DIRECTOR = "__director__";
-
-// templateLook is the character shown for a template: the director's suit
-// for the director's template, a look of its own otherwise.
+// templateLook is the character shown for a template.
 export function templateLook(name: string) {
-  return lookOf(`template:${name}`, name === "god");
+  return lookOf(`template:${name}`, false);
 }
 
 // Catalog shows the templates as a character select screen: built-in ones
@@ -27,7 +23,7 @@ export function templateLook(name: string) {
 export function Catalog() {
   const { templates } = useLive();
   const [picked, setPicked] = useState<string | null>(null);
-  const chosen = templates.find((t) => t.name === picked) ?? templates.find((t) => t.name === "dev") ?? templates[0];
+  const chosen = templates.find((t) => t.name === picked) ?? templates.find((t) => t.name === "developer") ?? templates[0];
 
   const groups: { label: string; items: Template[] }[] = [
     { label: "Built in", items: templates.filter((t) => t.builtin) },
@@ -70,14 +66,11 @@ export function Catalog() {
 // Sheet is the chosen template: its character, what it is given, its
 // instructions, and how to recruit it, customize it or delete it.
 function Sheet({ template }: { template: Template }) {
-  const { teams, agents } = useLive();
-  const hasDirector = agents.some(isDirector);
-  const targets = [...teams.map((t) => ({ id: t.id, label: t.id })), ...(hasDirector ? [] : [{ id: DIRECTOR, label: "Director (no team)" }])];
+  const { teams } = useLive();
   const [name, setName] = useState("");
-  // The team named like the template when there is one (dev → dev), the
-  // director for the director's template while the project has none.
+  // The team named like the template when there is one, the first otherwise.
   const sameName = teams.find((t) => t.id === template.name)?.id;
-  const [team, setTeam] = useState(template.name === "god" && !hasDirector ? DIRECTOR : (sameName ?? teams[0]?.id ?? ""));
+  const [team, setTeam] = useState(sameName ?? teams[0]?.id ?? "");
   const [customizing, setCustomizing] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -102,10 +95,7 @@ function Sheet({ template }: { template: Template }) {
     e.preventDefault();
     const n = name.trim();
     const body = { name: n, template: template.name };
-    void act(
-      () => (team === DIRECTOR ? recruitDirector(body) : recruitAgent(team, body)),
-      team === DIRECTOR ? `${n} is your director. Watch the office: they walk in through the door.` : `${n} joins ${team}. Watch the office: they walk in through the door.`,
-    ).then(() => setName(""));
+    void act(() => recruitAgent(team, body), `${n} joins ${team}. Watch the office: they walk in through the door.`).then(() => setName(""));
   }
 
   if (customizing) {
@@ -127,6 +117,12 @@ function Sheet({ template }: { template: Template }) {
       </div>
       {template.description && <p className={styles.description}>{template.description}</p>}
       <dl className={styles.attrs}>
+        {template.expertise && (
+          <>
+            <dt>ASK ABOUT</dt>
+            <dd>{template.expertise}</dd>
+          </>
+        )}
         <dt>MODEL</dt>
         <dd>
           <span className={ui.chip}>{template.model || "default"}</span>
@@ -162,13 +158,7 @@ function Sheet({ template }: { template: Template }) {
         </label>
         <label className={ui.label}>
           TEAM
-          <select id="recruit-team" className={ui.select} value={team} onChange={(e) => setTeam(e.target.value)}>
-            {targets.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
+          <TeamSelect id="recruit-team" value={team} onChange={setTeam} />
         </label>
         <div className={styles.recruitActions}>
           <button type="submit" className={`${ui.btnPrimary} ${ui.big}`} disabled={busy || !name.trim() || !team}>

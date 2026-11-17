@@ -40,27 +40,8 @@ export function AvatarRail({ agents, target, marks, onTarget }: Props) {
 
   const binUnread = unreadInBin(messages, marks[BIN_KEY]);
 
-  const hasDirector = agents.some(isDirector);
-
   return (
     <nav className={styles.rail} aria-label="Agents">
-      {!hasDirector && (
-        <>
-          <button
-            type="button"
-            className={styles.railItem}
-            aria-current={target?.kind === "hire-director"}
-            title="No director yet: recruit one"
-            onClick={() => onTarget({ kind: "hire-director" })}
-          >
-            <span className={`${styles.avatar} ${styles.avatarGhost}`} aria-hidden="true">
-              +
-            </span>
-            <span className={styles.railName}>director</span>
-          </button>
-          {agents.length > 0 && <span className={styles.railSep} />}
-        </>
-      )}
       {agents.map((a, i) => {
         const badge = badgeOf(a);
         const current = target?.kind === "agent" && target.address === a.address;

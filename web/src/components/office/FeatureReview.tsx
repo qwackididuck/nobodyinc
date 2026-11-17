@@ -164,7 +164,7 @@ export function FeatureReview({ feature, onClose }: Props) {
 
           <div className={styles.foot}>
             <p className={styles.by}>
-              Finishing archives the feature&apos;s {ticketCount} ticket{ticketCount === 1 ? "" : "s"}: they leave the Kanban and the librarian files them in the
+              Finishing archives the feature&apos;s {ticketCount} ticket{ticketCount === 1 ? "" : "s"}: they leave the Kanban and go to the
               archives, where they stay readable.
             </p>
             {unfinished.length > 0 && (
