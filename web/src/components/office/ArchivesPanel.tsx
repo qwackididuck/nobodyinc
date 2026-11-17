@@ -14,7 +14,7 @@ interface Props {
   onOpenChat: (address: string) => void;
 }
 
-// ArchivesPanel is what the librarian keeps: the finished features, newest
+// ArchivesPanel is what the archives keep: the finished features, newest
 // first, with their merge commit and their archived tickets, read-only.
 export function ArchivesPanel({ onClose, onOpenChat }: Props) {
   const { features } = useLive();
@@ -46,7 +46,7 @@ export function ArchivesPanel({ onClose, onOpenChat }: Props) {
         <div>
           <span className={styles.kicker}>Archives</span>
           <h3 className={ui.title}>Finished features</h3>
-          <p className={ui.sub}>Filed by the librarian once a feature is merged. Read-only.</p>
+          <p className={ui.sub}>Filed in the archives once a feature is merged. Read-only.</p>
         </div>
         <button type="button" className={ui.link} onClick={onClose}>
           Close

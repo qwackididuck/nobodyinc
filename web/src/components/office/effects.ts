@@ -154,13 +154,104 @@ export function celebrate(layer: HTMLElement, title: string, text: string, at: P
   }
 }
 
-// dismantle shows a room being taken down where it stood.
-export function dismantle(layer: HTMLElement, box: { x: number; y: number; width: number; height: number }, moving: boolean): void {
+interface Box {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// Construction words, picked at random over a building site.
+const SITE_WORDS = ["TAP", "BANG!", "BZZZ", "KLONK", "TAP TAP", "CRASH!", "VRRR", "BOOM"];
+
+// site plays a building site over a room: clouds of smoke rise all over it,
+// dust flies, and onomatopoeias pop up above the smoke. It lasts about
+// duration milliseconds.
+export function site(layer: HTMLElement, box: Box, duration: number, moving: boolean): void {
+  if (!moving) return;
+  const rand = (a: number, b: number) => a + Math.random() * (b - a);
+  const area = (box.width * box.height) / 1000;
+
+  // Smoke: grey pixel clouds that swell, drift up and fade.
+  const puffs = Math.round(Math.min(64, 18 + area / 2));
+  for (let i = 0; i < puffs; i++) {
+    const puff = add(layer, styles.smoke, { x: box.x + rand(0, box.width - 16), y: box.y + rand(box.height * 0.2, box.height - 16) });
+    const delay = rand(0, duration * 0.7);
+    puff.animate(
+      [
+        { transform: "translate(0, 0) scale(0.4)", opacity: 0 },
+        { transform: `translate(${rand(-6, 6)}px, -10px) scale(1)`, opacity: 0.95, offset: 0.25 },
+        { transform: `translate(${rand(-16, 16)}px, ${-rand(30, 60)}px) scale(${rand(1.8, 3)})`, opacity: 0 },
+      ],
+      { duration: rand(900, 1500), delay, easing: "steps(8)", fill: "both" },
+    ).onfinish = () => puff.remove();
+  }
+
+  // Dust: small chips thrown around.
+  for (let i = 0; i < Math.round(Math.min(36, 12 + area / 6)); i++) {
+    const from = { x: box.x + rand(10, box.width - 10), y: box.y + rand(box.height * 0.4, box.height - 10) };
+    const dust = add(layer, styles.dust, from);
+    const angle = rand(0, Math.PI * 2);
+    const r = rand(20, 60);
+    dust.animate(
+      [{ transform: "translate(0, 0) scale(1)" }, { transform: `translate(${Math.cos(angle) * r}px, ${Math.sin(angle) * r * 0.6}px) scale(0.3)`, opacity: 0 }],
+      { duration: 900, delay: rand(0, duration * 0.8), easing: "steps(6)", fill: "both" },
+    ).onfinish = () => dust.remove();
+  }
+
+  // Words, above the smoke.
+  const words = Math.round(Math.min(9, 4 + area / 15));
+  for (let i = 0; i < words; i++) {
+    const delay = (i / words) * duration * 0.8;
+    const word = add(layer, `${styles.worksWord} ${styles.siteWord}`, { x: box.x + rand(6, box.width - 70), y: box.y + rand(20, box.height - 30) }, SITE_WORDS[i % SITE_WORDS.length]);
+    word.style.animationDelay = `${delay}ms`;
+    word.style.transform = `rotate(${Math.round(rand(-2, 2)) * 4}deg)`;
+    setTimeout(() => word.remove(), delay + 1400);
+  }
+}
+
+// dismantle shows a room being taken down where it stood: its walls come
+// down behind a building site.
+export function dismantle(layer: HTMLElement, box: Box, moving: boolean): void {
   if (!moving) return;
   const ghost = add(layer, styles.dismantled, { x: box.x, y: box.y });
   ghost.style.width = `${box.width}px`;
   ghost.style.height = `${box.height}px`;
-  ghost.animate([{ clipPath: "inset(0)" }, { clipPath: "inset(0 0 100% 0)" }], { duration: 1200, easing: "steps(10)", fill: "forwards" }).onfinish = () =>
+  ghost.animate([{ clipPath: "inset(0)" }, { clipPath: "inset(0 0 100% 0)" }], { duration: 1600, easing: "steps(10)", fill: "forwards" }).onfinish = () =>
     ghost.remove();
-  works(layer, { x: box.x + box.width / 2 - 52, y: box.y + box.height / 2 - 60 }, moving);
+  site(layer, box, 1600, moving);
+}
+
+// fileTickets carries a finished feature's tickets from the director's board
+// to the archives' shelves: a pile of cards slides there while a few loose
+// cards flutter after it. It resolves once they are filed.
+export function fileTickets(layer: HTMLElement, from: Point, to: Point, moving: boolean): Promise<void> {
+  if (!moving) return Promise.resolve();
+  const travel = { transform: `translate(${to.x - from.x}px, ${to.y - from.y}px)` };
+  const done: Promise<unknown>[] = [];
+
+  const pile = add(layer, styles.pile, from);
+  done.push(
+    pile.animate([{ transform: "translate(0, 0)" }, { transform: `translate(${(to.x - from.x) / 2}px, ${(to.y - from.y) / 2 - 30}px)`, offset: 0.5 }, travel], {
+      duration: 1400,
+      easing: "steps(14)",
+      fill: "forwards",
+    }).finished,
+  );
+
+  for (let i = 0; i < 4; i++) {
+    const card = add(layer, styles.card, { x: from.x + 6, y: from.y });
+    done.push(
+      card.animate(
+        [
+          { transform: "translate(0, 0) rotate(0deg)" },
+          { transform: `translate(${(to.x - from.x) / 2 + (i - 1.5) * 18}px, ${(to.y - from.y) / 2 - 50}px) rotate(${(i - 1.5) * 30}deg)`, offset: 0.5 },
+          { transform: `translate(${to.x - from.x}px, ${to.y - from.y}px) rotate(0deg)` },
+        ],
+        { duration: 1500, delay: 120 + i * 140, easing: "steps(15)", fill: "forwards" },
+      ).finished.then(() => card.remove()),
+    );
+  }
+
+  return Promise.all(done).then(() => pile.remove());
 }

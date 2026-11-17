@@ -12,8 +12,10 @@
 //   - a dismissed agent walks out and its desk is taken down;
 //   - a new team gets its room built; a removed team's room is taken down;
 //     the plot, an empty lot after the teams, opens the team dialog;
-//   - a finished feature: the librarian fetches its tickets from the
-//     director's office and files them in the archives.
+//   - a finished feature: its tickets fly from the director's board to the
+//     archives' shelves.
+// Rooms can be clicked (not the desks in them): a team's room opens its
+// dialog, the director's office its chat, the archives their panel.
 // Paper planes are launched by the event stream (message.sent).
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -25,12 +27,11 @@ import { lookOf, teamColors } from "@/lib/look";
 import { betweenAgents, isDirector } from "../chat/agents";
 import { Banner } from "./Banner";
 import { Desk } from "./Desk";
-import { Sprite } from "./sprite";
 import { ArchivesPanel } from "./ArchivesPanel";
 import { FeatureReview } from "./FeatureReview";
 import { TeamDialog } from "../teams/TeamDialog";
-import { addWalker, celebrate, dismantle, flyPlane, walk, works } from "./effects";
-import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, LIBRARIAN, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
+import { addWalker, celebrate, dismantle, fileTickets, flyPlane, site, walk, works } from "./effects";
+import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
 import styles from "./office.module.css";
 
 interface Props {
@@ -89,8 +90,6 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
   const [archivesOpen, setArchivesOpen] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
-  // While the librarian is out fetching tickets, its chair is empty.
-  const [librarianAway, setLibrarianAway] = useState(false);
   const [seenFinished, setSeenFinished] = useState<string | null>(null);
 
   // Compare with what was shown before (React's "adjust state when props
@@ -123,7 +122,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
     setSeen({ key, agents, teams });
   }
 
-  // A feature newly finished sends the librarian to file its tickets.
+  // A feature newly finished gets its tickets filed in the archives.
   const finishedKey = features
     .filter((f) => f.status === "finished")
     .map((f) => f.id)
@@ -181,7 +180,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
           ], motion);
           walker.remove();
           setArrivals((m) => without(m, a.address));
-          celebrate(el, "NEW RECRUIT!", `${a.name} joined ${isDirector(a) ? "as director" : a.team.toUpperCase()}`, { x: SCENE_WIDTH / 2, y: room.y + 40 }, motion);
+          celebrate(el, "NEW RECRUIT!", `${a.name} joined ${isDirector(a) ? "as director" : a.team.toUpperCase()}`, { x: room.x + room.width / 2, y: room.y + 40 }, motion);
           return;
         }
         case "leave": {
@@ -195,6 +194,8 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
         }
         case "team-built": {
           setBuilding((b) => new Set(b).add(scene.team));
+          const lot = target.rooms.find((r) => r.id === scene.team);
+          if (lot) site(el, lot, 1800, motion);
           await pause(motion ? 2000 : 0);
           setBuilding((b) => {
             const next = new Set(b);
@@ -202,39 +203,28 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
             return next;
           });
           const room = current.current.layout.rooms.find((r) => r.id === scene.team);
-          celebrate(el, "NEW TEAM!", `${scene.team.toUpperCase()} has its room`, { x: SCENE_WIDTH / 2, y: (room?.y ?? 200) + 40 }, motion);
+          celebrate(el, "NEW TEAM!", `${scene.team.toUpperCase()} has its room`, { x: room ? room.x + room.width / 2 : SCENE_WIDTH / 2, y: (room?.y ?? 200) + 40 }, motion);
           return;
         }
         case "team-removed":
           dismantle(el, scene.box, motion);
           return;
         case "archive":
-          await fileTickets(el, scene.feature, motion);
+          await archive(el, scene.feature, motion);
           return;
       }
     }
 
-    // fileTickets plays the librarian fetching a finished feature's tickets
-    // from the director's office and bringing them back to the archives.
-    async function fileTickets(el: HTMLDivElement, feature: Feature, motion: boolean) {
+    // archive files a finished feature's tickets: they fly from the
+    // director's board down to the archives' shelves.
+    async function archive(el: HTMLDivElement, feature: Feature, motion: boolean) {
       const { layout: now } = current.current;
-      const desk = now.desks.get(LIBRARIAN);
       const archives = now.rooms.find((r) => r.kind === "archives");
       const office = now.rooms.find((r) => r.kind === "director");
-      if (!desk || !archives || !office) return;
+      if (!archives || !office) return;
 
-      const pileAt = { x: office.x + 190, y: office.y + 70 };
-      const pile = addPile(el, pileAt);
-      setLibrarianAway(true);
-      const walker = addWalker(el, lookOf(LIBRARIAN, false), desk);
-      const route = [desk, { x: desk.x, y: archives.corridorY }, { x: pileAt.x, y: archives.corridorY }, { x: pileAt.x, y: office.corridorY }, pileAt];
-      await walk(walker, route, motion);
-      pile.remove();
-      carry(walker);
-      await walk(walker, [...route].reverse(), motion);
-      walker.remove();
-      setLibrarianAway(false);
-      celebrate(el, "ARCHIVED!", `${feature.id} filed by the librarian`, { x: SCENE_WIDTH / 2, y: archives.y + 40 }, motion);
+      await fileTickets(el, { x: office.x + 220, y: office.y + 80 }, { x: archives.x + archives.width / 2 - 17, y: archives.y + 90 }, motion);
+      celebrate(el, "ARCHIVED!", `${feature.id} is on the shelves`, { x: archives.x + archives.width / 2, y: archives.y + 40 }, motion);
     }
   }, [scenes]);
 
@@ -283,9 +273,13 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
               carpet={carpetOf(room, teams)}
               building={building.has(room.id)}
               queue={room.kind === "team" ? queue(room.id) : 0}
-              onSign={room.kind === "team" ? () => setEditingTeam(teams.find((t) => t.id === room.id) ?? null) : undefined}
+              onOpen={() => {
+                if (room.kind === "team") setEditingTeam(teams.find((t) => t.id === room.id) ?? null);
+                if (room.kind === "archives") setArchivesOpen(true);
+                if (room.kind === "director" && director) onSelectAgent(director.address);
+              }}
             >
-              {room.kind === "archives" && <Shelves count={features.filter((f) => f.status === "finished").length} onOpen={() => setArchivesOpen(true)} />}
+              {room.kind === "archives" && <Shelves count={features.filter((f) => f.status === "finished").length} />}
               {room.kind === "director" && (
                 <DirectorProps
                   proposals={proposals}
@@ -298,7 +292,6 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
           )}
           {layout.rooms.flatMap((room) =>
             room.desks.map(({ address, at }) => {
-              if (address === LIBRARIAN) return <Librarian key={address} at={at} away={librarianAway} onOpen={() => setArchivesOpen(true)} />;
               const agent = byAddress.get(address);
               if (!agent) return null;
               return (
@@ -341,41 +334,58 @@ interface RoomViewProps {
   carpet?: string;
   building: boolean;
   queue: number;
-  // A team's sign opens its dialog (goal, instructions, delete).
-  onSign?: () => void;
+  // Clicking the room (its floor, frame or sign; desks are above it) opens
+  // what it is about.
+  onOpen: () => void;
   children?: React.ReactNode;
 }
 
-function RoomView({ room, carpet, building, queue, onSign, children }: RoomViewProps) {
-  const label = (
-    <>
-      {room.kind === "director" ? "DIRECTOR" : room.id.toUpperCase()}
-      {room.kind === "team" && <em> Q{queue}</em>}
-    </>
-  );
+// What clicking a room does, shown when hovering it.
+const ROOM_HINT: Record<Room["kind"], string> = {
+  team: "Edit the team ▸",
+  director: "Open the chat ▸",
+  archives: "Open the archives ▸",
+  plot: "",
+};
+
+function RoomView({ room, carpet, building, queue, onOpen, children }: RoomViewProps) {
+  const name = room.kind === "director" ? "director" : room.kind === "archives" ? "the archives" : `team ${room.id}`;
   return (
     <div
-      className={`${styles.room} ${room.kind === "director" ? styles.rug : ""} ${building ? styles.building : ""}`}
+      role="button"
+      tabIndex={0}
+      aria-label={`${name}: ${ROOM_HINT[room.kind].replace(" ▸", "").toLowerCase()}`}
+      className={`${styles.room} ${styles.clickable} ${room.kind === "director" ? styles.rug : ""} ${building ? styles.building : ""}`}
       style={{ left: room.x, top: room.y, width: room.width, height: room.height, background: carpet }}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
     >
-      {onSign ? (
-        <button type="button" className={`${styles.sign} ${styles.signButton}`} title={`Team ${room.id}: goal, instructions, delete`} onClick={onSign}>
-          {label}
-        </button>
-      ) : (
-        <span className={styles.sign}>{label}</span>
-      )}
+      <span className={styles.sign}>
+        {room.kind === "director" ? "DIRECTOR" : room.id.toUpperCase()}
+        {room.kind === "team" && <em> Q{queue}</em>}
+      </span>
       <span className={styles.plant} />
       {children}
+      <span className={styles.roomHint} aria-hidden="true">
+        {ROOM_HINT[room.kind]}
+      </span>
     </div>
   );
 }
 
+// The archives' floor: a quiet library green, whatever the teams.
+const ARCHIVES_CARPET = "#9fae98";
+
 // carpetOf is a room's floor: each team its colour (the same as in the
-// kanban), the archives the next one, the director its own rug.
+// kanban), the archives their own, the director its rug.
 function carpetOf(room: Room, teams: Team[]): string | undefined {
   if (room.kind === "team") return teamColors(teams.findIndex((t) => t.id === room.id)).carpet;
-  if (room.kind === "archives") return teamColors(teams.length).carpet;
+  if (room.kind === "archives") return ARCHIVES_CARPET;
   return undefined;
 }
 
@@ -431,62 +441,35 @@ function bounce(scene: HTMLElement | null, address: string) {
   desk.classList.add(styles.got);
 }
 
-// Librarian is the archives' keeper at its desk: a character of the office,
-// not an agent. Clicking it opens the archives.
-function Librarian({ at, away, onOpen }: { at: Point; away: boolean; onOpen: () => void }) {
-  return (
-    <button type="button" className={styles.desk} style={{ left: at.x, top: at.y }} data-status="idle" aria-label="The librarian: open the archives" onClick={onOpen}>
-      {away ? (
-        <span className={styles.chair} />
-      ) : (
-        <>
-          <span className={styles.char}>
-            <Sprite look={lookOf(LIBRARIAN, false)} />
-          </span>
-          <span className={`${styles.say} ${styles.sayIdle}`} aria-hidden="true">
-            z
-          </span>
-        </>
-      )}
-      <span className={styles.deskTop}>
-        <span className={styles.book} />
-      </span>
-      <span className={styles.plate}>
-        librarian{away && <em> out</em>}
-      </span>
-    </button>
-  );
-}
+// Shelves fill the archives: three bookcases, one box per finished feature
+// (filled shelf by shelf), and a few books for the look.
+const BOOKCASES = 3;
+const SHELVES_PER_CASE = 3;
+const BOXES_PER_SHELF = 3;
+const BOOK_COLORS = ["#3f6fa5", "#b34a4a", "#4f8a5b", "#c9973f", "#7a5aa0"];
 
-// Shelves hold one box per finished feature. Clicking them opens the archives.
-function Shelves({ count, onOpen }: { count: number; onOpen: () => void }) {
-  const shown = Math.min(count, 12);
+function Shelves({ count }: { count: number }) {
+  const perCase = SHELVES_PER_CASE * BOXES_PER_SHELF;
   return (
-    <button type="button" className={styles.shelves} aria-label={`Archives: ${count} finished features`} onClick={onOpen}>
-      {[0, 1, 2].map((row) => (
-        <span key={row} className={styles.shelf}>
-          {Array.from({ length: Math.max(0, Math.min(4, shown - row * 4)) }, (_, i) => (
-            <span key={i} className={styles.box} />
-          ))}
+    <span className={styles.shelves} aria-label={`${count} finished feature${count === 1 ? "" : "s"} in the archives`}>
+      {Array.from({ length: BOOKCASES }, (_, c) => (
+        <span key={c} className={styles.bookcase}>
+          {Array.from({ length: SHELVES_PER_CASE }, (_, row) => {
+            const first = c * perCase + row * BOXES_PER_SHELF;
+            const boxes = Math.max(0, Math.min(BOXES_PER_SHELF, count - first));
+            return (
+              <span key={row} className={styles.shelf}>
+                {Array.from({ length: boxes }, (_, i) => (
+                  <span key={i} className={styles.box} />
+                ))}
+                {Array.from({ length: BOXES_PER_SHELF - boxes }, (_, i) => (
+                  <span key={`b${i}`} className={styles.books} style={{ background: BOOK_COLORS[(c + row + i) % BOOK_COLORS.length] }} />
+                ))}
+              </span>
+            );
+          })}
         </span>
       ))}
-    </button>
+    </span>
   );
-}
-
-// addPile drops a pile of ticket cards where the librarian will pick it up.
-function addPile(layer: HTMLElement, at: Point): HTMLElement {
-  const pile = document.createElement("div");
-  pile.className = styles.pile;
-  pile.style.left = `${at.x + 34}px`;
-  pile.style.top = `${at.y + 60}px`;
-  layer.append(pile);
-  return pile;
-}
-
-// carry puts the pile above the walker's head.
-function carry(walker: HTMLElement) {
-  const pile = document.createElement("span");
-  pile.className = styles.carried;
-  walker.append(pile);
 }
