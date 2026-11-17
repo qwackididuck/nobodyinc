@@ -1,6 +1,6 @@
 # ADR-0003 — Isolate agents from the user's Claude Code configuration
 
-- Status: accepted
+- Status: accepted; the user's MCP servers reach the agents again since ADR-0010 (their settings, hooks and plugins still do not)
 - Date: 2026-11-11
 
 ## Context

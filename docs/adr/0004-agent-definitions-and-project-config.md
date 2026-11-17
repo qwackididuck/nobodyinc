@@ -1,6 +1,6 @@
 # ADR-0004 — Agent definitions, catalog and per-project configuration
 
-- Status: accepted; its channels are superseded by ADR-0009 (open flows with a block list)
+- Status: accepted; its channels are superseded by ADR-0009 (open flows with a block list), its MCP registry (`.nobody/mcp.yaml`) and per-agent `mcp:` list by ADR-0010
 - Date: 2026-11-12
 
 ## Context

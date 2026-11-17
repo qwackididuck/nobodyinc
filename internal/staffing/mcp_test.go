@@ -160,3 +160,49 @@ func TestMCPServerChangesNeedAWriter(t *testing.T) {
 		t.Fatalf("error = %v, want ErrRefused", err)
 	}
 }
+
+func TestUpdateMCPServer(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		scope   mcpservers.Scope
+		server  string
+		cfg     mcpservers.Config
+		wantErr error
+	}{
+		{name: "new command, other keys kept", scope: mcpservers.ScopeProject, server: "gitlab", cfg: mcpservers.Config{"command": "gitlab-mcp-v2"}},
+		{name: "a value in clear", scope: mcpservers.ScopeProject, server: "gitlab",
+			cfg: mcpservers.Config{"command": "gitlab-mcp", "env": map[string]any{"T": "abc"}}, wantErr: ErrInvalid},
+		{name: "another scope than its own", scope: mcpservers.ScopeUser, server: "gitlab", cfg: mcpservers.Config{"command": "x"}, wantErr: ErrNotFound},
+		{name: "an unknown server", scope: mcpservers.ScopeProject, server: "ghost", cfg: mcpservers.Config{"command": "x"}, wantErr: ErrNotFound},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := newService(t)
+			s.MCP = &projectMCPWriter{dir: s.Org.Current().ProjectDir}
+			ctx := context.Background()
+
+			// gitlab, in .mcp.json, gets a key the form does not know.
+			if err := s.AddMCPServer(ctx, mcpservers.ScopeProject, "gitlab", mcpservers.Config{"command": "gitlab-mcp", "timeout": 30000.0}); err != nil {
+				t.Fatal(err)
+			}
+
+			err := s.UpdateMCPServer(ctx, tt.scope, tt.server, tt.cfg)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr != nil {
+				return
+			}
+
+			if got := s.Org.Current().MCP["gitlab"].Config; got["command"] != "gitlab-mcp-v2" || got["timeout"] != 30000.0 {
+				t.Fatalf("gitlab after the change: %v, want the new command and the timeout kept", got)
+			}
+		})
+	}
+}

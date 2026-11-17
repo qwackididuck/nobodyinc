@@ -54,3 +54,50 @@ func TestMCPServerAddedForTheProject(t *testing.T) {
 		t.Fatalf("GET /api/mcp after removal = %s, want []", list)
 	}
 }
+
+// Editing a server: the control room gets its command, arguments and URL,
+// never a value written in clear, which must be replaced by a variable to
+// save; the server's other keys are kept (ADR-0010).
+func TestMCPServerEdited(t *testing.T) {
+	t.Parallel()
+
+	live := staffProject(t)
+	dir := live.Current().ProjectDir
+
+	mcpJSON := `{"mcpServers":{"gitlab":{"command":"gitlab-mcp","args":["--read-only"],"timeout":30000,` +
+		`"env":{"GITLAB_TOKEN":"glpat-in-clear"}}}}`
+	if err := os.WriteFile(filepath.Join(dir, ".mcp.json"), []byte(mcpJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := live.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	d := startDaemon(t, live)
+
+	detail := string(call(t, d, http.MethodGet, "/api/mcp/gitlab", "", http.StatusOK))
+	if strings.Contains(detail, "glpat") || !strings.Contains(detail, `"--read-only"`) || !strings.Contains(detail, `"clear_values":["env.GITLAB_TOKEN"]`) {
+		t.Fatalf("GET /api/mcp/gitlab = %s, want its arguments, and its value in clear emptied and listed", detail)
+	}
+
+	call(t, d, http.MethodPut, "/api/mcp/gitlab", `{"scope":"project","server":{"command":"gitlab-mcp","env":{"GITLAB_TOKEN":""}}}`, http.StatusBadRequest)
+	call(t, d, http.MethodPut, "/api/mcp/gitlab", `{"scope":"user","server":{"command":"gitlab-mcp"}}`, http.StatusNotFound)
+	call(t, d, http.MethodPut, "/api/mcp/gitlab",
+		`{"scope":"project","server":{"command":"gitlab-mcp","args":["--read-write"],"env":{"GITLAB_TOKEN":"${GITLAB_TOKEN}"}}}`, http.StatusOK)
+
+	data, err := os.ReadFile(filepath.Join(dir, ".mcp.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{"--read-write", "${GITLAB_TOKEN}", `"timeout": 30000`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf(".mcp.json misses %q after the change:\n%s", want, data)
+		}
+	}
+
+	if strings.Contains(string(data), "glpat") {
+		t.Fatalf("the value in clear is still there:\n%s", data)
+	}
+}

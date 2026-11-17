@@ -274,3 +274,46 @@ func writeFile(t *testing.T, path, content string) {
 		t.Fatal(err)
 	}
 }
+
+func TestRedact(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		"command": "gitlab-mcp", "args": []any{"--token", "abc"},
+		"env":     map[string]any{"GITLAB_TOKEN": "${GITLAB_TOKEN}", "GITLAB_URL": "https://gitlab.example"}, //nolint:gosec // a reference and a URL
+		"headers": map[string]any{"Authorization": "Bearer abc"},
+	}
+
+	got, cleared := Redact(cfg)
+
+	env, _ := got["env"].(map[string]any)
+	headers, _ := got["headers"].(map[string]any)
+
+	if env["GITLAB_TOKEN"] != "${GITLAB_TOKEN}" || env["GITLAB_URL"] != "" || headers["Authorization"] != "" {
+		t.Fatalf("redacted = %v, want references kept and values in clear emptied", got)
+	}
+
+	if !slices.Equal(cleared, []string{"env.GITLAB_URL", "headers.Authorization"}) {
+		t.Fatalf("cleared = %v", cleared)
+	}
+
+	if args, _ := got["args"].([]any); len(args) != 2 {
+		t.Fatalf("args = %v, want them kept: the control room hides them", got["args"])
+	}
+
+	if original, _ := cfg["env"].(map[string]any); original["GITLAB_URL"] != "https://gitlab.example" {
+		t.Fatal("Redact changed its argument")
+	}
+}
+
+func TestReplace(t *testing.T) {
+	t.Parallel()
+
+	current := Config{"command": "old", "args": []any{"x"}, "env": map[string]any{"A": "${A}"}, "timeout": 30000.0}
+	got := Replace(current, Config{"type": "http", "url": "http://new"})
+
+	want := Config{"type": "http", "url": "http://new", "timeout": 30000.0}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Replace = %v, want %v (transport replaced, timeout kept)", got, want)
+	}
+}

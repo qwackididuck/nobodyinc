@@ -132,10 +132,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/events", s.streamEvents)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.updateSettings)
-	mux.HandleFunc("GET /api/mcp", s.listMCPServers)
-	mux.HandleFunc("POST /api/mcp", s.addMCPServer)
-	mux.HandleFunc("DELETE /api/mcp/{name}", s.removeMCPServer)
-	mux.HandleFunc("GET /api/mcp/{name}/tools", s.listMCPTools)
+	s.routeMCP(mux)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.decideApproval)
 

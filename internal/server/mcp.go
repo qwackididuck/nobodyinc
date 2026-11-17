@@ -19,6 +19,16 @@ import (
 // (staffing.Service), and lists a server's tools so that the human can
 // exclude some from an agent.
 
+// routeMCP mounts the MCP endpoints.
+func (s *server) routeMCP(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/mcp", s.listMCPServers)
+	mux.HandleFunc("POST /api/mcp", s.addMCPServer)
+	mux.HandleFunc("GET /api/mcp/{name}", s.getMCPServer)
+	mux.HandleFunc("PUT /api/mcp/{name}", s.updateMCPServer)
+	mux.HandleFunc("DELETE /api/mcp/{name}", s.removeMCPServer)
+	mux.HandleFunc("GET /api/mcp/{name}/tools", s.listMCPTools)
+}
+
 // mcpServerView is one entry of GET /api/mcp. No value is returned in clear:
 // only the names of the environment variables the server refers to, the
 // command without its arguments, or the URL without its query.
@@ -34,6 +44,21 @@ type mcpServerView struct {
 type envVarState struct {
 	Name string `json:"name"`
 	Set  bool   `json:"set"`
+}
+
+// mcpServerDetail is GET /api/mcp/{name}: the server to edit, its values
+// written in clear emptied (mcpservers.Redact).
+type mcpServerDetail struct {
+	Name        string            `json:"name"`
+	Source      mcpservers.Scope  `json:"source"`
+	Server      mcpservers.Config `json:"server"`
+	ClearValues []string          `json:"clear_values"`
+}
+
+// mcpServerChange is the body of PUT /api/mcp/{name}.
+type mcpServerChange struct {
+	Scope  mcpservers.Scope  `json:"scope"`
+	Server mcpservers.Config `json:"server"`
 }
 
 // mcpServerInput is the body of POST /api/mcp.
@@ -99,6 +124,41 @@ func (s *server) removeMCPServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *server) getMCPServer(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	srv, ok := s.Org.Current().MCP[name]
+	if !ok {
+		s.writeError(w, http.StatusNotFound, errors.New("no MCP server named "+name))
+
+		return
+	}
+
+	cfg, cleared := mcpservers.Redact(srv.Config)
+	s.writeJSON(w, http.StatusOK, mcpServerDetail{Name: name, Source: srv.Scope, Server: cfg, ClearValues: cleared})
+}
+
+func (s *server) updateMCPServer(w http.ResponseWriter, r *http.Request) {
+	if !s.hasStaff(w) {
+		return
+	}
+
+	var body mcpServerChange
+	if err := decodeJSON(w, r, &body, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	if err := s.Staff.UpdateMCPServer(context.WithoutCancel(r.Context()), body.Scope, r.PathValue("name"), body.Server); err != nil {
+		s.staffError(w, err)
+
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, s.mcpViews(s.Org.Current()))
 }
 
 // listMCPTools starts the server to ask for its tools (mcpservers.ListTools).

@@ -39,6 +39,28 @@ func (s *Service) AddMCPServer(ctx context.Context, scope mcpservers.Scope, name
 	return s.changeMCP(ctx, func(w MCPWriter) error { return w.Add(ctx, scope, name, cfg) })
 }
 
+// UpdateMCPServer changes the server every agent gets under this name, in
+// the scope it comes from: its transport and variables are replaced, its
+// other keys kept (mcpservers.Replace). A value written in clear must have
+// been replaced by a variable: Nobody Inc never writes a secret.
+func (s *Service) UpdateMCPServer(ctx context.Context, scope mcpservers.Scope, name string, cfg mcpservers.Config) error {
+	if err := checkScope(scope); err != nil {
+		return err
+	}
+
+	current, ok := s.Org.Current().MCP[name]
+	if !ok || current.Scope != scope {
+		return fmt.Errorf("%w: no MCP server %q in the %s scope", ErrNotFound, name, scope)
+	}
+
+	merged := mcpservers.Replace(current.Config, cfg)
+	if err := mcpservers.Validate(name, merged); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	return s.changeMCP(ctx, func(w MCPWriter) error { return w.Add(ctx, scope, name, merged) })
+}
+
 // RemoveMCPServer removes a server from scope, then brings every agent in
 // line.
 func (s *Service) RemoveMCPServer(ctx context.Context, scope mcpservers.Scope, name string) error {

@@ -500,6 +500,26 @@ export function removeMCPServer(name: string, scope: MCPScope): Promise<void> {
   return send("DELETE", `/api/mcp/${encodeURIComponent(name)}?scope=${scope}`);
 }
 
+// MCPServerDetail is a server to edit: its command, arguments and URL (to
+// hide until revealed), and env and headers whose values written in clear
+// come back empty, listed in clear_values ("env.NAME", "headers.NAME").
+export interface MCPServerDetail {
+  name: string;
+  source: MCPScope;
+  server: MCPServerInput["server"];
+  clear_values: string[];
+}
+
+export function getMCPServer(name: string): Promise<MCPServerDetail> {
+  return getJSON<MCPServerDetail>(`/api/mcp/${encodeURIComponent(name)}`);
+}
+
+// updateMCPServer changes a server in its scope, keeping the keys the form
+// does not know; every agent restarts once idle.
+export function updateMCPServer(name: string, scope: MCPScope, server: MCPServerInput["server"]): Promise<MCPServer[]> {
+  return sendJSON<MCPServer[]>("PUT", `/api/mcp/${encodeURIComponent(name)}`, { scope, server });
+}
+
 export interface MCPTool {
   name: string;
   description?: string;

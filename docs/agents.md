@@ -11,13 +11,15 @@ An **agent** is a member of a team that runs as a Claude Code session. A **templ
   catalog/<template>.md                   your templates; same name as a built-in one = replaces it
   projects/<id>/nobody.db                 runtime state of one project on this machine (never shared)
   projects/<id>/worktrees/                the teams' worktrees, outside the project (docs/workspaces.md)
+  projects/<id>/mcp/<agent>.json          each agent's MCP configuration, readable by you only (generated)
 <project>/.nobody/                        committed with the project
   org.yaml                                teams and their block lists
   project.md                              the project prompt, given to every agent (optional)
-  mcp.yaml                                MCP servers agents may be given
   teams/<team>/TEAM.md                    the team prompt, given to its members (optional)
   teams/<team>/<agent>.md                 recruited agents
   director/<name>.md                      the director (god), always one; its address is its name (docs/god.md)
+<project>/.mcp.json                       the project's MCP servers, Claude Code's own file (see "MCP servers")
+~/.claude.json                            your own MCP servers, for this project or all of them (Claude Code's)
 ```
 
 The project directory is the one containing `.nobody/`; agents work in it, or in their team's worktree when a feature is active (`docs/workspaces.md`). The daemon reads `.nobody/` from the main checkout only.
@@ -37,7 +39,7 @@ permissions:
   profile: allowlist
   allow: ["Bash(go test *)"]
 tools: [Read, Edit, Write, Bash, Grep, Glob]
-mcp: [gitlab]
+mcp_exclude: [gitlab/delete_project]                  # every MCP server, but this tool
 skills: []
 ---
 You implement what the specs describe, with unit tests.
@@ -92,7 +94,7 @@ A recruited agent has the same fields, plus the ones that only make sense in a t
 | `permissions.profile` | `default`, `allowlist` or `auto` (see below). | `--permission-mode` |
 | `permissions.allow`, `permissions.deny` | Claude Code permission rules added to the profile. | generated `--settings` |
 | `tools` | Tools the agent may use without asking, added to the office tools. | `--allowedTools` |
-| `mcp` | Names of servers from `.nobody/mcp.yaml`. | `--mcp-config` + `--strict-mcp-config` |
+| `mcp_exclude` | MCP servers (`gitlab`) or single tools (`gitlab/delete_project`) the agent does not get; it gets every other server (see "MCP servers"). An exclusion naming a server absent from the machine is ignored. | `--disallowedTools mcp__<server>` or `mcp__<server>__<tool>` |
 | `skills` | Skills made available to the agent. | not applied yet (ADR-0004) |
 | `from` | `<template>@<version>` it was recruited from. Information only: template updates are never applied. | — |
 | `on_leave` | `true` while the agent is on leave. | not started |
@@ -134,7 +136,7 @@ When the daemon writes `org.yaml`, it rewrites the whole file (comments are lost
 An agent's system prompt goes from the general to the particular (`internal/runtime/prompt.tmpl`, ADR-0008):
 
 1. Nobody Inc and who the agent is;
-2. **your instructions**: the text of your own `~/.claude/CLAUDE.md` (or `$CLAUDE_CONFIG_DIR/CLAUDE.md`), read at each launch. Only the text: your settings, hooks, plugins and MCP servers never reach the agents (ADR-0003), and `@imports` are not resolved;
+2. **your instructions**: the text of your own `~/.claude/CLAUDE.md` (or `$CLAUDE_CONFIG_DIR/CLAUDE.md`), read at each launch. Only the text: your settings, hooks and plugins never reach the agents (ADR-0003), and `@imports` are not resolved. Your MCP servers do (see "MCP servers");
 3. **the project prompt**, `.nobody/project.md` (Settings in the control room, `GET`/`PUT /api/project`): the stack, the conventions, what everyone should know;
 4. **the team**: its goal, then its prompt, `.nobody/teams/<team>/TEAM.md`: how the team works. Empty means the goal alone;
 5. the agent's **role and instructions**, from its file;
@@ -156,21 +158,48 @@ The director is not a source of knowledge about the project: asking it counts as
 
 When the organization changes (an arrival, a departure, a leave or return, a new role or expertise, a new team or goal), every other agent gets one `inform` notice from `nobody` summing it up, with the newcomers' expertise (`internal/daemon/orgnotice.go`). A new or lifted block is only told to the members of the two teams concerned: the one that blocks and the one blocked.
 
-## `mcp.yaml`
+## What agents get from the project
 
-```yaml
-servers:
-  gitlab:
-    type: stdio
-    command: gitlab-mcp
-    env:
-      GITLAB_TOKEN: ${GITLAB_TOKEN}   # never the value itself: this file is committed
-  ragflow:
-    type: http
-    url: http://localhost:9380/mcp
+Agents run in the project (or their team's worktree during a feature) with `--setting-sources project,local`: your global settings stay out (ADR-0003), and Claude Code loads what the project gives it, as for you. Checked by `test/contract/project_test.go`:
+
+- `CLAUDE.md`, or `AGENTS.md` when the project has no `CLAUDE.md` (with a `CLAUDE.md`, `AGENTS.md` is not read: add `@AGENTS.md` to it);
+- `.claude/skills/`, `.claude/commands/`, `.claude/agents/` (subagents) and `.claude/settings.json`;
+- in a worktree, only what is committed: an untracked skill or a git-ignored `.claude/` is not there.
+
+## MCP servers
+
+Every agent gets every MCP server of Claude Code's three scopes (ADR-0010), read by the daemon from Claude Code's own files, so that a server is declared once, for you and for the agents:
+
+| Scope | For whom | Stored in |
+|---|---|---|
+| project | everyone on the project, committed | `<project>/.mcp.json` |
+| local | you, on this project | `~/.claude.json`, under `projects.<project path>.mcpServers` |
+| user | you, on all your projects | `~/.claude.json`, under `mcpServers` |
+
+`~/.claude.json` is `$CLAUDE_CONFIG_DIR/.claude.json` when that variable is set. On a name conflict the project wins, then local, then user; a server named `nobody`, the office server, is ignored (the daemon logs a warning). A file that cannot be parsed stops the organization from loading, or a reload from being applied: a file being rewritten never looks like servers that went away.
+
+```json
+{
+  "mcpServers": {
+    "gitlab": {"type": "stdio", "command": "gitlab-mcp", "env": {"GITLAB_TOKEN": "${GITLAB_TOKEN}"}},
+    "ragflow": {"type": "http", "url": "http://localhost:9380/mcp", "headers": {"Authorization": "Bearer ${RAGFLOW_KEY}"}}
+  }
+}
 ```
 
-The name `nobody` is reserved for the office server.
+- **Excluding**: an agent's `mcp_exclude` takes away whole servers or single tools. In the control room, editing an agent lists the servers, each with a box, and "Choose tools" starts the server to list its tools (`GET /api/mcp/{name}/tools`).
+- **Launching**: the daemon merges the three scopes, adds the office server, and writes the result to `~/.nobody/projects/<id>/mcp/<agent>.json`, readable by you only, passed with `--mcp-config` and `--strict-mcp-config`: your files may hold a secret in clear, which must not show on a command line, and Claude Code loads nothing else. `${VARIABLE}` references are expanded by Claude Code from the daemon's environment.
+- **Changing**: Settings → MCP servers in the control room, or the API, adds, edits or removes a server. Adding one asks where it goes: the whole project (`.mcp.json`), you on this project, or you on all your projects; nothing is written before that answer. Claude Code itself writes the files (`claude mcp add-json --scope …`, `claude mcp remove`), run in the project's main checkout; editing replaces the transport and the variables and keeps the server's other keys.
+- **Secrets are never written**: every `env` and `headers` value written by Nobody Inc must refer to an environment variable (`${GITLAB_TOKEN}`, `Bearer ${TOKEN}`), set in the environment you start the daemon from, outside Nobody Inc. A value written in clear by hand stays where it is but is never returned by the API, shown or logged: to edit such a server, replace it with a variable. The control room hides a server's arguments and URL until you reveal them.
+- **Restarts**: when the servers change, every agent restarts once idle, resuming its session (MCP servers are launch flags). A file changed outside Nobody Inc (`claude mcp add` in a terminal) is picked up at the next change made through it, or when the daemon restarts.
+
+| Action | Endpoint |
+|---|---|
+| List (sources, variables set or not, no value in clear) | `GET /api/mcp` |
+| Add to a scope | `POST /api/mcp` with `{"name", "scope", "server"}` |
+| Read to edit, edit | `GET` / `PUT /api/mcp/{name}` |
+| Remove | `DELETE /api/mcp/{name}?scope=` |
+| Its tools | `GET /api/mcp/{name}/tools` |
 
 ## Lifecycle
 
@@ -199,4 +228,4 @@ The control room's **Staff** tab drives these endpoints. Its first view, Staff, 
 
 If the daemon stops while a leave or dismissal still waits for the end of a turn, the hand-over happens at its next start: tickets in progress of agents on leave or no longer in the organization go back to their team's queue, and the undelivered mail of departed agents is returned.
 
-Each change is validated against the whole organization before anything is written (unknown team, undeclared MCP server, invalid profile...). Files edited by hand are picked up at the next change made through the API (every agent whose file changed is then restarted or stopped accordingly), or when the daemon restarts.
+Each change is validated against the whole organization before anything is written (unknown team, invalid profile, malformed MCP exclusion...). Files edited by hand are picked up at the next change made through the API (every agent whose file changed is then restarted or stopped accordingly), or when the daemon restarts.
