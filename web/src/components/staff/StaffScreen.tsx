@@ -5,7 +5,7 @@ import { useState } from "react";
 import ui from "../ui/ui.module.css";
 import { Catalog } from "./Catalog";
 import { EditAgent, NewAgent } from "./Editors";
-import styles from "./recruitment.module.css";
+import styles from "./staff.module.css";
 import { Staff } from "./Staff";
 
 type View = { kind: "catalog" } | { kind: "staff" } | { kind: "new" } | { kind: "edit"; address: string };
@@ -15,21 +15,22 @@ interface Props {
 }
 
 const TABS: { kind: "catalog" | "staff" | "new"; label: string }[] = [
-  { kind: "catalog", label: "Catalog" },
   { kind: "staff", label: "Staff" },
+  { kind: "catalog", label: "Catalog" },
   { kind: "new", label: "New agent" },
 ];
 
-// Recruitment hires and manages agents: the catalog of templates as a
-// character select screen, the staff of the office, and an editor for an
-// agent's file (docs/agents.md). Recruits walk into the office; changes
-// apply once an agent ends its turn, never in the middle of one.
-export function Recruitment({ onOpenChat }: Props) {
-  const [view, setView] = useState<View>({ kind: "catalog" });
+// StaffScreen is the Staff tab: the staff of the office, team by team (teams,
+// their flows and their members, editable), the catalog of templates as a
+// character select screen to recruit from, and an editor for an agent's file
+// (docs/agents.md). Recruits walk into the office; changes apply once an
+// agent ends its turn, never in the middle of one.
+export function StaffScreen({ onOpenChat }: Props) {
+  const [view, setView] = useState<View>({ kind: "staff" });
 
   const heading = {
     catalog: ["Choose your recruit", "Templates from Nobody Inc and from ~/.nobody/catalog. A recruit is a copy: later changes to the template never touch it."],
-    staff: ["Your staff", "Everyone in the office. Changes apply once the agent is idle, unless you ask for now."],
+    staff: ["Your staff", "Everyone in the office, team by team, and whom each team may start conversations with. Changes apply once the agent is idle, unless you ask for now."],
     new: ["New agent", "Writes the agent's file in .nobody/ and starts it, or saves it as a template."],
     edit: ["Edit an agent", "Changing the role or the instructions starts a new session: a resumed session keeps its original instructions."],
   }[view.kind];
@@ -43,7 +44,7 @@ export function Recruitment({ onOpenChat }: Props) {
           </h2>
           <p className={ui.sub}>{heading[1]}</p>
         </div>
-        <div className={styles.subtabs} role="tablist" aria-label="Recruitment">
+        <div className={styles.subtabs} role="tablist" aria-label="Staff">
           {TABS.map((t) => (
             <button key={t.kind} type="button" role="tab" aria-selected={view.kind === t.kind} onClick={() => setView({ kind: t.kind })}>
               {t.label}

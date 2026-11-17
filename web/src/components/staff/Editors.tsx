@@ -8,7 +8,7 @@ import { TeamSelect } from "../teams/TeamSelect";
 import ui from "../ui/ui.module.css";
 import { cleanDefinition, emptyDefinition, NAME_PATTERN, toDefinition } from "./definition";
 import { DefinitionFields } from "./DefinitionFields";
-import styles from "./recruitment.module.css";
+import styles from "./staff.module.css";
 
 function useAction() {
   const [busy, setBusy] = useState(false);

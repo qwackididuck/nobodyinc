@@ -10,7 +10,7 @@ import { TeamSelect } from "../teams/TeamSelect";
 import ui from "../ui/ui.module.css";
 import { NAME_PATTERN } from "./definition";
 import { TemplateEditor } from "./Editors";
-import styles from "./recruitment.module.css";
+import styles from "./staff.module.css";
 
 // templateLook is the character shown for a template.
 export function templateLook(name: string) {

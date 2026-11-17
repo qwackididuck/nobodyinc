@@ -1,4 +1,5 @@
-/* Recruitment: a character select screen, the staff and the editors.
+/* Staff: the staff of the office, the catalog as a character select screen,
+   and the editors.
    Design reference: docs/mockups/ui-design/c-pixel-office.html#recruitment. */
 
 .screen {
@@ -304,6 +305,11 @@
   min-width: 0;
   font-size: 13px;
   color: var(--muted);
+}
+
+.teamBlock {
+  font-size: 12px;
+  color: var(--warn);
 }
 
 .member {

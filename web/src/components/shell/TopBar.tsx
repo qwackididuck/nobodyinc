@@ -6,7 +6,7 @@ import styles from "./shell.module.css";
 export const TABS = [
   { id: "office", label: "Office" },
   { id: "kanban", label: "Kanban" },
-  { id: "recruitment", label: "Recruitment" },
+  { id: "staff", label: "Staff" },
   { id: "settings", label: "Settings" },
 ] as const;
 

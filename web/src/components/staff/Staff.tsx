@@ -9,7 +9,7 @@ import { isDirector, sortAgents, statusKey, statusLabel } from "../chat/agents";
 import { Sprite } from "../office/sprite";
 import { TeamDialog } from "../teams/TeamDialog";
 import ui from "../ui/ui.module.css";
-import styles from "./recruitment.module.css";
+import styles from "./staff.module.css";
 
 interface Props {
   onOpenChat: (address: string) => void;
@@ -19,8 +19,8 @@ interface Props {
 // Staff lists everyone in the office, team by team, with what can be done
 // to them: open their chat, edit their file, put them on leave or bring them
 // back, dismiss them. A dismissed agent walks out of the office. The director
-// can only be edited. Teams can be created here, and their goal and shared
-// instructions edited.
+// can only be edited. Teams can be created here, and their goal, shared
+// instructions and flows (the teams they block, ADR-0009) edited.
 export function Staff({ onOpenChat, onEdit }: Props) {
   const { agents, teams } = useLive();
   const [now, setNow] = useState(false);
@@ -51,6 +51,11 @@ export function Staff({ onOpenChat, onEdit }: Props) {
               {g.label.toUpperCase()} · {g.members.length}
             </h3>
             {g.team?.goal && <span className={styles.teamGoal}>{g.team.goal}</span>}
+            {g.team?.block && g.team.block.length > 0 && (
+              <span className={styles.teamBlock} title="Its members cannot start a conversation with these teams, only answer them">
+                blocked: {g.team.block.join(", ")}
+              </span>
+            )}
             {g.team && (
               <button type="button" className={ui.link} onClick={() => setDialog(g.team ?? null)}>
                 Edit team

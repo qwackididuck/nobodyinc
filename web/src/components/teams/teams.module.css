@@ -18,6 +18,27 @@
   min-height: 140px;
 }
 
+/* The teams its members may start conversations with (Flows). */
+.flows {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.flows legend {
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.flow {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import { type AgentDefinition, listMCPServers, PROFILES } from "@/lib/api";
 import ui from "../ui/ui.module.css";
-import styles from "./recruitment.module.css";
+import styles from "./staff.module.css";
 
 // The tools most agents are given; others can be typed.
 const COMMON_TOOLS = ["Read", "Edit", "Write", "Bash", "Grep", "Glob", "WebFetch", "WebSearch"];

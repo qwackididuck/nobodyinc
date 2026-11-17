@@ -17,7 +17,7 @@ export interface Agent {
   pending_change: boolean;
 }
 
-// --- Agent definitions, templates and recruitment (see docs/agents.md) ---
+// --- Teams, agent definitions, templates and recruitment (see docs/agents.md) ---
 
 export interface Team {
   id: string;
@@ -25,6 +25,9 @@ export interface Team {
   // Instructions shared by the team's agents (.nobody/teams/<id>/TEAM.md);
   // empty means the goal alone.
   prompt?: string;
+  // Teams its members may not start a conversation with (ADR-0009): flows
+  // are open by default. Answers and tickets are never blocked.
+  block?: string[];
 }
 
 export const PROFILES = ["default", "allowlist", "auto"] as const;
@@ -72,9 +75,10 @@ export function createTeam(team: Team): Promise<Team> {
   return postJSON<Team>("/api/teams", team);
 }
 
-// updateTeam changes a team's goal and prompt; its agents restart with a
-// fresh session once idle.
-export function updateTeam(id: string, change: { goal: string; prompt: string }): Promise<Team> {
+// updateTeam changes a team's goal, prompt and block list. Its agents restart
+// with a fresh session once idle when the goal or prompt changes; a new block
+// list only sends them a notice. Without block, the block list stays.
+export function updateTeam(id: string, change: { goal: string; prompt: string; block?: string[] }): Promise<Team> {
   return sendJSON<Team>("PUT", `/api/teams/${encodeURIComponent(id)}`, change);
 }
 
