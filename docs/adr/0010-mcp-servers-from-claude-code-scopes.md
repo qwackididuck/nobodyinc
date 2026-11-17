@@ -1,6 +1,6 @@
 # ADR-0010 — MCP servers come from Claude Code's own scopes
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-17
 - Replaces: the MCP registry `.nobody/mcp.yaml` and the per-agent `mcp:` list of ADR-0004
 - Revisits, in part: ADR-0003 (the user's MCP servers reach the agents again; their settings, hooks and plugins still do not)

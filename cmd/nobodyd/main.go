@@ -99,6 +99,10 @@ func run(logger *slog.Logger, opts options) error {
 	warnIfUntrusted(logger, organization.ProjectDir)
 	warnIfChannels(logger, organization)
 
+	for _, ignored := range organization.IgnoredMCP {
+		logger.Warn("MCP server left out", "server", ignored)
+	}
+
 	addr := listenAddr()
 
 	daemonOpts, err := daemonOptions(logger, opts, organization, addr)
@@ -187,6 +191,7 @@ func daemonOptions(logger *slog.Logger, opts options, organization *org.Org, add
 		StartAgents:  opts.start,
 		DBPath:       dbPath,
 		WorktreesDir: filepath.Join(state, "worktrees"),
+		MCPConfigDir: filepath.Join(state, "mcp"),
 		ClaudePath:   opts.claudePath,
 		HookPath:     hookPath,
 		DaemonURL:    "http://" + addr,

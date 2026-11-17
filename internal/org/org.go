@@ -18,7 +18,13 @@ import (
 	"strings"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 )
+
+// OfficeServer is the name of the office MCP server every agent gets
+// (internal/officemcp); a server of this name in Claude Code's scopes is
+// ignored.
+const OfficeServer = mcpservers.OfficeServer
 
 // HumanAddress is the address of the human operator. The human can write to
 // any agent, and any agent can write to the human (to answer or escalate).
@@ -41,9 +47,14 @@ type Org struct {
 	// written before ADR-0009. They are ignored (flows are open by default)
 	// and dropped by the next write of org.yaml; the daemon warns about them.
 	IgnoredChannels int `yaml:"-"`
-	// MCP is the project's MCP registry, read from .nobody/mcp.yaml: the
-	// servers agents may be given (see mcp.go).
-	MCP map[string]MCPServer `yaml:"-"`
+	// MCP are the MCP servers every agent gets, read from Claude Code's
+	// three scopes: the project's .mcp.json, then the user's on this project
+	// and the user's (ADR-0010, internal/mcpservers).
+	MCP map[string]mcpservers.Server `yaml:"-"`
+	// IgnoredMCP are servers left out (a name conflict lost, or the office
+	// server's name), as "<name> (<scope>): <why>"; the daemon warns about
+	// them.
+	IgnoredMCP []string `yaml:"-"`
 	// God is the director, the agent who talks with the human and leads the
 	// teams; nil when the project has none (see director.go).
 	God *Agent `yaml:"-"`
@@ -86,7 +97,6 @@ func (o *Org) Validate() error {
 	teams, errs := o.validateTeams()
 	errs = append(errs, o.validateGod()...)
 	errs = append(errs, o.validateBlocks(teams)...)
-	errs = append(errs, o.validateMCP()...)
 
 	return errors.Join(errs...)
 }

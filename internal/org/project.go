@@ -12,6 +12,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 )
 
 // ConfigDirName is the directory, at the root of a project, that holds its
@@ -52,9 +53,9 @@ func HasConfig(projectDir string) bool {
 
 // LoadProject reads the organization of a project from its .nobody/
 // directory: org.yaml for teams and their block lists, one file per agent in
-// teams/<team>/, the team prompts (teams/<team>/TEAM.md), the project prompt
-// (project.md) and the MCP registry mcp.yaml. It returns ErrNoConfig when
-// org.yaml is missing.
+// teams/<team>/, the team prompts (teams/<team>/TEAM.md) and the project
+// prompt (project.md); and the MCP servers of Claude Code's three scopes
+// (ADR-0010). It returns ErrNoConfig when org.yaml is missing.
 func LoadProject(projectDir string) (*Org, error) {
 	dir, err := filepath.Abs(projectDir)
 	if err != nil {
@@ -84,7 +85,7 @@ func LoadProject(projectDir string) (*Org, error) {
 		return nil, err
 	}
 
-	if o.MCP, err = readMCPFile(dir); err != nil {
+	if err := readMCP(o); err != nil {
 		return nil, err
 	}
 
@@ -297,6 +298,24 @@ func readOrgFile(dir string) (*Org, error) {
 	o.IgnoredChannels = len(file.Channels)
 
 	return o, nil
+}
+
+// readMCP reads the MCP servers every agent gets: the project's .mcp.json
+// and the local and user scopes of ~/.claude.json (internal/mcpservers).
+func readMCP(o *Org) error {
+	claudeConfig, err := mcpservers.ClaudeConfigPath()
+	if err != nil {
+		return err
+	}
+
+	found, err := mcpservers.Load(o.ProjectDir, claudeConfig)
+	if err != nil {
+		return fmt.Errorf("MCP servers: %w", err)
+	}
+
+	o.MCP, o.IgnoredMCP = found.Servers, found.Ignored
+
+	return nil
 }
 
 // readAgents reads the agent files (*.md) of a directory; a missing

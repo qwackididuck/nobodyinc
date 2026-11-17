@@ -7,12 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 )
@@ -76,6 +79,9 @@ type Launch struct {
 	// each launch and given to every agent as information (ADR-0008); nil or
 	// "" for none.
 	UserInstructions func() string
+	// MCPConfigDir holds each agent's MCP configuration, <address>.json,
+	// readable by the user only (~/.nobody/projects/<id>/mcp).
+	MCPConfigDir string
 }
 
 // Command builds the claude command for one agent, from its definition
@@ -90,9 +96,10 @@ type Launch struct {
 //     rules go into the generated settings, with .nobody/ always denied
 //     (permissions.go, ADR-0004);
 //   - its tools are allowed without asking, next to the office tools;
-//   - only the office MCP server (at /mcp/{address}) and the servers the
-//     agent lists from .nobody/mcp.yaml are loaded (--strict-mcp-config: no
-//     other MCP configuration applies, see ADR-0003 and ADR-0004);
+//   - it gets the office MCP server (at /mcp/{address}) and every server of
+//     Claude Code's three scopes (org.Org.MCP), written to a private file
+//     (--strict-mcp-config: Claude Code loads nothing else, ADR-0010); the
+//     servers and tools it excludes (mcp_exclude) are disallowed;
 //   - NOBODY_AGENT and NOBODY_DAEMON_URL tell nobody-hook who and where it is;
 //   - a short onboarding turn brings the agent to the idle state.
 //
@@ -115,7 +122,7 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume st
 		return nil, err
 	}
 
-	mcpConfig, err := agentMCPConfig(l.DaemonURL, m.Address, o.MCP, m.Agent.MCP)
+	mcpConfig, err := l.writeMCPConfig(m.Address, o.MCP)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +138,10 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume st
 		"--strict-mcp-config",
 		"--allowedTools", allowedTools(m.Agent.Tools),
 	}
+	if disallowed := disallowedTools(m.Agent.MCPExclude); disallowed != "" {
+		args = append(args, "--disallowedTools", disallowed)
+	}
+
 	if m.Agent.Model != "" {
 		args = append(args, "--model", m.Agent.Model)
 	}
@@ -280,27 +291,62 @@ func agentSettings(hookPath string, p catalog.Permissions, projectDir string) (s
 	})
 }
 
-// agentMCPConfig is the --mcp-config value: the office server of the agent,
-// plus the servers it lists, copied from the project's registry. ${VARIABLE}
-// references are left for Claude Code to expand, so secrets never appear on
-// the command line.
-func agentMCPConfig(daemonURL, address string, registry map[string]org.MCPServer, names []string) (string, error) {
-	servers := map[string]any{
-		org.OfficeServer: map[string]string{"type": "http", "url": daemonURL + "/mcp/" + address},
+// writeMCPConfig writes the agent's MCP configuration and returns its path,
+// the --mcp-config value: its office server, plus every server of Claude
+// Code's scopes. The file is private: a server of the user's own
+// configuration may hold a secret in clear, which must not show on a command
+// line (ADR-0010). ${VARIABLE} references are left for Claude Code to expand.
+func (l Launch) writeMCPConfig(address string, servers map[string]mcpservers.Server) (string, error) {
+	if l.MCPConfigDir == "" {
+		return "", fmt.Errorf("agent %s: no directory for its MCP configuration (Launch.MCPConfigDir)", address)
 	}
 
-	for _, name := range names {
-		server, ok := registry[name]
-		if !ok {
-			// org.Validate refuses this; checked again so that a bad name never
-			// silently starts an agent without the server it expects.
-			return "", fmt.Errorf("agent %s: MCP server %q is not declared in .nobody/mcp.yaml", address, name)
+	config, err := agentMCPConfig(l.DaemonURL, address, servers)
+	if err != nil {
+		return "", err
+	}
+
+	path := filepath.Join(l.MCPConfigDir, address+".json")
+	if err := atomicfile.WritePrivate(path, []byte(config)); err != nil {
+		return "", fmt.Errorf("agent %s: MCP configuration: %w", address, err)
+	}
+
+	return path, nil
+}
+
+// agentMCPConfig is the content of the agent's MCP configuration.
+func agentMCPConfig(daemonURL, address string, servers map[string]mcpservers.Server) (string, error) {
+	all := map[string]any{}
+	for name, s := range servers {
+		all[name] = s.Config
+	}
+
+	all[org.OfficeServer] = map[string]string{"type": "http", "url": daemonURL + "/mcp/" + address}
+
+	return toJSON(map[string]any{"mcpServers": all})
+}
+
+// disallowedTools is the --disallowedTools value for an agent's exclusions:
+// mcp__<server> for a whole server, mcp__<server>__<tool> for one tool. An
+// exclusion of a server absent from this machine matches nothing.
+func disallowedTools(exclude []string) string {
+	rules := make([]string, 0, len(exclude))
+
+	for _, entry := range exclude {
+		server, tool, err := catalog.SplitExclusion(entry)
+		if err != nil {
+			continue // refused when the definition is validated
 		}
 
-		servers[name] = server
+		rule := "mcp__" + server
+		if tool != "" {
+			rule += "__" + tool
+		}
+
+		rules = append(rules, rule)
 	}
 
-	return toJSON(map[string]any{"mcpServers": servers})
+	return strings.Join(rules, ",")
 }
 
 func toJSON(v any) (string, error) {

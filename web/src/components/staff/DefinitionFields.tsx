@@ -110,13 +110,19 @@ export function DefinitionFields({ value, onChange, template = false }: Props) {
         </div>
       </div>
       <div className={`${ui.label} ${styles.wide}`}>
-        MCP SERVERS (FROM .NOBODY/MCP.YAML)
+        MCP SERVERS EXCLUDED (THE AGENT GETS ALL THE OTHERS)
         <div className={styles.chips}>
-          {servers.length === 0 && <span className={styles.hint}>No server declared in this project.</span>}
+          {servers.length === 0 && <span className={styles.hint}>No MCP server in the project or in your Claude Code configuration.</span>}
           {servers.map((s) => {
-            const on = (value.mcp ?? []).includes(s);
+            const on = (value.mcp_exclude ?? []).includes(s);
             return (
-              <button key={s} type="button" className={`${ui.chip} ${on ? ui.chipOn : ""}`} aria-pressed={on} onClick={() => set({ mcp: toggle(value.mcp, s) })}>
+              <button
+                key={s}
+                type="button"
+                className={`${ui.chip} ${on ? ui.chipOn : ""}`}
+                aria-pressed={on}
+                onClick={() => set({ mcp_exclude: toggle(value.mcp_exclude, s) })}
+              >
                 {s}
               </button>
             );

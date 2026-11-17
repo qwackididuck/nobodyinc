@@ -31,6 +31,12 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	// Never read the user's own ~/.claude.json and its MCP servers (ADR-0010):
+	// the daemon, and fakeclaude's "mcp add-json", use this one.
+	if err := os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(dir, "claude-config")); err != nil {
+		panic(err)
+	}
+
 	hookBinary = build(dir, "nobody-hook", "github.com/qwackididuck/nobodyinc/cmd/nobody-hook")
 	fakeClaude = build(dir, "fakeclaude", "github.com/qwackididuck/nobodyinc/test/fakeclaude")
 
@@ -95,6 +101,7 @@ func startDaemonWithDB(t *testing.T, o org.Source, dbPath string) *daemon.Daemon
 		Org:          o,
 		CatalogDir:   t.TempDir(),
 		WorktreesDir: t.TempDir(),
+		MCPConfigDir: t.TempDir(),
 		DBPath:       dbPath,
 		ClaudePath:   fakeClaude,
 		HookPath:     hookBinary,

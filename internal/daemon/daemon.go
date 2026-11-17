@@ -13,6 +13,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/approval"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
+	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -53,6 +54,9 @@ type Options struct {
 	// WorktreesDir holds the teams' worktrees, outside the project
 	// (~/.nobody/projects/<id>/worktrees, see workspace.Repo).
 	WorktreesDir string
+	// MCPConfigDir holds each agent's MCP configuration, readable by the user
+	// only (~/.nobody/projects/<id>/mcp, ADR-0010).
+	MCPConfigDir string
 	// ClaudePath and HookPath are the executables run for each agent.
 	ClaudePath string
 	HookPath   string
@@ -119,10 +123,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Statuses: statuses,
 		Logger:   opts.Logger,
 		NewCommand: runtime.Launch{
-			ClaudePath: opts.ClaudePath,
-			HookPath:   opts.HookPath,
-			DaemonURL:  opts.DaemonURL,
-			WorkDir:    git.workDir,
+			ClaudePath:   opts.ClaudePath,
+			HookPath:     opts.HookPath,
+			DaemonURL:    opts.DaemonURL,
+			WorkDir:      git.workDir,
+			MCPConfigDir: opts.MCPConfigDir,
 			UserInstructions: func() string {
 				return readUserInstructions(opts.Logger, opts.UserClaudeMD)
 			},
@@ -385,6 +390,9 @@ func newStaffing(ctx context.Context, opts Options, deps staffingDeps) *staffing
 
 	return &staffing.Service{
 		Org: live, Catalog: deps.catalog, Agents: deps.agents,
+		// Claude Code writes its own MCP files, run in the project's main
+		// checkout (ADR-0010).
+		MCP: mcpservers.Writer{ClaudePath: opts.ClaudePath, ProjectDir: live.Current().ProjectDir},
 		OnReload: func(before, after *org.Org) {
 			if err := deps.git.prepareNewTeams(context.WithoutCancel(ctx), before, after); err != nil {
 				opts.Logger.Error("prepare the worktree of a new team", "err", err)

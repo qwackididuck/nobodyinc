@@ -66,8 +66,8 @@ func (a *applied) count() int {
 	return len(a.calls)
 }
 
-// newService: a project with team dev (dev1) and team qa (no one), an MCP
-// registry with gitlab, and an empty user catalog.
+// newService: a project with team dev (dev1) and team qa (no one), a
+// .mcp.json with gitlab, and an empty user catalog.
 func newService(t *testing.T) (*Service, *applied) {
 	t.Helper()
 
@@ -81,7 +81,7 @@ func newService(t *testing.T) (*Service, *applied) {
 		t.Fatal(err)
 	}
 
-	writeFile(t, filepath.Join(dir, ".nobody", "mcp.yaml"), "servers:\n  gitlab: {command: gitlab-mcp}\n")
+	writeFile(t, filepath.Join(dir, ".mcp.json"), `{"mcpServers":{"gitlab":{"command":"gitlab-mcp"}}}`)
 
 	loaded, err := org.LoadProject(dir)
 	if err != nil {
@@ -157,16 +157,16 @@ func TestCreateWritesNothingInvalid(t *testing.T) {
 
 	s, a := newService(t)
 
-	_, err := s.Create(context.Background(), "dev", "dev2", catalog.Definition{MCP: []string{"ragflow"}})
+	_, err := s.Create(context.Background(), "dev", "dev2", catalog.Definition{MCPExclude: []string{"gitlab/"}})
 	if !errors.Is(err, ErrInvalid) {
-		t.Fatalf("err = %v, want ErrInvalid (ragflow is not in mcp.yaml)", err)
+		t.Fatalf("err = %v, want ErrInvalid (gitlab/ names no tool)", err)
 	}
 
 	if _, statErr := os.Stat(filepath.Join(s.Org.Current().ProjectDir, ".nobody", "teams", "dev", "dev2.md")); statErr == nil {
 		t.Fatal("an invalid agent was written to disk")
 	}
 
-	m, err := s.Create(context.Background(), "dev", "dev2", catalog.Definition{Role: "Developer", MCP: []string{"gitlab"}, From: "forged@9"})
+	m, err := s.Create(context.Background(), "dev", "dev2", catalog.Definition{Role: "Developer", MCPExclude: []string{"gitlab/delete_project"}, From: "forged@9"})
 	if err != nil {
 		t.Fatal(err)
 	}

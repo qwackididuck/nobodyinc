@@ -27,6 +27,9 @@
 //     deliverable and close it; same for a ticket assigned to it (without the
 //     claim).
 //
+// "claude mcp add-json" and "claude mcp remove" change MCP servers in the
+// same files as the real CLI (mcpcli.go).
+//
 // Started with --fork-session (a fork answering an urgent question), it prints
 // a one-shot JSON answer like claude -p does: ESCALATE if the question
 // contains "UNKNOWN", an answer otherwise.
@@ -58,6 +61,10 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "mcp" {
+		return mcpCommand(args[1:])
+	}
+
 	opts, err := parseArgs(args)
 	if err != nil {
 		return err
@@ -178,7 +185,18 @@ func parseHooks(settings string) (map[string]string, error) {
 	return hooks, nil
 }
 
+// parseMCPURL finds the office server's URL in the --mcp-config value: a
+// file path, as the daemon passes it, or inline JSON.
 func parseMCPURL(config string) (string, error) {
+	if !strings.HasPrefix(strings.TrimSpace(config), "{") {
+		data, err := os.ReadFile(config) //nolint:gosec // the path the daemon passes as --mcp-config
+		if err != nil {
+			return "", fmt.Errorf("read --mcp-config: %w", err)
+		}
+
+		config = string(data)
+	}
+
 	var c struct {
 		MCPServers map[string]struct {
 			URL string `json:"url"`

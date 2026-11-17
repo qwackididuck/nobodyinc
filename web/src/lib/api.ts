@@ -44,7 +44,9 @@ export interface AgentDefinition {
   model?: string;
   permissions?: { profile?: PermissionProfile; allow?: string[]; deny?: string[] };
   tools?: string[];
-  mcp?: string[];
+  // MCP servers ("gitlab") or single tools ("gitlab/delete_project") the
+  // agent does not get; it gets every other server (ADR-0010).
+  mcp_exclude?: string[];
   skills?: string[];
   from?: string;
   on_leave?: boolean;
@@ -449,13 +451,21 @@ export function setConfigProtection(value: ConfigProtection): Promise<Settings> 
   return sendJSON<Settings>("PUT", "/api/settings", { config_protection: value });
 }
 
+// Claude Code's MCP scopes (ADR-0010): project is .mcp.json, committed; local
+// is the user on this project only; user is the user on all their projects.
+export type MCPScope = "project" | "local" | "user";
+
+// An MCP server every agent gets, without any value in clear.
 export interface MCPServer {
   name: string;
+  source: MCPScope;
   type: string;
+  // The command without its arguments, or the URL without its query.
   target: string;
   // Environment variables the server refers to as ${NAME}; never their value.
   env: { name: string; set: boolean }[];
-  used_by: string[];
+  // Agents that exclude the whole server.
+  excluded_by: string[];
 }
 
 export function listMCPServers(): Promise<MCPServer[]> {

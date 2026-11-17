@@ -225,7 +225,7 @@ function MCPSection() {
   return (
     <section className={styles.section}>
       <h2 className={ui.title}>MCP servers</h2>
-      <p className={ui.sub}>The servers of .nobody/mcp.yaml. Each agent only gets the ones listed in its file. Edit the file to change them.</p>
+      <p className={ui.sub}>The servers of Claude Code&apos;s three scopes: the project&apos;s .mcp.json, yours on this project, and yours on all your projects. Every agent gets them all, except those its file excludes.</p>
       {error && <p className={ui.error}>{error}</p>}
       <div className={styles.servers}>
         {servers?.map((s) => (
@@ -244,12 +244,12 @@ function MCPSection() {
               </div>
             )}
             <div className={styles.users}>
-              {s.used_by.length === 0 ? (
-                "Given to no agent yet"
+              {s.excluded_by.length === 0 ? (
+                `Every agent gets it (${s.source} scope)`
               ) : (
                 <>
-                  Used by
-                  {s.used_by.map((u) => {
+                  Every agent but
+                  {s.excluded_by.map((u) => {
                     const a = byAddress.get(u);
                     return (
                       <span key={u} className={styles.user}>
@@ -273,7 +273,7 @@ function MCPSection() {
         </article>
         {servers?.length === 0 && <p className={ui.sub}>This project declares no MCP server.</p>}
       </div>
-      <p className={styles.foot}>.nobody/mcp.yaml is committed with the project: secrets stay in environment variables, written as ${"{NAME}"}.</p>
+      <p className={styles.foot}>.mcp.json is committed with the project: secrets stay in environment variables, written as ${"{NAME}"}.</p>
     </section>
   );
 }

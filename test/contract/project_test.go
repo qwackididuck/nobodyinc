@@ -3,12 +3,19 @@
 package contract
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 )
 
 // What an agent gets from the project it works in, with the flags it is
@@ -27,6 +34,7 @@ type projectInitEvent struct {
 	Skills        []string `json:"skills"`
 	SlashCommands []string `json:"slash_commands"`
 	Agents        []string `json:"agents"`
+	Tools         []string `json:"tools"`
 	MCPServers    []struct {
 		Name   string `json:"name"`
 		Source string `json:"source"`
@@ -246,4 +254,110 @@ func projectInit(t *testing.T, out []byte) projectInitEvent {
 	}
 
 	return found
+}
+
+// --disallowedTools takes an MCP server away with mcp__<server>, or one of its
+// tools with mcp__<server>__<tool>: how an agent's mcp_exclude is applied
+// (runtime.disallowedTools, ADR-0010).
+func TestDisallowedToolsExcludeMCPServersAndTools(t *testing.T) {
+	t.Parallel()
+
+	url := probeMCPServer(t, "search", "delete_document")
+	config := `{"mcpServers":{"probe":{"type":"http","url":"` + url + `"}}}`
+
+	tests := []struct {
+		name       string
+		disallowed string
+		want       []string
+	}{
+		{name: "nothing excluded", want: []string{"mcp__probe__delete_document", "mcp__probe__search"}},
+		{name: "one tool", disallowed: "mcp__probe__delete_document", want: []string{"mcp__probe__search"}},
+		{name: "the whole server", disallowed: "mcp__probe"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			args := append([]string{
+				"-p", "Answer OK.", "--model", "haiku", "--output-format", "stream-json", "--verbose",
+				"--strict-mcp-config", "--mcp-config", config,
+			}, agentSources...)
+			if tt.disallowed != "" {
+				args = append(args, "--disallowedTools", tt.disallowed)
+			}
+
+			var got []string
+
+			for _, tool := range projectInit(t, runCLI(t, "", nil, args)).Tools {
+				if strings.HasPrefix(tool, "mcp__probe") {
+					got = append(got, tool)
+				}
+			}
+
+			slices.Sort(got)
+
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("probe tools = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// `claude mcp add-json` and `claude mcp remove` write each scope where
+// mcpservers.Load reads it: how Nobody Inc changes MCP servers (ADR-0010).
+// Run in a throwaway project with a throwaway CLAUDE_CONFIG_DIR; no model
+// is called.
+func TestMCPCommandsWriteWhereNobodyReads(t *testing.T) {
+	t.Parallel()
+
+	for _, scope := range mcpservers.Scopes {
+		t.Run(string(scope), func(t *testing.T) {
+			t.Parallel()
+
+			project := t.TempDir()
+			configDir := t.TempDir()
+			env := []string{"CLAUDE_CONFIG_DIR=" + configDir}
+			server := `{"type":"http","url":"http://localhost:9380/mcp","headers":{"Authorization":"Bearer ${RAGFLOW_KEY}"}}`
+
+			runCLI(t, project, env, []string{"mcp", "add-json", "--scope", string(scope), "ragflow", server})
+
+			found, err := mcpservers.Load(project, filepath.Join(configDir, ".claude.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			got := found.Servers["ragflow"]
+			headers, _ := got.Config["headers"].(map[string]any)
+
+			if got.Scope != scope || headers["Authorization"] != "Bearer ${RAGFLOW_KEY}" {
+				t.Fatalf("after add-json: %+v, want ragflow in %s with its variable unexpanded", found.Servers, scope)
+			}
+
+			runCLI(t, project, env, []string{"mcp", "remove", "--scope", string(scope), "ragflow"})
+
+			if found, err := mcpservers.Load(project, filepath.Join(configDir, ".claude.json")); err != nil || len(found.Servers) != 0 {
+				t.Fatalf("after remove: %+v, %v", found.Servers, err)
+			}
+		})
+	}
+}
+
+// probeMCPServer serves an MCP server offering the given tools, and returns
+// its URL.
+func probeMCPServer(t *testing.T, tools ...string) string {
+	t.Helper()
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "probe"}, nil)
+	for _, name := range tools {
+		mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Does " + name + "."},
+			func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, struct{}, error) {
+				return nil, struct{}{}, nil
+			})
+	}
+
+	srv := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	t.Cleanup(srv.Close)
+
+	return srv.URL
 }

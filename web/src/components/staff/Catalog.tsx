@@ -144,12 +144,12 @@ function Sheet({ template, team: wanted }: { template: Template; team?: string }
         </dd>
         <dt>MCP</dt>
         <dd>
-          {(template.mcp ?? []).map((m) => (
+          <span className={ui.chip}>all servers</span>
+          {(template.mcp_exclude ?? []).map((m) => (
             <span key={m} className={ui.chip}>
-              {m}
+              except {m}
             </span>
           ))}
-          {!template.mcp?.length && <span className={ui.chip}>none</span>}
         </dd>
       </dl>
       {template.prompt && <pre className={styles.instructions}>{template.prompt}</pre>}

@@ -44,9 +44,11 @@ type Definition struct {
 	Permissions Permissions `json:"permissions,omitzero" yaml:"permissions,omitempty"`
 	// Tools may be used without asking, on top of the office tools.
 	Tools []string `json:"tools,omitempty" yaml:"tools,omitempty"`
-	// MCP lists servers of the project's .nobody/mcp.yaml.
-	MCP    []string `json:"mcp,omitempty"    yaml:"mcp,omitempty"`
-	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
+	// MCPExclude lists the MCP servers ("gitlab") or single tools
+	// ("gitlab/delete_project") the agent does not get. Every agent gets every
+	// server of Claude Code's three scopes otherwise (ADR-0010).
+	MCPExclude []string `json:"mcp_exclude,omitempty" yaml:"mcp_exclude,omitempty"`
+	Skills     []string `json:"skills,omitempty"      yaml:"skills,omitempty"`
 	// From is "<template>@<version>" for a recruit; information only.
 	From string `json:"from,omitempty" yaml:"from,omitempty"`
 	// OnLeave stops the agent while keeping its file and session.
@@ -206,9 +208,30 @@ func (d Definition) Validate() error {
 		errs = append(errs, errors.New("permissions.profile auto is not available with Haiku models: use sonnet or opus, or another profile"))
 	}
 
+	for _, e := range d.MCPExclude {
+		if _, _, err := SplitExclusion(e); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	if d.Version < 0 {
 		errs = append(errs, fmt.Errorf("version %d: must be positive", d.Version))
 	}
 
 	return errors.Join(errs...)
+}
+
+// exclusionPart is a server or tool name in an mcp_exclude entry.
+var exclusionPart = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
+
+// SplitExclusion splits an mcp_exclude entry into its server and, for a
+// single tool, the tool: "gitlab" excludes the whole server,
+// "gitlab/delete_project" one tool.
+func SplitExclusion(entry string) (string, string, error) {
+	server, tool, isTool := strings.Cut(entry, "/")
+	if !exclusionPart.MatchString(server) || (isTool && !exclusionPart.MatchString(tool)) {
+		return "", "", fmt.Errorf("mcp_exclude: %q: use a server name, or server/tool", entry)
+	}
+
+	return server, tool, nil
 }
