@@ -472,6 +472,44 @@ export function listMCPServers(): Promise<MCPServer[]> {
   return getJSON<MCPServer[]>("/api/mcp");
 }
 
+// MCPServerInput adds a server to one scope. The server is in Claude Code's
+// format; every env and headers value must refer to an environment variable
+// (${NAME}): secrets are never written.
+export interface MCPServerInput {
+  name: string;
+  scope: MCPScope;
+  server: {
+    type: "stdio" | "http" | "sse";
+    command?: string;
+    args?: string[];
+    url?: string;
+    env?: Record<string, string>;
+    headers?: Record<string, string>;
+  };
+}
+
+// addMCPServer writes the server through Claude Code; every agent restarts
+// once idle to get it. Returns the servers after the change.
+export function addMCPServer(input: MCPServerInput): Promise<MCPServer[]> {
+  return postJSON<MCPServer[]>("/api/mcp", input);
+}
+
+// removeMCPServer removes the server from its scope; every agent restarts
+// once idle.
+export function removeMCPServer(name: string, scope: MCPScope): Promise<void> {
+  return send("DELETE", `/api/mcp/${encodeURIComponent(name)}?scope=${scope}`);
+}
+
+export interface MCPTool {
+  name: string;
+  description?: string;
+}
+
+// listMCPTools has the daemon start the server and ask for its tools.
+export function listMCPTools(name: string): Promise<MCPTool[]> {
+  return getJSON<MCPTool[]>(`/api/mcp/${encodeURIComponent(name)}/tools`);
+}
+
 export async function sendMessage(draft: HumanDraft): Promise<Message> {
   const res = await fetch("/api/messages", {
     method: "POST",

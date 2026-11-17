@@ -2,13 +2,11 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 
-import { type ConfigProtection, getProject, listMCPServers, type MCPServer, setConfigProtection, setProjectPrompt } from "@/lib/api";
+import { type ConfigProtection, getProject, setConfigProtection, setProjectPrompt } from "@/lib/api";
 import { type Animations, saveAppearance, useAppearance } from "@/lib/appearance";
 import { useLive } from "@/lib/live";
-import { lookOf } from "@/lib/look";
-import { isDirector } from "../chat/agents";
-import { Sprite } from "../office/sprite";
 import ui from "../ui/ui.module.css";
+import { MCPServers } from "./MCPServers";
 import styles from "./settings.module.css";
 
 const SECTIONS = [
@@ -21,8 +19,8 @@ type Section = (typeof SECTIONS)[number]["id"];
 
 // Settings is a game-like options menu: the project prompt every agent
 // reads, how the daemon runs (read-only, except what to do when a delivery
-// changes .nobody/), the project's MCP servers (read-only), and how the
-// office looks on this computer.
+// changes .nobody/), the MCP servers every agent gets (MCPServers.tsx), and
+// how the office looks on this computer.
 export function Settings() {
   const [section, setSection] = useState<Section>("project");
 
@@ -37,7 +35,7 @@ export function Settings() {
           ))}
         </nav>
         {section === "project" && <ProjectSection />}
-        {section === "mcp" && <MCPSection />}
+        {section === "mcp" && <MCPServers />}
         {section === "appearance" && <AppearanceSection />}
       </div>
     </div>
@@ -203,78 +201,6 @@ function ProjectPrompt() {
       </div>
       {error && <p className={ui.error}>{error}</p>}
     </div>
-  );
-}
-
-function MCPSection() {
-  const { agents } = useLive();
-  const [servers, setServers] = useState<MCPServer[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const byAddress = new Map(agents.map((a) => [a.address, a]));
-
-  useEffect(() => {
-    let cancelled = false;
-    listMCPServers()
-      .then((s) => !cancelled && setServers(s))
-      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return (
-    <section className={styles.section}>
-      <h2 className={ui.title}>MCP servers</h2>
-      <p className={ui.sub}>The servers of Claude Code&apos;s three scopes: the project&apos;s .mcp.json, yours on this project, and yours on all your projects. Every agent gets them all, except those its file excludes.</p>
-      {error && <p className={ui.error}>{error}</p>}
-      <div className={styles.servers}>
-        {servers?.map((s) => (
-          <article key={s.name} className={styles.server}>
-            <div className={styles.serverName}>
-              {s.name} <span className={styles.serverType}>{s.type}</span>
-            </div>
-            <code className={styles.serverTarget}>{s.target}</code>
-            {s.env.length > 0 && (
-              <div className={styles.env}>
-                {s.env.map((v) => (
-                  <span key={v.name} className={v.set ? styles.envSet : styles.envMissing}>
-                    {v.set ? "✓" : "✗"} {v.name} {v.set ? "set" : "missing from the daemon's environment"}
-                  </span>
-                ))}
-              </div>
-            )}
-            <div className={styles.users}>
-              {s.excluded_by.length === 0 ? (
-                `Every agent gets it (${s.source} scope)`
-              ) : (
-                <>
-                  Every agent but
-                  {s.excluded_by.map((u) => {
-                    const a = byAddress.get(u);
-                    return (
-                      <span key={u} className={styles.user}>
-                        <span className={ui.mini}>
-                          <Sprite look={lookOf(u, a ? isDirector(a) : false)} />
-                        </span>
-                        {u}
-                      </span>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          </article>
-        ))}
-        <article className={`${styles.server} ${styles.locked}`}>
-          <div className={styles.serverName}>
-            nobody <span className={styles.serverType}>built in</span>
-          </div>
-          <p className={ui.sub}>The office: mailboxes, tickets, and the director&apos;s tools. Every agent gets it.</p>
-        </article>
-        {servers?.length === 0 && <p className={ui.sub}>This project declares no MCP server.</p>}
-      </div>
-      <p className={styles.foot}>.mcp.json is committed with the project: secrets stay in environment variables, written as ${"{NAME}"}.</p>
-    </section>
   );
 }
 
