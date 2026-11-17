@@ -2,7 +2,7 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 
-import { type ConfigProtection, listMCPServers, type MCPServer, setConfigProtection } from "@/lib/api";
+import { type ConfigProtection, getProject, listMCPServers, type MCPServer, setConfigProtection, setProjectPrompt } from "@/lib/api";
 import { type Animations, saveAppearance, useAppearance } from "@/lib/appearance";
 import { useLive } from "@/lib/live";
 import { lookOf } from "@/lib/look";
@@ -19,9 +19,10 @@ const SECTIONS = [
 
 type Section = (typeof SECTIONS)[number]["id"];
 
-// Settings is a game-like options menu: how the daemon runs (read-only,
-// except what to do when a delivery changes .nobody/), the project's MCP
-// servers (read-only), and how the office looks on this computer.
+// Settings is a game-like options menu: the project prompt every agent
+// reads, how the daemon runs (read-only, except what to do when a delivery
+// changes .nobody/), the project's MCP servers (read-only), and how the
+// office looks on this computer.
 export function Settings() {
   const [section, setSection] = useState<Section>("project");
 
@@ -86,7 +87,8 @@ function ProjectSection() {
   return (
     <section className={styles.section}>
       <h2 className={ui.title}>Project and daemon</h2>
-      <p className={ui.sub}>What this office runs on. Except the first option, these are set when the daemon starts.</p>
+      <p className={ui.sub}>What this office runs on. Except the first two options, these are set when the daemon starts.</p>
+      <ProjectPrompt />
       <Option
         label="When an agent's commits change .nobody/"
         help="Agents cannot edit their own configuration; a shell command could. Block refuses the delivery until the agent undoes it; Warn delivers and warns you. Saved in ~/.nobody/settings.yaml, applies at once."
@@ -127,6 +129,80 @@ function ProjectSection() {
         <code>{settings.claude_path}</code>
       </Option>
     </section>
+  );
+}
+
+// ProjectPrompt edits .nobody/project.md: what every agent of the project
+// should know. Saving restarts every agent with a new session once idle.
+function ProjectPrompt() {
+  const [saved, setSaved] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getProject()
+      .then((p) => {
+        if (cancelled) return;
+        setSaved(p.prompt);
+        setText(p.prompt);
+      })
+      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function save() {
+    setBusy(true);
+    try {
+      const p = await setProjectPrompt(text);
+      setSaved(p.prompt);
+      setText(p.prompt);
+      setError(null);
+      setNote("Saved. Every agent restarts with a new session once its turn is over.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.block}>
+      <div className={styles.optionLabel}>
+        <strong>Project prompt</strong>
+        <span>
+          What every agent should know about this project: the stack, the conventions, where things are. It comes after your own CLAUDE.md and before each
+          team&apos;s instructions. Saved in .nobody/project.md.
+        </span>
+      </div>
+      <textarea
+        id="project-prompt"
+        className={`${ui.textarea} ${styles.projectPrompt}`}
+        placeholder={"e.g. A Go CLI with a Taskfile. Run `task check` before closing a ticket. Conventional commits."}
+        value={text}
+        disabled={saved === null}
+        onChange={(e) => {
+          setText(e.target.value);
+          setNote(null);
+        }}
+      />
+      <div className={styles.blockActions}>
+        <button type="button" className={ui.btnPrimary} disabled={busy || saved === null || text === saved} onClick={() => void save()}>
+          Save
+        </button>
+        {saved !== null && text !== saved && (
+          <button type="button" className={ui.link} onClick={() => setText(saved)}>
+            Undo changes
+          </button>
+        )}
+        {note && <span className={ui.note}>{note}</span>}
+      </div>
+      {error && <p className={ui.error}>{error}</p>}
+    </div>
   );
 }
 

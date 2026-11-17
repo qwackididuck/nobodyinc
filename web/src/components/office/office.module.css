@@ -410,21 +410,64 @@
   color: #c0392b;
 }
 
-.vacant {
+/* The plot: an empty lot where the next team's room will be built. */
+.plot {
   position: absolute;
-  left: 40px;
-  top: 70px;
-  padding: 8px 10px;
-  border: 2px dashed var(--ink-px);
-  background: rgba(244, 231, 201, 0.85);
-  color: var(--ink-px);
-  font: 12px var(--font-label);
-  line-height: 1.4;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 12px;
+  border: 3px dashed #7a5232;
+  background: repeating-linear-gradient(45deg, rgba(78, 51, 32, 0.08) 0 10px, transparent 10px 20px);
+  color: #4e3320;
+  text-align: center;
+  transition:
+    left 0.7s steps(7),
+    top 0.7s steps(7);
 }
 
-.vacant span {
-  font-size: 9px;
+.plot:hover,
+.plot:focus-visible {
+  border-color: #a4492a;
+  background-color: rgba(255, 233, 194, 0.45);
   color: #a4492a;
+}
+
+.plotPlus {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 3px solid currentcolor;
+  font: 28px/1 var(--font-label);
+}
+
+.plotLabel {
+  font: 11px var(--font-label);
+}
+
+.plotHint {
+  max-width: 22ch;
+  font: 12px/1.35 var(--font-ui);
+  color: #6b4a2e;
+}
+
+/* With no team yet, the plot calls for attention. */
+.plotFirst .plotPlus {
+  animation: beckon 1.2s steps(2) infinite;
+}
+
+@keyframes beckon {
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plotFirst .plotPlus {
+    animation: none;
+  }
 }
 
 /* ---- Desks -------------------------------------------------------------------- */

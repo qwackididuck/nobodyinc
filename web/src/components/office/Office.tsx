@@ -11,6 +11,7 @@
 //     when it does not fit), then it sits down;
 //   - a dismissed agent walks out and its desk is taken down;
 //   - a new team gets its room built; a removed team's room is taken down;
+//     the plot, an empty lot after the teams, opens the team dialog;
 //   - a finished feature: the librarian fetches its tickets from the
 //     director's office and files them in the archives.
 // Paper planes are launched by the event stream (message.sent).
@@ -27,6 +28,7 @@ import { Desk } from "./Desk";
 import { Sprite } from "./sprite";
 import { ArchivesPanel } from "./ArchivesPanel";
 import { FeatureReview } from "./FeatureReview";
+import { TeamDialog } from "../teams/TeamDialog";
 import { addWalker, celebrate, dismantle, flyPlane, walk, works } from "./effects";
 import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, LIBRARIAN, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
 import styles from "./office.module.css";
@@ -36,7 +38,6 @@ interface Props {
   binUnread: number;
   onSelectAgent: (address: string) => void;
   onOpenBin: () => void;
-  onHireDirector: () => void;
 }
 
 type Scene =
@@ -69,7 +70,7 @@ const orgKey = (agents: Agent[], teams: Team[]) =>
 
 let nextSceneID = 1;
 
-export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDirector }: Props) {
+export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props) {
   const { agents, teams, tickets, features, loaded } = useLive();
   const appearance = useAppearance();
   const moving = appearance.animations === "full";
@@ -86,6 +87,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
   // longer active), so that the panel can say how it went.
   const [reviewing, setReviewing] = useState<Feature | null>(null);
   const [archivesOpen, setArchivesOpen] = useState(false);
+  const [creatingTeam, setCreatingTeam] = useState(false);
   // While the librarian is out fetching tickets, its chair is empty.
   const [librarianAway, setLibrarianAway] = useState(false);
   const [seenFinished, setSeenFinished] = useState<string | null>(null);
@@ -261,34 +263,36 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, onHireDi
 
   return (
     <section className={styles.office} aria-label="Office">
-      <Banner onOpenDirector={() => (director ? onSelectAgent(director.address) : onHireDirector())} onReview={() => setReviewing(active ?? null)} />
+      <Banner onOpenDirector={() => director && onSelectAgent(director.address)} onReview={() => setReviewing(active ?? null)} />
+      {creatingTeam && <TeamDialog onClose={() => setCreatingTeam(false)} />}
       {reviewing && <FeatureReview feature={reviewing} onClose={() => setReviewing(null)} />}
       {archivesOpen && <ArchivesPanel onClose={() => setArchivesOpen(false)} onOpenChat={onSelectAgent} />}
       <div className={styles.wrap}>
         <div className={styles.scene} style={{ width: SCENE_WIDTH, height: Math.max(layout.height, full.height) }}>
           <Wall binUnread={binUnread} onOpenBin={onOpenBin} />
           <div className={styles.floor} style={{ top: WALL_HEIGHT }} />
-          {layout.rooms.map((room, i) => (
+          {layout.rooms.map((room) =>
+            room.kind === "plot" ? (
+              <Plot key={room.id} room={room} first={teams.length === 0} onOpen={() => setCreatingTeam(true)} />
+            ) : (
             <RoomView
               key={room.id}
               room={room}
-              carpet={room.kind === "director" ? undefined : teamColors(i - 1).carpet}
+              carpet={carpetOf(room, teams)}
               building={building.has(room.id)}
               queue={room.kind === "team" ? queue(room.id) : 0}
             >
               {room.kind === "archives" && <Shelves count={features.filter((f) => f.status === "finished").length} onOpen={() => setArchivesOpen(true)} />}
               {room.kind === "director" && (
                 <DirectorProps
-                  room={room}
-                  vacant={!director}
                   proposals={proposals}
                   done={featureTickets.filter((t) => t.status === "done").length}
                   total={featureTickets.length}
-                  onHire={onHireDirector}
                 />
               )}
             </RoomView>
-          ))}
+            ),
+          )}
           {layout.rooms.flatMap((room) =>
             room.desks.map(({ address, at }) => {
               if (address === LIBRARIAN) return <Librarian key={address} at={at} away={librarianAway} onOpen={() => setArchivesOpen(true)} />;
@@ -353,35 +357,44 @@ function RoomView({ room, carpet, building, queue, children }: RoomViewProps) {
   );
 }
 
-interface DirectorPropsProps {
-  room: Room;
-  vacant: boolean;
-  proposals: number;
-  done: number;
-  total: number;
-  onHire: () => void;
+// carpetOf is a room's floor: each team its colour (the same as in the
+// kanban), the archives the next one, the director its own rug.
+function carpetOf(room: Room, teams: Team[]): string | undefined {
+  if (room.kind === "team") return teamColors(teams.findIndex((t) => t.id === room.id)).carpet;
+  if (room.kind === "archives") return teamColors(teams.length).carpet;
+  return undefined;
+}
+
+// Plot is the empty lot after the teams: a "+" that opens the team dialog.
+// While the project has no team, it says so.
+function Plot({ room, first, onOpen }: { room: Room; first: boolean; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`${styles.plot} ${first ? styles.plotFirst : ""}`}
+      style={{ left: room.x, top: room.y, width: room.width, height: room.height }}
+      onClick={onOpen}
+    >
+      <span className={styles.plotPlus} aria-hidden="true">
+        +
+      </span>
+      <span className={styles.plotLabel}>{first ? "Create your first team" : "New team"}</span>
+      {first && <span className={styles.plotHint}>Then recruit its members from the catalog, or ask the director.</span>}
+    </button>
+  );
 }
 
 // The director's board: proposals waiting for the human and the active
-// feature's progress. While the office is vacant, a sign offers to recruit.
-function DirectorProps({ vacant, proposals, done, total, onHire }: DirectorPropsProps) {
+// feature's progress.
+function DirectorProps({ proposals, done, total }: { proposals: number; done: number; total: number }) {
   return (
-    <>
-      <span className={styles.board}>
-        PROPOSALS
-        <br />
-        <b>{proposals} waiting</b>
-        <br />
-        TICKETS {done}/{total}
-      </span>
-      {vacant && (
-        <button type="button" className={styles.vacant} onClick={onHire}>
-          VACANT
-          <br />
-          <span>Recruit a director</span>
-        </button>
-      )}
-    </>
+    <span className={styles.board}>
+      PROPOSALS
+      <br />
+      <b>{proposals} waiting</b>
+      <br />
+      TICKETS {done}/{total}
+    </span>
   );
 }
 

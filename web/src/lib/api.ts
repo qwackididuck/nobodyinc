@@ -7,6 +7,8 @@ export interface Agent {
   team: string;
   name: string;
   role: string;
+  // What to ask this agent about, and what it decides.
+  expertise?: string;
   status: AgentStatus;
   on_leave: boolean;
   // Template it was recruited from, "<template>@<version>" (information only).
@@ -20,6 +22,9 @@ export interface Agent {
 export interface Team {
   id: string;
   goal?: string;
+  // Instructions shared by the team's agents (.nobody/teams/<id>/TEAM.md);
+  // empty means the goal alone.
+  prompt?: string;
 }
 
 export const PROFILES = ["default", "allowlist", "auto"] as const;
@@ -31,6 +36,8 @@ export interface AgentDefinition {
   description?: string;
   version?: number;
   role?: string;
+  // Public: what colleagues should ask this agent about, and what it decides.
+  expertise?: string;
   model?: string;
   permissions?: { profile?: PermissionProfile; allow?: string[]; deny?: string[] };
   tools?: string[];
@@ -60,6 +67,32 @@ export function listTeams(): Promise<Team[]> {
   return getJSON<Team[]>("/api/teams");
 }
 
+// createTeam adds a team (a room of the office), without agents yet.
+export function createTeam(team: Team): Promise<Team> {
+  return postJSON<Team>("/api/teams", team);
+}
+
+// updateTeam changes a team's goal and prompt; its agents restart with a
+// fresh session once idle.
+export function updateTeam(id: string, change: { goal: string; prompt: string }): Promise<Team> {
+  return sendJSON<Team>("PUT", `/api/teams/${encodeURIComponent(id)}`, change);
+}
+
+// The project's shared prompt (.nobody/project.md), given to every agent.
+export interface Project {
+  prompt: string;
+}
+
+export function getProject(): Promise<Project> {
+  return getJSON<Project>("/api/project");
+}
+
+// setProjectPrompt changes the project prompt; every agent restarts with a
+// fresh session once idle.
+export function setProjectPrompt(prompt: string): Promise<Project> {
+  return sendJSON<Project>("PUT", "/api/project", { prompt });
+}
+
 export function listTemplates(): Promise<Template[]> {
   return getJSON<Template[]>("/api/catalog");
 }
@@ -71,11 +104,6 @@ export function saveTemplate(name: string, definition: AgentDefinition): Promise
 // deleteTemplate removes a user template (built-in ones cannot be deleted).
 export function deleteTemplate(name: string): Promise<void> {
   return send("DELETE", `/api/catalog/${encodeURIComponent(name)}`);
-}
-
-// recruitDirector hires the director (god), who has no team.
-export function recruitDirector(body: { name: string; template: string } | { name: string; definition: AgentDefinition }): Promise<Agent> {
-  return postJSON<Agent>("/api/director", body);
 }
 
 // recruitAgent hires from a template, or creates from a definition.

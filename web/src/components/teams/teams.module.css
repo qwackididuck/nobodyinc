@@ -1,0 +1,26 @@
+/* The team dialog (TeamDialog.tsx). */
+
+.form {
+  display: grid;
+  gap: 14px;
+}
+
+.form h3 {
+  margin: 0;
+}
+
+.hint {
+  font: 12px var(--font-ui);
+  color: var(--muted);
+}
+
+.prompt {
+  min-height: 140px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}

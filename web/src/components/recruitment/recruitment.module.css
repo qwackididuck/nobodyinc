@@ -278,9 +278,31 @@
   color: var(--muted);
 }
 
+.staffBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.staffTeamHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .staffTeam h3 {
-  margin: 0 0 8px;
+  margin: 0;
   font: 12px var(--font-label);
+  color: var(--muted);
+}
+
+.teamGoal {
+  min-width: 0;
+  font-size: 13px;
   color: var(--muted);
 }
 

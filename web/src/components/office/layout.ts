@@ -4,9 +4,10 @@
 // The scene is SCENE_WIDTH wide. The wall runs along the top, with the
 // entrance door on the right: newcomers walk in through it, dismissed agents
 // walk out. Below, rooms are laid out in rows, left to right: the director's
-// office first (always shown, vacant while the project has no director), then
-// one room per team in the order of .nobody/org.yaml, then the archives, where
-// the librarian files the tickets of finished features. A room is as wide as its
+// office first, then one room per team in the order of .nobody/org.yaml, then
+// the plot (an empty lot with a "+" where the next team's room will be built),
+// then the archives, where the librarian files the tickets of finished
+// features. A room is as wide as its
 // desks need; when a row is full, the next room starts a new row, and the
 // floor grows downwards (the office scrolls). Between two rows runs a
 // corridor, where walkers go.
@@ -31,6 +32,7 @@ const DESK_STEP_Y = 150;
 const MIN_ROOM_WIDTH = 200;
 const DIRECTOR_ROOM_WIDTH = 340;
 const ARCHIVES_ROOM_WIDTH = 300;
+const PLOT_ROOM_WIDTH = 200;
 
 // The librarian is a character of the office, not an agent: it carries the
 // tickets of finished features to the archives. Its desk uses this address.
@@ -49,8 +51,8 @@ export interface Point {
 }
 
 export interface Room {
-  id: string; // "director", "archives" or the team ID
-  kind: "director" | "team" | "archives";
+  id: string; // "director", "plot", "archives" or the team ID
+  kind: "director" | "team" | "plot" | "archives";
   x: number;
   y: number;
   width: number;
@@ -82,6 +84,7 @@ function roomSize(kind: Room["kind"], members: number): { width: number; height:
   const height = ROOM_PADDING_TOP + DESK_HEIGHT + (deskRows - 1) * DESK_STEP_Y + ROOM_PADDING_BOTTOM;
   if (kind === "director") return { width: DIRECTOR_ROOM_WIDTH, height, perRow: 1 };
   if (kind === "archives") return { width: ARCHIVES_ROOM_WIDTH, height, perRow: 1 };
+  if (kind === "plot") return { width: PLOT_ROOM_WIDTH, height, perRow: 1 };
   const width = Math.max(MIN_ROOM_WIDTH, 2 * ROOM_PADDING_X + perRow * DESK_STEP_X - (DESK_STEP_X - DESK_WIDTH));
   return { width, height, perRow };
 }
@@ -90,6 +93,7 @@ export function layoutOffice(input: OfficeInput): OfficeLayout {
   const wanted: { id: string; kind: Room["kind"]; members: string[] }[] = [
     { id: "director", kind: "director", members: input.director ? [input.director] : [] },
     ...input.teams.map((t) => ({ id: t.id, kind: "team" as const, members: t.members })),
+    { id: "plot", kind: "plot", members: [] },
     { id: "archives", kind: "archives", members: [LIBRARIAN] },
   ];
 
