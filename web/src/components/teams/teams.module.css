@@ -18,6 +18,27 @@
   min-height: 140px;
 }
 
+/* Advanced settings, folded by default (Advanced). */
+.advanced {
+  border-top: 2px dashed var(--line);
+  padding-top: 10px;
+}
+
+.advanced summary {
+  cursor: pointer;
+  font: 10px var(--font-label);
+  color: var(--muted);
+}
+
+.advanced summary:hover,
+.advanced[open] summary {
+  color: var(--text);
+}
+
+.advancedBody {
+  margin-top: 12px;
+}
+
 /* The teams its members may start conversations with (Flows). */
 .flows {
   display: grid;

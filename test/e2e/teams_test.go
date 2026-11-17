@@ -168,10 +168,19 @@ func TestBlockThroughTheAPI(t *testing.T) {
 		t.Fatalf("a block is one-way: tester@qa -> dev1@dev refused: %v", err)
 	}
 
+	// A team can be created with its block list.
+	call(t, d, http.MethodPost, "/api/teams", `{"id":"docs","block":["ghosts"]}`, http.StatusBadRequest)
+
+	if team := string(call(t, d, http.MethodPost, "/api/teams", `{"id":"docs","block":["qa"]}`, http.StatusCreated)); !strings.Contains(team, `"block":["qa"]`) {
+		t.Fatalf("POST /api/teams = %s", team)
+	}
+
 	call(t, d, http.MethodDelete, "/api/teams/qa", "", http.StatusAccepted)
 
-	if dev, _ := live.Current().Team("dev"); len(dev.Block) != 0 {
-		t.Fatalf("dev still blocks %v after qa was deleted", dev.Block)
+	for _, id := range []string{"dev", "docs"} {
+		if team, _ := live.Current().Team(id); len(team.Block) != 0 {
+			t.Fatalf("%s still blocks %v after qa was deleted", id, team.Block)
+		}
 	}
 }
 

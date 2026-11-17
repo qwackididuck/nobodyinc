@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 
 import { createTeam, deleteTeam, type Team, updateTeam } from "@/lib/api";
 import { useLive } from "@/lib/live";
@@ -17,9 +17,9 @@ interface Props {
   onDone?: (team: Team) => void;
 }
 
-// TeamDialog creates a team (a new room of the office: a name, a goal, and
-// the instructions its members share), or edits one's goal, prompt and the
-// teams its members may start conversations with, or deletes it. Its members
+// TeamDialog creates a team (a new room of the office: a name, a goal, the
+// instructions its members share and, under advanced settings, the teams its
+// members may start conversations with), or edits them, or deletes the team. Its members
 // restart with a fresh session once idle when the goal or prompt changes
 // (docs/agents.md, "The prompt cascade"); a change of flows only sends them a
 // notice (ADR-0009); deleting the team dismisses them.
@@ -39,7 +39,7 @@ export function TeamDialog({ team, onClose, onDone }: Props) {
     e.stopPropagation();
     setBusy(true);
     try {
-      const saved = team ? await updateTeam(team.id, { goal, prompt, block }) : await createTeam({ id: id.trim(), goal, prompt });
+      const saved = team ? await updateTeam(team.id, { goal, prompt, block }) : await createTeam({ id: id.trim(), goal, prompt, block });
       onDone?.(saved);
       onClose();
     } catch (err) {
@@ -98,7 +98,9 @@ export function TeamDialog({ team, onClose, onDone }: Props) {
           />
           <span className={styles.hint}>Saved in .nobody/teams/{(team?.id ?? id.trim()) || "<team>"}/TEAM.md, after the project prompt in each member&apos;s instructions.</span>
         </label>
-        {team && <Flows team={team.id} block={block} onBlock={setBlock} />}
+        <Advanced blocked={block.length}>
+          <Flows team={team?.id ?? id.trim()} block={block} onBlock={setBlock} />
+        </Advanced>
         {error && <p className={ui.error}>{error}</p>}
         <div className={styles.actions}>
           <button type="submit" className={ui.btnPrimary} disabled={busy || (!editing && !id.trim())}>
@@ -114,6 +116,20 @@ export function TeamDialog({ team, onClose, onDone }: Props) {
   );
 }
 
+// Advanced folds the settings most teams never change (today the flows),
+// closed by default; its summary says how many teams are blocked.
+function Advanced({ blocked, children }: { blocked: number; children: ReactNode }) {
+  return (
+    <details className={styles.advanced}>
+      <summary>
+        Advanced settings
+        {blocked > 0 && <span className={styles.hint}> · {blocked === 1 ? "1 team blocked" : `${blocked} teams blocked`}</span>}
+      </summary>
+      <div className={styles.advancedBody}>{children}</div>
+    </details>
+  );
+}
+
 // Flows lists the other teams, each with a box: checked, the team's members
 // may start conversations with it (the default); unchecked, it is blocked
 // and they can only answer its members (ADR-0009).
@@ -122,7 +138,7 @@ function Flows({ team, block, onBlock }: { team: string; block: string[]; onBloc
   const others = teams.filter((t) => t.id !== team);
 
   if (others.length === 0) {
-    return null;
+    return <p className={styles.hint}>No other team yet: every flow is open. Once there are others, choose here whom this team may start conversations with.</p>;
   }
 
   function toggle(other: string, open: boolean) {
