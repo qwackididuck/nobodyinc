@@ -24,3 +24,23 @@
   align-items: center;
   gap: 10px;
 }
+
+/* Deleting the team, below the form. */
+.danger {
+  padding-top: 12px;
+  border-top: 2px dashed var(--line);
+}
+
+.confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 2px dashed var(--danger);
+  font-size: 13px;
+}
+
+.warning {
+  padding: 6px 8px;
+  border: 2px solid var(--warn);
+  color: var(--warn);
+}

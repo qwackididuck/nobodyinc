@@ -65,6 +65,15 @@ func TestOrgChanges(t *testing.T) {
 			want:   []orgChange{{Text: "New team qa: Test it."}},
 		},
 		{
+			name:   "team closed",
+			change: func(o *org.Org) *org.Org { return o.WithoutTeam("dev") },
+			want: []orgChange{
+				{Text: "Team dev was closed, with its members."},
+				{About: "dev1@dev", Text: "dev1@dev (Developer) left the organization."},
+				{About: "dev2@dev", Text: "dev2@dev (Developer) left the organization."},
+			},
+		},
+		{
 			name: "new instructions only: nothing to tell",
 			change: func(o *org.Org) *org.Org {
 				c, _ := o.WithAgent("dev", org.Agent{Name: "dev1", Role: "Developer", Prompt: "New."})

@@ -203,7 +203,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	cat := catalog.New(opts.CatalogDir)
 
-	staffService := newStaffing(ctx, opts, cat, supervisor, messages, bus)
+	staffService := newStaffing(ctx, opts, staffingDeps{catalog: cat, agents: supervisor, messages: messages, bus: bus, git: git})
 
 	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
 
@@ -361,23 +361,36 @@ func hasMail(ctx context.Context, st *store.Store, address string) (bool, error)
 	return false, nil
 }
 
+// staffingDeps is what the staffing service is wired to.
+type staffingDeps struct {
+	catalog  *catalog.Catalog
+	agents   staffing.Applier
+	messages *messaging.Service
+	bus      *events.Bus
+	git      *gitWorkspace
+}
+
 // newStaffing returns the service that changes the organization, or nil when
-// it is fixed (not an *org.Live, as in some tests). After each change, the
-// control room is told over SSE and the agents get an org-change notice.
-func newStaffing(ctx context.Context, opts Options, cat *catalog.Catalog, agents staffing.Applier,
-	messages *messaging.Service, bus *events.Bus,
-) *staffing.Service {
+// it is fixed (not an *org.Live, as in some tests). After each change, before
+// the agents are brought in line with it: a team created during a feature
+// gets its worktree, the control room is told over SSE, and the agents get an
+// org-change notice.
+func newStaffing(ctx context.Context, opts Options, deps staffingDeps) *staffing.Service {
 	live, ok := opts.Org.(*org.Live)
 	if !ok {
 		return nil
 	}
 
-	notices := &orgNotices{messages: messages, logger: opts.Logger}
+	notices := &orgNotices{messages: deps.messages, logger: opts.Logger}
 
 	return &staffing.Service{
-		Org: live, Catalog: cat, Agents: agents,
+		Org: live, Catalog: deps.catalog, Agents: deps.agents,
 		OnReload: func(before, after *org.Org) {
-			bus.Publish(events.Event{Type: events.OrgChanged, Data: events.Empty{}})
+			if err := deps.git.prepareNewTeams(context.WithoutCancel(ctx), before, after); err != nil {
+				opts.Logger.Error("prepare the worktree of a new team", "err", err)
+			}
+
+			deps.bus.Publish(events.Event{Type: events.OrgChanged, Data: events.Empty{}})
 			notices.send(context.WithoutCancel(ctx), before, after)
 		},
 	}

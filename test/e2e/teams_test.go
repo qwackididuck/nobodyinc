@@ -15,6 +15,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
+	"github.com/qwackididuck/nobodyinc/internal/work"
 )
 
 // The director creates a team with team_create and recruits into it: the
@@ -127,4 +128,54 @@ func orgNotices(t *testing.T, d *daemon.Daemon, to string) []string {
 	}
 
 	return bodies
+}
+
+// A team created while a feature is active gets its worktree before its
+// first agent starts in it. Deleting the team dismisses its members, and
+// finishing the feature removes its worktree, although the team is gone.
+func TestTeamDuringAFeature(t *testing.T) {
+	t.Parallel()
+
+	live := staffProject(t)
+	dir := live.Current().ProjectDir
+	initGitProject(t, dir)
+
+	d := startDaemon(t, live)
+	ctx := context.Background()
+
+	f, err := d.Tickets.StartFeature(ctx, org.HumanAddress, work.FeatureDraft{Title: "Orders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	call(t, d, http.MethodPost, "/api/teams", `{"id":"qa","goal":"Test it"}`, http.StatusCreated)
+	call(t, d, http.MethodPost, "/api/teams/qa/agents", `{"name":"tester","template":"qa-engineer"}`, http.StatusCreated)
+	eventually(t, "tester@qa started", func() bool { return d.Statuses.Get("tester@qa") == runtime.StatusIdle })
+
+	worktree := d.WorkDir("tester@qa")
+	if info, err := os.Stat(worktree); err != nil || !info.IsDir() || worktree == dir {
+		t.Fatalf("tester@qa works in %s, which should be the qa team's worktree (%v)", worktree, err)
+	}
+
+	call(t, d, http.MethodDelete, "/api/teams/ghosts", "", http.StatusNotFound)
+	call(t, d, http.MethodDelete, "/api/teams/qa?now=true", "", http.StatusAccepted)
+	eventually(t, "tester@qa dismissed", func() bool { return !hasAgent(t, d, "tester@qa") })
+
+	if _, err := os.Stat(filepath.Join(dir, org.ConfigDirName, "teams", "qa")); !os.IsNotExist(err) {
+		t.Fatalf("the team's directory is still there (err %v)", err)
+	}
+
+	eventually(t, "dev1@dev told the team was closed", func() bool {
+		return strings.Contains(strings.Join(orgNotices(t, d, "dev1@dev"), "\n"), "Team qa was closed")
+	})
+
+	if _, err := d.Tickets.FinishFeature(ctx, org.HumanAddress, f.ID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	eventually(t, "the deleted team's worktree removed", func() bool {
+		_, err := os.Stat(worktree)
+
+		return os.IsNotExist(err)
+	})
 }

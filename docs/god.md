@@ -39,7 +39,7 @@ you ──── request ──────────────────�
 | Create tickets for | its team and teams it has a channel to | any team, with an assignee |
 | Change a ticket's status | its own tickets | any ticket |
 | Propose a feature | no | yes (`feature_propose`); you start or refuse it |
-| Create teams | no | yes (`team_create`) |
+| Create and delete teams | no | yes (`team_create`; `team_delete` only with your agreement) |
 | Recruit, create, edit, put on leave, dismiss agents | no | yes, freely; never itself |
 
 Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `ticket_*`):
@@ -49,6 +49,7 @@ Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `tick
 | `feature_propose` | Proposes a feature (title, need, acceptance criteria, base branch). |
 | `org_overview` | The active feature, and for each team its goal and prompt, its agents (role, expertise, status, on leave) and tickets (open, in progress, done and canceled counts). |
 | `team_create` | Creates a team (id, goal, and the prompt its members share, which it writes from the goal). |
+| `team_delete` | Deletes a team and dismisses its members; its instructions ask it to get your agreement first. |
 | `template_list`, `agent_get` | The catalog; an agent's definition. |
 | `agent_recruit`, `agent_create` | Recruit from a template, or create from a definition written from scratch, into a team. |
 | `agent_edit` | Replace an agent's definition (a new role or new instructions restart it with a fresh session). |

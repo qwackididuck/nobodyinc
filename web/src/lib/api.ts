@@ -78,6 +78,12 @@ export function updateTeam(id: string, change: { goal: string; prompt: string })
   return sendJSON<Team>("PUT", `/api/teams/${encodeURIComponent(id)}`, change);
 }
 
+// deleteTeam removes a team and dismisses its members: each stops once idle
+// (or at once with now). Its tickets stay; those in progress go back to open.
+export function deleteTeam(id: string, opts: ApplyOptions = {}): Promise<void> {
+  return send("DELETE", `/api/teams/${encodeURIComponent(id)}${query(opts)}`);
+}
+
 // The project's shared prompt (.nobody/project.md), given to every agent.
 export interface Project {
   prompt: string;

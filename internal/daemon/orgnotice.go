@@ -24,8 +24,8 @@ type orgChange struct {
 }
 
 // orgChanges lists what changed between two snapshots of the organization:
-// arrivals, departures, leaves and returns, new roles or expertise, and new
-// teams or goals. It is pure: the order follows the organization.
+// arrivals, departures, leaves and returns, new roles or expertise, and new,
+// changed or closed teams. It is pure: the order follows the organization.
 func orgChanges(before, after *org.Org) []orgChange {
 	var changes []orgChange
 
@@ -44,6 +44,12 @@ func orgChanges(before, after *org.Org) []orgChange {
 		old, existed := before.Member(m.Address)
 		if text := memberChange(old, m, existed); text != "" {
 			changes = append(changes, orgChange{About: m.Address, Text: text})
+		}
+	}
+
+	for _, t := range before.Teams {
+		if _, stays := after.Team(t.ID); !stays {
+			changes = append(changes, orgChange{Text: "Team " + t.ID + " was closed, with its members."})
 		}
 	}
 

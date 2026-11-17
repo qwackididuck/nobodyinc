@@ -123,7 +123,7 @@ channels:            # one-way: dev may start conversations with specs
     to: specs
 ```
 
-A team exists when it is declared here; its members are the files in `teams/<team>/`. A new project has no team: create them from the control room (the "+" plot of the office, or Recruitment), with `POST /api/teams`, or by asking the director (`team_create`). `PUT /api/teams/{team}` changes a team's goal and prompt. When the daemon writes `org.yaml`, it rewrites the whole file (comments are lost).
+A team exists when it is declared here; its members are the files in `teams/<team>/`. A new project has no team: create them from the control room (the "+" plot of the office, or Recruitment), with `POST /api/teams`, or by asking the director (`team_create`). A team's sign in the office, or "Edit team" in Staff, changes its goal and prompt, or deletes it (see "Lifecycle"). When the daemon writes `org.yaml`, it rewrites the whole file (comments are lost).
 
 ## The prompt cascade
 
@@ -174,7 +174,7 @@ The name `nobody` is reserved for the office server.
 | **Recruit** | Copies a template into `teams/<team>/<name>.md` with `from`, then starts the agent. |
 | **Create** | Writes an agent file directly (no template), then starts it. Or writes a template to `~/.nobody/catalog/`. |
 | **Edit** | Rewrites the agent file. The agent restarts once idle: with a fresh session when its role or instructions changed (a resumed Claude Code session keeps its original instructions), otherwise with `--resume`, keeping its memory; "new session" forces a fresh one. Never touches the template. |
-| **Team** | `POST /api/teams` declares a team in `org.yaml` and writes its `TEAM.md`; `PUT /api/teams/{team}` changes its goal and prompt (its members restart with a fresh session once idle). |
+| **Team** | `POST /api/teams` declares a team in `org.yaml` and writes its `TEAM.md`; `PUT /api/teams/{team}` changes its goal and prompt (its members restart with a fresh session once idle). `DELETE /api/teams/{team}` deletes `teams/<team>/`, then removes the team and its channels from `org.yaml`: every member is dismissed (its ticket in progress goes back to open, its undelivered mail is returned), and the team's tickets stay for you to shred or keep. During a feature, a new team gets its worktree at once, and a deleted team's worktree is removed when the feature is finished. |
 | **Leave** | Sets `on_leave: true`. Once idle the agent stops; its file and session are kept. Its ticket in progress goes back to the team queue, it is skipped by team addressing (`@dev`) and queue notifications, and direct mail waits in its mailbox; senders get a notice from `nobody`. **Return** clears the flag and resumes its session. |
 | **Dismiss** | The file is deleted at once; once idle, the agent stops. During the rest of its current turn it is no longer in the organization, so it can no longer send mail or close its ticket (use `now` to stop it at once). Its ticket in progress goes back to the team queue; undelivered mail is returned to the senders with a notice. History (messages, tickets, commits) is kept. |
 
@@ -183,7 +183,7 @@ All of these go through the daemon's API (`api/openapi.yaml`, `internal/staffing
 | Action | Endpoint |
 |---|---|
 | Templates | `GET /api/catalog`, `GET /api/catalog/{name}`, `PUT /api/catalog/{name}`, `DELETE /api/catalog/{name}` (user templates only; deleting an override brings the built-in one back) |
-| Teams | `GET /api/teams`, `POST /api/teams`, `PUT /api/teams/{team}` |
+| Teams | `GET /api/teams`, `POST /api/teams`, `PUT /api/teams/{team}`, `DELETE /api/teams/{team}` (`?now=true` not to wait for the members' turns) |
 | Project prompt | `GET` / `PUT /api/project` |
 | Recruit / create | `POST /api/teams/{team}/agents` with `{"name", "template"}` or `{"name", "definition"}` |
 | Read / edit | `GET` / `PUT /api/agents/{address}/definition` (`?fresh=true` for a new session, `?now=true` not to wait for the end of the turn) |

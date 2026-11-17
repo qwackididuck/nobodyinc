@@ -183,6 +183,23 @@ func TestCleanup(t *testing.T) {
 	}
 }
 
+// A team deleted while the feature was active is no longer in the list:
+// its worktree and branch go anyway.
+func TestCleanupRemovesDeletedTeams(t *testing.T) {
+	t.Parallel()
+
+	r := deliveredRepo(t)
+	ctx := context.Background()
+
+	if err := r.Cleanup(ctx, feature, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if dirExists(r.TeamDir(feature, "dev")) || r.branchExists(ctx, feature.TeamBranch("dev")) {
+		t.Fatal("the deleted team's worktree or branch is still there")
+	}
+}
+
 func TestRenamedPath(t *testing.T) {
 	t.Parallel()
 

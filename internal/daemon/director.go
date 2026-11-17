@@ -74,6 +74,15 @@ func (d *directorOffice) CreateTeam(ctx context.Context, id, goal, prompt string
 	return d.staff.CreateTeam(context.WithoutCancel(ctx), id, goal, prompt)
 }
 
+// DeleteTeam deletes a team and dismisses its members.
+func (d *directorOffice) DeleteTeam(ctx context.Context, id string) error {
+	if d.staff == nil {
+		return errFixedOrg
+	}
+
+	return d.staff.DeleteTeam(context.WithoutCancel(ctx), id, runtime.ApplyOptions{})
+}
+
 // Definition reads an agent's definition.
 func (d *directorOffice) Definition(address string) (catalog.Definition, error) {
 	if d.staff == nil {

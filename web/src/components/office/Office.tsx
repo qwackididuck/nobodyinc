@@ -88,6 +88,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
   const [reviewing, setReviewing] = useState<Feature | null>(null);
   const [archivesOpen, setArchivesOpen] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
+  const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   // While the librarian is out fetching tickets, its chair is empty.
   const [librarianAway, setLibrarianAway] = useState(false);
   const [seenFinished, setSeenFinished] = useState<string | null>(null);
@@ -265,6 +266,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
     <section className={styles.office} aria-label="Office">
       <Banner onOpenDirector={() => director && onSelectAgent(director.address)} onReview={() => setReviewing(active ?? null)} />
       {creatingTeam && <TeamDialog onClose={() => setCreatingTeam(false)} />}
+      {editingTeam && <TeamDialog team={editingTeam} onClose={() => setEditingTeam(null)} />}
       {reviewing && <FeatureReview feature={reviewing} onClose={() => setReviewing(null)} />}
       {archivesOpen && <ArchivesPanel onClose={() => setArchivesOpen(false)} onOpenChat={onSelectAgent} />}
       <div className={styles.wrap}>
@@ -281,6 +283,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
               carpet={carpetOf(room, teams)}
               building={building.has(room.id)}
               queue={room.kind === "team" ? queue(room.id) : 0}
+              onSign={room.kind === "team" ? () => setEditingTeam(teams.find((t) => t.id === room.id) ?? null) : undefined}
             >
               {room.kind === "archives" && <Shelves count={features.filter((f) => f.status === "finished").length} onOpen={() => setArchivesOpen(true)} />}
               {room.kind === "director" && (
@@ -338,19 +341,30 @@ interface RoomViewProps {
   carpet?: string;
   building: boolean;
   queue: number;
+  // A team's sign opens its dialog (goal, instructions, delete).
+  onSign?: () => void;
   children?: React.ReactNode;
 }
 
-function RoomView({ room, carpet, building, queue, children }: RoomViewProps) {
+function RoomView({ room, carpet, building, queue, onSign, children }: RoomViewProps) {
+  const label = (
+    <>
+      {room.kind === "director" ? "DIRECTOR" : room.id.toUpperCase()}
+      {room.kind === "team" && <em> Q{queue}</em>}
+    </>
+  );
   return (
     <div
       className={`${styles.room} ${room.kind === "director" ? styles.rug : ""} ${building ? styles.building : ""}`}
       style={{ left: room.x, top: room.y, width: room.width, height: room.height, background: carpet }}
     >
-      <span className={styles.sign}>
-        {room.kind === "director" ? "DIRECTOR" : room.id.toUpperCase()}
-        {room.kind === "team" && <em> Q{queue}</em>}
-      </span>
+      {onSign ? (
+        <button type="button" className={`${styles.sign} ${styles.signButton}`} title={`Team ${room.id}: goal, instructions, delete`} onClick={onSign}>
+          {label}
+        </button>
+      ) : (
+        <span className={styles.sign}>{label}</span>
+      )}
       <span className={styles.plant} />
       {children}
     </div>

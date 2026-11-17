@@ -64,6 +64,27 @@ func (s *server) updateTeam(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, teamView{ID: t.ID, Goal: t.Goal, Prompt: t.Prompt})
 }
 
+// deleteTeam deletes a team and dismisses its members (202: they stop once
+// idle, or at once with now=true).
+func (s *server) deleteTeam(w http.ResponseWriter, r *http.Request) {
+	if !s.hasStaff(w) {
+		return
+	}
+
+	opts, ok := s.applyOptions(w, r)
+	if !ok {
+		return
+	}
+
+	if err := s.Staff.DeleteTeam(context.WithoutCancel(r.Context()), r.PathValue("team"), opts); err != nil {
+		s.staffError(w, err)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
 func (s *server) getProject(w http.ResponseWriter, _ *http.Request) {
 	s.writeJSON(w, http.StatusOK, projectView{Prompt: s.Org.Current().ProjectPrompt})
 }

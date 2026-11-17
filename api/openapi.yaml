@@ -238,6 +238,28 @@ paths:
           $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team and dismiss its members
+      description: |
+        Removes the team from .nobody/org.yaml, with its channels, and deletes
+        .nobody/teams/<id>/ (its agents' files and TEAM.md). Every member is
+        dismissed: each stops once its current turn is over (or at once with
+        now=true), its ticket in progress goes back to open, and its
+        undelivered mail is returned to the senders. The team's tickets stay,
+        open ones included, for the human to delete or keep. History is kept.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Team deleted; its members stop once idle
+        "404":
+          $ref: "#/components/responses/Error"
 
   /api/project:
     get:

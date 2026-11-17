@@ -523,3 +523,39 @@ func errString(err error) string {
 
 	return err.Error()
 }
+
+func TestDeleteTeam(t *testing.T) {
+	t.Parallel()
+
+	s, a := newService(t)
+	dir := s.Org.Current().ProjectDir
+
+	if err := org.WriteTeamPrompt(dir, "dev", "Use TDD."); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteTeam(context.Background(), "ghosts", runtime.ApplyOptions{}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown team: err = %v, want ErrNotFound", err)
+	}
+
+	if err := s.DeleteTeam(context.Background(), "dev", runtime.ApplyOptions{Now: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, org.ConfigDirName, "teams", "dev")); !os.IsNotExist(err) {
+		t.Fatalf("the team's directory is still there (err %v)", err)
+	}
+
+	reloaded, err := org.LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := reloaded.Team("dev"); ok || len(reloaded.Teams) != 1 {
+		t.Fatalf("teams on disk = %+v", reloaded.Teams)
+	}
+
+	if a.last() != "dev1@dev now" {
+		t.Fatalf("applied %q, want the member stopped at once", a.last())
+	}
+}

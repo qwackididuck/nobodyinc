@@ -206,6 +206,21 @@ func WriteAgent(projectDir, team string, a Agent) error {
 	return atomicfile.Write(agentPath(projectDir, team, a.Name), data)
 }
 
+// RemoveTeamDir deletes .nobody/teams/<team>/: the team's agent files and
+// its TEAM.md. Remove it before writing an org.yaml without the team: a team
+// directory that org.yaml does not declare stops the project from loading.
+func RemoveTeamDir(projectDir, team string) error {
+	if !catalog.ValidName(team) {
+		return fmt.Errorf("team id %q: use lowercase letters, digits and dashes", team)
+	}
+
+	if err := os.RemoveAll(filepath.Join(ConfigDir(projectDir), teamsDir, team)); err != nil {
+		return fmt.Errorf("remove team %s: %w", team, err)
+	}
+
+	return nil
+}
+
 // AgentFileExists reports whether an agent file is on disk, whether or not
 // the organization in memory knows it yet.
 func AgentFileExists(projectDir, team, name string) bool {

@@ -114,3 +114,34 @@ func TestEnsureDirector(t *testing.T) {
 		t.Fatalf("director = %+v, members %d", o.God, len(o.Members()))
 	}
 }
+
+func TestWithoutTeam(t *testing.T) {
+	t.Parallel()
+
+	o := &Org{
+		Teams:    []Team{{ID: "specs"}, {ID: "dev", Agents: []Agent{{Name: "dev1"}}}, {ID: "qa"}},
+		Channels: []Channel{{From: "dev", To: "specs"}, {From: "qa", To: "dev"}, {From: "qa", To: "specs"}},
+	}
+
+	c := o.WithoutTeam("dev")
+
+	if _, ok := c.Team("dev"); ok || len(c.Teams) != 2 {
+		t.Fatalf("teams = %+v", c.Teams)
+	}
+
+	if len(c.Channels) != 1 || c.Channels[0] != (Channel{From: "qa", To: "specs"}) {
+		t.Fatalf("channels = %+v, want only qa -> specs", c.Channels)
+	}
+
+	if _, ok := c.Member("dev1@dev"); ok {
+		t.Fatal("the team's members should go with it")
+	}
+
+	if len(o.Teams) != 3 || len(o.Channels) != 3 {
+		t.Fatal("the receiver changed")
+	}
+
+	if err := c.Validate(); err != nil {
+		t.Fatalf("the organization without the team is invalid: %v", err)
+	}
+}

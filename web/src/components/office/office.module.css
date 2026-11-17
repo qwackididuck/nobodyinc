@@ -354,6 +354,16 @@
   white-space: nowrap;
 }
 
+.signButton {
+  cursor: pointer;
+}
+
+.signButton:hover,
+.signButton:focus-visible {
+  background: #8d6040;
+  color: #fff6e0;
+}
+
 .sign em {
   font-style: normal;
   color: var(--warn);

@@ -193,6 +193,17 @@ func (o *Org) WithTeam(t Team) *Org {
 	return c
 }
 
+// WithoutTeam returns a copy of the organization without team id: its
+// members and the channels from or to it go with it. The receiver is left
+// untouched.
+func (o *Org) WithoutTeam(id string) *Org {
+	c := o.copyTeams()
+	c.Teams = slices.DeleteFunc(c.Teams, func(t Team) bool { return t.ID == id })
+	c.Channels = slices.DeleteFunc(slices.Clone(c.Channels), func(ch Channel) bool { return ch.From == id || ch.To == id })
+
+	return c
+}
+
 // WithoutAgent returns a copy of the organization without the agent at
 // address. The receiver is left untouched.
 func (o *Org) WithoutAgent(address string) *Org {

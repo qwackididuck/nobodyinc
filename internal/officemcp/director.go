@@ -18,7 +18,7 @@ import (
 
 // directorToolNames are the tools only the director gets.
 var directorToolNames = []string{
-	"feature_propose", "org_overview", "template_list", "team_create",
+	"feature_propose", "org_overview", "template_list", "team_create", "team_delete",
 	"agent_get", "agent_recruit", "agent_create", "agent_edit", "agent_leave", "agent_return", "agent_dismiss",
 }
 
@@ -30,9 +30,9 @@ var errSelf = errors.New("you cannot change your own definition, leave or dismis
 // internal/daemon on top of the staffing service). Changes are written by
 // the daemon, never by the director itself (ADR-0004).
 type Director interface {
+	TeamDirector
 	Overview(ctx context.Context) (Overview, error)
 	Templates() ([]catalog.Template, error)
-	CreateTeam(ctx context.Context, id, goal, prompt string) (org.Team, error)
 	Definition(address string) (catalog.Definition, error)
 	Recruit(ctx context.Context, team, name, template string) (org.Member, error)
 	Create(ctx context.Context, team, name string, d catalog.Definition) (org.Member, error)
@@ -40,6 +40,12 @@ type Director interface {
 	Leave(ctx context.Context, address string) error
 	Return(ctx context.Context, address string) error
 	Dismiss(ctx context.Context, address string) error
+}
+
+// TeamDirector is the part of Director that creates and deletes teams.
+type TeamDirector interface {
+	CreateTeam(ctx context.Context, id, goal, prompt string) (org.Team, error)
+	DeleteTeam(ctx context.Context, id string) error
 }
 
 // Overview is the state of the organization, for the director.
@@ -106,6 +112,11 @@ type TeamCreateInput struct {
 	Goal string `json:"goal" jsonschema:"what the team is for, in one sentence"`
 	//nolint:lll // a struct tag cannot be split
 	Prompt string `json:"prompt,omitempty" jsonschema:"instructions every member shares, written from the goal: how the team works, its conventions; omit for the goal alone"`
+}
+
+// TeamDeleteInput names the team to delete.
+type TeamDeleteInput struct {
+	ID string `json:"id" jsonschema:"the team's id"`
 }
 
 // TeamCreateOutput confirms the new team.
@@ -179,6 +190,12 @@ func (t tools) addDirectorTools(server *mcp.Server) {
 			"It has no agent yet: recruit some with agent_recruit. When this is your own idea, get the human's agreement first.",
 	}, t.teamCreate)
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "team_delete",
+		Description: "Delete a team: its room goes, and every member is dismissed (each stops once its turn is over; " +
+			"its ticket in progress goes back to open, its undelivered mail is returned). The team's tickets stay. " +
+			"Only with the human's explicit agreement: ask them first.",
+	}, t.teamDelete)
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "agent_get",
 		Description: "Read an agent's definition: role, model, permissions, tools, MCP servers and instructions (prompt).",
 	}, t.agentGet)
@@ -246,6 +263,14 @@ func (t tools) teamCreate(ctx context.Context, _ *mcp.CallToolRequest, in TeamCr
 	}
 
 	return nil, TeamCreateOutput{Team: team.ID, Note: "created, without agents: recruit into it with agent_recruit"}, nil
+}
+
+func (t tools) teamDelete(ctx context.Context, _ *mcp.CallToolRequest, in TeamDeleteInput) (*mcp.CallToolResult, DoneOutput, error) {
+	if err := t.director.DeleteTeam(ctx, in.ID); err != nil {
+		return nil, DoneOutput{}, err
+	}
+
+	return nil, DoneOutput{Note: "team " + in.ID + " deleted; its members stop once their turn is over"}, nil
 }
 
 func (t tools) agentGet(_ context.Context, _ *mcp.CallToolRequest, in AddressInput) (*mcp.CallToolResult, catalog.Definition, error) {

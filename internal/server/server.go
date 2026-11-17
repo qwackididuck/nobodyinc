@@ -105,6 +105,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/teams", s.listTeams)
 	mux.HandleFunc("POST /api/teams", s.createTeam)
 	mux.HandleFunc("PUT /api/teams/{team}", s.updateTeam)
+	mux.HandleFunc("DELETE /api/teams/{team}", s.deleteTeam)
 	mux.HandleFunc("POST /api/teams/{team}/agents", s.recruitAgent)
 	mux.HandleFunc("GET /api/project", s.getProject)
 	mux.HandleFunc("PUT /api/project", s.updateProject)

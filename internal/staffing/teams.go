@@ -60,6 +60,36 @@ func (s *Service) SetProjectPrompt(ctx context.Context, text string) error {
 	return s.reloadAndApply(ctx, "", runtime.ApplyOptions{})
 }
 
+// DeleteTeam removes a team and dismisses its members: its directory (agent
+// files and TEAM.md) is deleted first, then org.yaml is written without the
+// team and its channels. Each member stops once idle (or at once with
+// opts.Now) and hands its ticket and mail over, as a dismissed agent does
+// (daemon/staff.go). The team's tickets are left as they are.
+func (s *Service) DeleteTeam(ctx context.Context, id string, opts runtime.ApplyOptions) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current := s.Org.Current()
+	if _, exists := current.Team(id); !exists {
+		return fmt.Errorf("%w: team %q", ErrNotFound, id)
+	}
+
+	candidate := current.WithoutTeam(id)
+	if err := candidate.Validate(); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	if err := org.RemoveTeamDir(current.ProjectDir, id); err != nil {
+		return err
+	}
+
+	if err := org.WriteOrgFile(candidate); err != nil {
+		return err
+	}
+
+	return s.reloadAndApply(ctx, "", runtime.ApplyOptions{Now: opts.Now})
+}
+
 // saveTeam validates the organization with team t, writes org.yaml then
 // TEAM.md (in this order: a team directory org.yaml does not declare would
 // stop the organization from loading), reloads and applies. Called with s.mu

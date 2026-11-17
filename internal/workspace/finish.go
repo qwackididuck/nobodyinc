@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -293,12 +294,14 @@ func samePath(a, b string) bool {
 }
 
 // Cleanup removes the teams' worktrees of a finished feature and their
-// branches. Uncommitted changes in them are lost. The feature branch is
-// kept: it holds the work, merged or not.
+// branches: those of teams, and those of teams deleted while the feature was
+// active, found in the feature's worktrees directory. Uncommitted changes in
+// them are lost. The feature branch is kept: it holds the work, merged or
+// not.
 func (r Repo) Cleanup(ctx context.Context, f Feature, teams []string) error {
 	var errs []error
 
-	for _, team := range teams {
+	for _, team := range r.withLeftovers(f, teams) {
 		if dir := r.TeamDir(f, team); dirExists(dir) {
 			if _, err := r.git(ctx, r.Dir, "worktree", "remove", "--force", dir); err != nil {
 				errs = append(errs, err)
@@ -322,6 +325,29 @@ func (r Repo) Cleanup(ctx context.Context, f Feature, teams []string) error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// withLeftovers adds to teams the other team worktrees present in the
+// feature's directory.
+func (r Repo) withLeftovers(f Feature, teams []string) []string {
+	all := slices.Clone(teams)
+
+	if r.WorktreesDir == "" {
+		return all
+	}
+
+	entries, err := os.ReadDir(filepath.Join(r.WorktreesDir, f.Slug))
+	if err != nil {
+		return all // no directory: nothing more to remove
+	}
+
+	for _, e := range entries {
+		if e.IsDir() && !slices.Contains(all, e.Name()) {
+			all = append(all, e.Name())
+		}
+	}
+
+	return all
 }
 
 func dirExists(dir string) bool {

@@ -263,19 +263,21 @@ func (s *Service) reloadAndApply(ctx context.Context, address string, opts runti
 	}
 
 	// address is "" for a change that is not about one agent (a team or the
-	// project prompt): the agents it concerns are among the changed ones.
+	// project prompt): the agents it concerns are among the changed ones, and
+	// get opts.Now.
 	if address != "" {
 		if err := s.Agents.Apply(ctx, address, opts); err != nil {
 			return fmt.Errorf("saved, but %s cannot be restarted: %w", address, err)
 		}
 	}
 
-	return s.applyOthers(ctx, address, before, after)
+	return s.applyOthers(ctx, address, before, after, address == "" && opts.Now)
 }
 
 // applyOthers applies every agent changed between before and after, except
-// the one at address, with a fresh session when its prompt changed.
-func (s *Service) applyOthers(ctx context.Context, address string, before, after *org.Org) error {
+// the one at address, with a fresh session when its prompt changed, and at
+// once when now.
+func (s *Service) applyOthers(ctx context.Context, address string, before, after *org.Org, now bool) error {
 	var errs []error
 
 	for _, other := range changedAgents(before, after) {
@@ -289,7 +291,7 @@ func (s *Service) applyOthers(ctx context.Context, address string, before, after
 			(needsFreshSession(oldMember.Agent.Definition, newMember.Agent.Definition) ||
 				sharedPrompt(before, oldMember) != sharedPrompt(after, newMember))
 
-		if err := s.Agents.Apply(ctx, other, runtime.ApplyOptions{Fresh: fresh}); err != nil {
+		if err := s.Agents.Apply(ctx, other, runtime.ApplyOptions{Fresh: fresh, Now: now}); err != nil {
 			errs = append(errs, fmt.Errorf("apply the hand-made change to %s: %w", other, err))
 		}
 	}
