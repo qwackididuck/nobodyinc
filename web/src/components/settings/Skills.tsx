@@ -116,18 +116,6 @@ export function Skills() {
       {note && <p className={ui.note}>{note}</p>}
       {error && <p className={ui.error}>{error}</p>}
 
-      <h3 className={styles.skillGroup}>Project</h3>
-      <div className={styles.servers}>
-        {group("project").map(card)}
-        {list && group("project").length === 0 && <p className={ui.sub}>No skill in the project&apos;s .claude/skills.</p>}
-      </div>
-
-      <h3 className={styles.skillGroup}>Personal · all your projects</h3>
-      <div className={styles.servers}>
-        {group("personal").map(card)}
-        {list && group("personal").length === 0 && <p className={ui.sub}>No personal skill in your Claude Code configuration.</p>}
-      </div>
-
       {adding ? (
         <SkillForm onSaved={changed} onCancel={() => setAdding(false)} />
       ) : (
@@ -144,6 +132,18 @@ export function Skills() {
           </button>
         </div>
       )}
+
+      <h3 className={styles.skillGroup}>Project</h3>
+      <div className={styles.servers}>
+        {group("project").map(card)}
+        {list && group("project").length === 0 && <p className={ui.sub}>No skill in the project&apos;s .claude/skills.</p>}
+      </div>
+
+      <h3 className={styles.skillGroup}>Personal · all your projects</h3>
+      <div className={styles.servers}>
+        {group("personal").map(card)}
+        {list && group("personal").length === 0 && <p className={ui.sub}>No personal skill in your Claude Code configuration.</p>}
+      </div>
 
       <details className={styles.builtin}>
         <summary className={styles.skillGroup}>Built-in ({group("builtin").length})</summary>
@@ -273,9 +273,9 @@ function SkillForm({ editing, onSaved, onCancel }: { editing?: SkillDetail; onSa
         <label className={ui.label}>
           NAME
           <input className={ui.input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. release-notes" pattern={SKILL_NAME_PATTERN} required />
-          <span className={styles.scopeHelp}>Lowercase letters, digits and hyphens: it is also the name of the skill&apos;s directory.</span>
         </label>
       )}
+      {!editing && <p className={styles.scopeHelp}>Lowercase letters, digits and hyphens: it is also the name of the skill&apos;s directory.</p>}
       <label className={ui.label}>
         DESCRIPTION
         <input
