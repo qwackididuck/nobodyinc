@@ -76,8 +76,8 @@ func TestDenyRulesProtectTheConfigDirectory(t *testing.T) {
 }
 
 // ${VARIABLE} references in --mcp-config are expanded by Claude Code from its
-// environment, so .nobody/mcp.yaml never holds secrets and the values never
-// appear on the command line (ADR-0004).
+// environment: the MCP servers Nobody Inc writes never hold secrets, only
+// references to variables set where the daemon runs (ADR-0010).
 func TestMCPConfigExpandsEnvironmentVariables(t *testing.T) {
 	t.Parallel()
 

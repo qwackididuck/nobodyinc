@@ -13,7 +13,7 @@ Overview and the journey of a message: `docs/architecture.md`.
 - `web/`: Next.js 16 control room (App Router, strict TypeScript, pnpm). Read `web/AGENTS.md`: this Next.js version has breaking changes, its docs are in `web/node_modules/next/dist/docs/`.
 
 ## Commands
-- `task check`: lint + tests, must pass before every commit.
+- `task check`: lint + tests, must pass before every commit. It needs `task web:install` first (pnpm: the lint runs `next typegen`, `tsc` and eslint) and golangci-lint v2.15.0.
 - `task test` / `task lint` / `task build`
 - `task contract`: contract tests against the real CLI (costs a few cents); rerun after every Claude Code upgrade.
 - `task dev:daemon PROJECT=<dir>`: builds and runs the daemon on a project holding `.nobody/` (default `../nobody-sandbox`; create one with `./bin/nobodyd init <dir>`); listens on 127.0.0.1:7420, override with `NOBODY_ADDR`. The database goes to `~/.nobody/projects/<id>/` (`NOBODY_HOME` replaces `~/.nobody`).
@@ -30,8 +30,10 @@ Overview and the journey of a message: `docs/architecture.md`.
 - Logging through `log/slog`, never a permanent `fmt.Println`.
 - The daemon listens on loopback only by default.
 - Structured data about agents comes from hooks and OTel only, never from reading the PTY output. The only thing written to the PTY is keystrokes (wake-up, human input).
-- Agents are isolated from the user's global settings and from a parent session's environment (ADR-0003); only the text of the user's CLAUDE.md reaches them (ADR-0008). Do not change this without a new ADR.
+- Agents are isolated from the user's global settings, hooks and plugins, and from a parent session's environment (ADR-0003). From the user, only the text of their CLAUDE.md (ADR-0008) and their MCP servers (ADR-0010) reach them; from the project, its Claude Code configuration (`CLAUDE.md`, skills, commands, subagents, `.mcp.json`; `docs/agents.md`). Do not change this without a new ADR.
 - An agent's system prompt is a cascade (`docs/agents.md`): user's CLAUDE.md → `.nobody/project.md` → team goal and `TEAM.md` → the agent's own file. Built-in templates are about a trade, never about a project.
-- To test with real agents, use a throwaway git repository as the project, never a real one. Ready-made: `~/Documents/workspace/nobody-sandbox` (Haiku agents): `task dev:daemon`, then `task dev:web` (if it still has a `nobody.yaml` and no `.nobody/`, migrate it once with `./bin/nobodyd -org ../nobody-sandbox/nobody.yaml`). The project must be trusted once in Claude Code (`docs/workspaces.md`).
-- Commits and pushes are done by the maintainer: modify files, do not commit.
+- To test with real agents, use a throwaway git repository as the project, never a real one. Ready-made: `~/Documents/workspace/nobody-sandbox`, trusted in Claude Code; its `.nobody/` is not versioned and may hold only the director (Opus): create a team and recruit Haiku agents from the control room before testing. `task dev:daemon`, then `task dev:web`; `./bin/nobodyd -project ../nobody-sandbox -start=false` tests the control room without starting (or paying for) agents. A new project must be trusted once in Claude Code (`docs/workspaces.md`).
+- The daemon reads and, through the MCP endpoints, writes the user's real `~/.claude.json` (user and local MCP scopes): test MCP changes with the project scope, or with a throwaway `CLAUDE_CONFIG_DIR` when agents need not start (the project's trust is stored there too). Tests never read the real file (`TestMain` points `CLAUDE_CONFIG_DIR` to an empty directory).
+- Commits, pushes and pull requests are done by the maintainer: modify files, do not commit. At each stopping point, give a one-line conventional commit message (no body). Pull requests target `develop`.
+- `docs/roadmap.md` (local, unversioned, in French) is the source of truth for the work in progress, the decisions taken with the maintainer and what comes next: read it at the start of a session, and update it when a step ends.
 - Documentation is written in English.

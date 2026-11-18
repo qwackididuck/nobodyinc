@@ -3,7 +3,7 @@
 - Status: accepted
 - Date: 2026-11-17
 - Replaces: the MCP registry `.nobody/mcp.yaml` and the per-agent `mcp:` list of ADR-0004
-- Revisits, in part: ADR-0003 (the user's MCP servers reach the agents again; their settings, hooks and plugins still do not)
+- Revisits, in part: ADR-0003 and ADR-0008 (the user's MCP servers reach the agents again; their settings, hooks and plugins still do not)
 
 ## Context
 
@@ -31,7 +31,8 @@ Checked by `test/contract/project_test.go` (Claude Code 2.1.326): with the agent
    - *for the whole project* → `.mcp.json` (committed: everyone, Claude Code included, gets it);
    - *for me, on this project* → local scope;
    - *for me, on all my projects* → user scope.
-   The write goes through `claude mcp add --scope project|local|user`, so that Claude Code keeps owning its files' format and the servers and keys Nobody Inc does not know.
+   The write goes through `claude mcp add-json --scope project|local|user` (and `claude mcp remove`), so that Claude Code keeps owning its files' format and the servers and keys Nobody Inc does not know.
+   **Editing** a server (`GET`/`PUT /api/mcp/{name}`, added during implementation) works in the scope it comes from: its command, arguments and URL are returned, and the control room hides them until the human reveals them; its env and headers values written in clear are never returned, and must be replaced by variables before it can be saved; its transport and variables are replaced, its other keys (a timeout...) kept.
 6. **No secret is ever written.** Nobody Inc writes environment variables only (`${GITLAB_TOKEN}`), expanded by Claude Code when it starts the server. When a server needs credentials, Nobody Inc names the variables to set, in the environment the daemon is started from; the values are managed outside the tool. Values already written in clear in a file are left as they are, and never returned by the API, shown in the UI or logged: only variable names, or a masked value.
 7. **A change reaches running agents once idle.** A server added, removed or changed in any source, or a new exclusion, restarts the agents concerned once idle, resuming their session (MCP servers are launch flags, followed on `--resume`). Files edited outside Nobody Inc are picked up at the next change made through it, or when the daemon restarts, as for agent files.
 

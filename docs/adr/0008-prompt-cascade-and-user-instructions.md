@@ -1,6 +1,6 @@
 # ADR-0008 — The prompt cascade, and the user's CLAUDE.md as text
 
-- Status: accepted
+- Status: accepted; the user's MCP servers reach the agents since ADR-0010 (their settings, hooks and plugins still do not)
 - Date: 2026-11-16
 - Amends: ADR-0003
 
