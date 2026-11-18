@@ -272,7 +272,7 @@ func readOrgFile(dir string) (*Org, error) {
 
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("%w in %s (create one with `nobodyd init`)", ErrNoConfig, dir)
+		return nil, fmt.Errorf("%w in %s (open the folder from the control room to set it up)", ErrNoConfig, dir)
 	}
 
 	if err != nil {

@@ -32,17 +32,6 @@
   flex: none;
 }
 
-.project {
-  color: var(--muted);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.project code {
-  color: var(--text);
-  font: 16px var(--font-mono);
-}
-
 .tabs {
   display: flex;
   gap: 4px;

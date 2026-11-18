@@ -21,13 +21,13 @@ A feature is a request, e.g. "Add the order API". The human starts one directly 
 
 New tickets belong to the active feature. Only one feature is active at a time; without one, agents work in the project directory itself and tickets have no branches.
 
-## Prerequisite: trust the project once
+## Prerequisite: Claude Code trusts the project
 
-Claude Code asks whether to trust a new folder before it starts, and an agent waiting on that prompt never starts working. Opening the project once with `claude` in its main checkout and accepting the prompt covers every team worktree: git ties a worktree to its repository, wherever it lives (trusting a folder also covers its subfolders). Otherwise the prompt shows up in each agent's terminal (visible from the UI).
+Claude Code asks whether to trust a new folder before it starts, and an agent waiting on that prompt never starts working. Trusting the project's main checkout covers every team worktree: git ties a worktree to its repository, wherever it lives (trusting a folder also covers its subfolders).
 
-`nobodyd` checks this when it starts (`runtime.ProjectTrusted`, which reads the trust flags of Claude Code's `~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`) and logs a warning if the project is not trusted yet; `nobodyd init` says so too. The rules it applies are checked against the real CLI by `task contract` (`TestTrustRules`).
+Opening a folder from the control room trusts it (`projects.SetUp`, through `runtime.Trust`, which writes the trust flag in Claude Code's `~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`, as accepting the prompt would: `projects.md`). If Claude Code was never set up on the machine, there is nothing to write to: the projects page shows the project as not trusted, and the prompt shows up in each agent's terminal (visible from the UI). A project daemon checks the trust again when it starts (`runtime.ProjectTrusted`) and logs a warning if it was lost since. The rules applied are checked against the real CLI by `task contract` (`TestTrustRules`).
 
-The daemon's own directory, `~/.nobody`, needs no such step: `nobodyd` marks it trusted itself when it starts, before any agent, because every agent gets a directory inside it with `--add-dir` (the personal skills, ADR-0011), which Claude Code would otherwise ask about at each session start (`TestAddedDirectoryNeedsTrust`).
+The daemon's own directory, `~/.nobody`, is trusted the same way: each project daemon marks it trusted when it starts, before any agent, because every agent gets a directory inside it with `--add-dir` (the personal skills, ADR-0011), which Claude Code would otherwise ask about at each session start (`TestAddedDirectoryNeedsTrust`).
 
 ## Moving work between teams
 

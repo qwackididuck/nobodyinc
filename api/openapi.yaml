@@ -3,7 +3,17 @@ info:
   title: Nobody Inc daemon API
   version: 0.1.0
   description: |
-    HTTP API of nobodyd. Two audiences:
+    HTTP API of nobodyd (ADR-0014, docs/projects.md). `nobodyd` is a
+    **launcher**: it listens on 127.0.0.1:7420, serves the routes tagged
+    `launcher` (known projects, folders, windows holding projects) and starts
+    one **project daemon** per open project, a child process on a port of its
+    own. Every other route belongs to a project daemon: the control room
+    reaches them through the launcher, `/p/{project}/api/...` being proxied to
+    the project daemon's `/api/...` (REST, event stream and terminal
+    WebSockets alike); the launcher answers 503 while the project is not
+    running. Agents (nobody-hook, MCP) talk to their project daemon directly.
+
+    The project daemon's API has these audiences:
     - `/api/*` is used by the supervision web UI and the human operator;
     - `/internal/*` is used by nobody-hook, the binary Claude Code runs on hook
       events (see docs/hooks.md). It is not meant to be called by hand.
@@ -15,12 +25,17 @@ info:
     The daemon listens on loopback only by default.
 servers:
   - url: http://127.0.0.1:7420
+    description: The launcher; a project daemon's routes are under /p/{project}
+
+tags:
+  - name: launcher
+    description: Served by the launcher itself (ADR-0014).
 
 paths:
   /healthz:
     get:
       operationId: getHealth
-      summary: Liveness probe
+      summary: Liveness probe (the launcher's, and each project daemon's)
       responses:
         "200":
           description: Daemon is up
@@ -28,6 +43,177 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+
+  /api/projects:
+    get:
+      operationId: listProjects
+      tags: [launcher]
+      summary: List the known projects, most recently opened first
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: openProject
+      tags: [launcher]
+      summary: Make a folder a known project, setting it up if needed
+      description: |
+        Adds the folder to the known projects. A folder without `.nobody/` is
+        set up first: `.nobody/` with its director and no team, the user's
+        catalog and settings if missing, and Claude Code's trust of the
+        folder. With `create`, the folder must not exist: it is created (its
+        parent must exist), made a git repository with an empty first commit,
+        then set up. Opening a known project changes nothing. The project
+        does not start: a window starts it by holding it (attach).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [path]
+              properties:
+                path:
+                  type: string
+                  description: Absolute path of the folder.
+                create:
+                  type: boolean
+                  description: Create a new folder rather than open an existing one.
+      responses:
+        "200":
+          description: The folder was already a Nobody Inc project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "201":
+          description: The folder was set up (and created, with `create`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/projects/{project}:
+    delete:
+      operationId: deleteProject
+      tags: [launcher]
+      summary: Remove Nobody Inc from a project, never its code
+      description: |
+        Stops the project, then removes its `.nobody/`, its state directory
+        (database, worktrees) and its registry entry. Git branches stay,
+        `nobody/*` included. Refused (409) while another window holds the
+        project; the window that holds it may delete it by giving its
+        `window` id, and loses it.
+
+        A feature that is not finished stops the deletion (409, with
+        `feature`) unless `feature` says what to do with it: `merge` finishes
+        it anyway (ADR-0007, unfinished tickets canceled, local merge into the
+        base branch; on a conflict or a refusal nothing is deleted, 409), or
+        `discard` removes the teams' worktrees, their uncommitted changes
+        lost, and keeps every branch.
+      parameters:
+        - $ref: "#/components/parameters/Project"
+        - name: window
+          in: query
+          description: The window deleting the project, when it holds it.
+          schema:
+            type: string
+        - name: feature
+          in: query
+          description: What to do with a feature that is not finished.
+          schema:
+            type: string
+            enum: [merge, discard]
+      responses:
+        "204":
+          description: Nobody Inc removed from the project
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Held by another window, a feature is not finished, or the merge failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteRefusal"
+
+  /api/projects/{project}/attach:
+    get:
+      operationId: attachProject
+      tags: [launcher]
+      summary: Hold a project from a window (WebSocket)
+      description: |
+        A window shows one project and holds it while this WebSocket is
+        open; holding a project starts its daemon (ADR-0014). One window
+        holds a project at most.
+
+        The launcher sends JSON messages:
+        - `{"type": "state", "state": "starting" | "running" | "stopped", "error"?: string}`:
+          the project daemon's state (`stopped` with `error` when it exited
+          unexpectedly or failed to start; the window may attach again);
+        - `{"type": "held"}` then closes with code 4409: another window
+          holds the project. Attach again with `takeover=true` to take it;
+        - `{"type": "taken"}` then closes with code 4409: another window
+          took the project over.
+        The window may send `{"type": "release"}`: the project stops at once,
+        without the grace period (switching project in the window); and
+        `{"type": "start"}` to start the project again after it stopped on
+        its own.
+
+        When the connection drops, the project keeps running for a grace
+        period (15 s): the same window attaching again within it keeps it,
+        and another window may take it without `takeover`. After it, the
+        project daemon is stopped. The launcher pings every 10 s.
+      parameters:
+        - $ref: "#/components/parameters/Project"
+        - name: window
+          in: query
+          required: true
+          description: The window's id, kept by the window across reconnections.
+          schema:
+            type: string
+        - name: takeover
+          in: query
+          description: Take the project from the window that holds it.
+          schema:
+            type: boolean
+      responses:
+        "101":
+          description: WebSocket established
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/fs/dirs:
+    get:
+      operationId: listDirectories
+      tags: [launcher]
+      summary: List the sub-folders of a folder, to choose a project
+      description: |
+        Names of the sub-folders only, hidden ones left out; nothing is read
+        inside files. Without `path`, the user's home directory.
+      parameters:
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sub-folders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectoryListing"
+        "400":
+          $ref: "#/components/responses/Error"
 
   /api/agents:
     get:
@@ -1888,6 +2074,15 @@ paths:
 
 components:
   parameters:
+    Project:
+      name: project
+      in: path
+      required: true
+      description: Project id, "<folder>-<hash of its path>"
+      schema:
+        type: string
+        example: shop-6e403867
+
     Address:
       name: address
       in: path
@@ -1998,6 +2193,87 @@ components:
           enum: [ok]
         version:
           type: string
+
+    Project:
+      type: object
+      required: [id, name, path, missing, git, trusted, held, state]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: The folder's name.
+        path:
+          type: string
+        missing:
+          type: boolean
+          description: The folder disappeared (moved or deleted outside Nobody Inc).
+        git:
+          type: boolean
+          description: The folder is a git repository (features need one).
+        trusted:
+          type: boolean
+          description: Claude Code trusts the folder (otherwise agents wait on its trust question).
+        held:
+          type: boolean
+          description: A window holds the project, or held it less than the grace period ago.
+        state:
+          type: string
+          enum: [stopped, starting, running, stopping]
+          description: The project daemon's state.
+        last_opened:
+          type: string
+          format: date-time
+
+    DeleteRefusal:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        feature:
+          description: The feature that is not finished, when that is the reason.
+          type: object
+          required: [id, title, branch]
+          properties:
+            id:
+              type: string
+            title:
+              type: string
+            branch:
+              type: string
+
+    DirectoryListing:
+      type: object
+      required: [path, home, dirs]
+      properties:
+        path:
+          type: string
+        parent:
+          type: string
+          description: The parent folder; absent at the root.
+        home:
+          type: string
+          description: The user's home directory.
+        dirs:
+          type: array
+          items:
+            type: object
+            required: [name, path, git, nobody]
+            properties:
+              name:
+                type: string
+              path:
+                type: string
+              git:
+                type: boolean
+                description: A git repository.
+              nobody:
+                type: boolean
+                description: Has a .nobody/ directory.
+              project:
+                type: string
+                description: The id of the known project in this folder.
 
     Error:
       type: object

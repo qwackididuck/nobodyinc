@@ -23,7 +23,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/work"
 )
 
-var hookBinary, fakeClaude string
+var hookBinary, fakeClaude, nobodydBinary string
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "nobody-e2e-*")
@@ -39,6 +39,8 @@ func TestMain(m *testing.M) {
 
 	hookBinary = build(dir, "nobody-hook", "github.com/qwackididuck/nobodyinc/cmd/nobody-hook")
 	fakeClaude = build(dir, "fakeclaude", "github.com/qwackididuck/nobodyinc/test/fakeclaude")
+	// The launcher's project daemons (launcher_test.go).
+	nobodydBinary = build(dir, "nobodyd", "github.com/qwackididuck/nobodyinc/cmd/nobodyd")
 
 	code := m.Run()
 
@@ -114,6 +116,7 @@ func startDaemonWithOptions(t *testing.T, o org.Source, dbPath string, change fu
 		ClaudePath:   fakeClaude,
 		HookPath:     hookBinary,
 		DaemonURL:    "http://" + listener.Addr().String(),
+		StartAgents:  true, // started below
 	}
 	change(&opts)
 

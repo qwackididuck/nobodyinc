@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-project mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Pixelify+Sans:wght@500;700&family=Silkscreen&family=VT323&display=swap" rel="stylesheet">
+<style>
+/* Theme "Dusk", copied from web/src/app/globals.css */
+:root {
+  color-scheme: dark;
+  --bg: #1b1626; --panel: #221c30; --panel-2: #2a2340; --line: #3e3558;
+  --text: #f4ecdb; --muted: #a99dc2; --accent: #ff8a5c; --accent-ink: #2a1205;
+  --ok: #6fdc8c; --warn: #ffd34d; --danger: #ff5d73; --idle: #786f93; --off: #4a4262;
+  --ink-px: #1d1726; --paper: #f4e7c9; --wall: #5a4878; --wall-dark: #463862;
+  --wood: #a4673a; --wood-light: #c58450; --wood-dark: #7a4a28; --floor: #d7b384;
+  --font-ui: Inter, ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Pixelify Sans", Inter, sans-serif;
+  --font-label: Silkscreen, ui-monospace, monospace;
+  --font-mono: VT323, ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { font: 14px/1.45 var(--font-ui); color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; cursor: pointer; }
+code { font: 16px var(--font-mono); }
+
+/* Mockup chrome: screen picker */
+.picker { position: sticky; top: 0; z-index: 100; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 10px 16px; background: #0f0c16; border-bottom: 1px dashed var(--line); }
+.picker strong { font: 11px var(--font-label); color: var(--muted); margin-right: 8px; }
+.picker button { padding: 4px 10px; border: 2px solid var(--line); background: var(--panel); font: 10px var(--font-label); }
+.picker button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent); color: var(--accent-ink); }
+.note { margin: 0 16px 0 auto; color: var(--muted); font-size: 12px; max-width: 60ch; }
+.screen { display: none; }
+.screen.on { display: block; }
+.caption { max-width: 1100px; margin: 18px auto 0; padding: 10px 14px; border-left: 3px solid var(--warn);
+  background: #2a2340aa; color: var(--muted); font-size: 13px; }
+.caption b { color: var(--text); }
+
+/* Shared pixel controls (web/src/components/ui/ui.module.css) */
+.btn, .btnPrimary, .btnDanger { padding: 7px 14px; border: 2px solid var(--ink-px); background: var(--panel-2);
+  color: var(--text); font: 11px var(--font-label); box-shadow: 0 3px 0 var(--ink-px); white-space: nowrap; }
+.btnPrimary { background: var(--accent); color: var(--accent-ink); }
+.btnDanger { background: var(--danger); color: var(--ink-px); }
+.btn:active, .btnPrimary:active, .btnDanger:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink-px); }
+.chip { display: inline-block; padding: 1px 7px; border: 2px solid var(--line); background: var(--panel); font: 10px var(--font-label); white-space: nowrap; }
+.chip.ok { border-color: var(--ok); color: var(--ok); }
+.chip.warn { border-color: var(--warn); color: var(--warn); }
+.chip.danger { border-color: var(--danger); color: var(--danger); }
+.chip.accent { border-color: var(--accent); color: var(--accent); }
+.input { width: 100%; padding: 8px 10px; border: 2px solid var(--ink-px); background: var(--bg); color: var(--text); font: 14px var(--font-ui); }
+.label { display: grid; gap: 5px; font: 10px var(--font-label); color: var(--muted); }
+.title { margin: 0; font: 700 22px var(--font-display); }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; max-width: 70ch; }
+.modalBackdrop { position: absolute; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(10,8,16,.6); }
+.modal { display: grid; gap: 12px; width: min(560px, 100%); padding: 22px; border: 3px solid var(--accent); background: var(--panel); box-shadow: 6px 6px 0 rgba(0,0,0,.55); }
+.modal.danger { border-color: var(--danger); }
+.modal h2 { margin: 0; font: 700 20px var(--font-display); }
+.modal p { margin: 0; }
+.actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; margin-top: 4px; }
+
+/* The control room frame (web/src/components/shell/shell.module.css) */
+.frame { position: relative; max-width: 1280px; margin: 18px auto 40px; height: 720px; border: 2px solid var(--line); overflow: hidden; background: var(--bg); }
+.topbar { display: flex; align-items: center; gap: 24px; min-height: 56px; padding: 0 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; font: 600 15px var(--font-display); white-space: nowrap; }
+.brand svg { width: 26px; height: 26px; }
+.tabs { display: flex; gap: 4px; align-self: stretch; }
+.tab { padding: 0 14px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--muted); font: 12px var(--font-label); }
+.tab.sel { color: var(--text); border-bottom-color: var(--accent); }
+.daemon { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.daemon::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.daemon.warn::before { background: var(--warn); }
+.daemon.off::before { background: var(--off); }
+
+/* NEW: the project switcher replaces "Project <code>name</code>" */
+.switcher { position: relative; }
+.switchBtn { display: flex; align-items: center; gap: 8px; padding: 5px 10px; border: 2px solid var(--line); background: var(--panel-2); }
+.switchBtn:hover, .switchBtn.open { border-color: var(--accent); }
+.switchBtn code { color: var(--text); }
+.switchBtn .caret { font: 10px var(--font-label); color: var(--muted); }
+.lamp { width: 8px; height: 8px; flex: none; background: var(--off); box-shadow: 0 0 0 2px var(--ink-px); }
+.lamp.on { background: var(--ok); }
+.lamp.busy { background: var(--warn); }
+.menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 40; width: 330px; padding: 6px; border: 3px solid var(--accent); background: var(--panel); box-shadow: 6px 6px 0 rgba(0,0,0,.55); }
+.menu .head { padding: 4px 8px 6px; font: 9px var(--font-label); color: var(--muted); }
+.item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; background: none; text-align: left; }
+.item:hover { background: var(--panel-2); }
+.item .name { flex: 1; min-width: 0; }
+.item .name code { display: block; color: var(--text); line-height: 1; }
+.item .name small { display: block; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .tag { font: 9px var(--font-label); color: var(--muted); }
+.item.current { background: #ff8a5c22; }
+.item.current .tag { color: var(--accent); }
+.sep { height: 2px; margin: 6px 0; background: var(--line); }
+.item.cmd { font: 11px var(--font-label); color: var(--text); }
+.item.cmd.danger { color: var(--danger); }
+
+/* The office, blurred behind overlays */
+.officeStub { position: absolute; inset: 56px 0 0 0; display: grid; grid-template-columns: 76px 360px 1fr; }
+.officeStub .rail { background: var(--panel); border-right: 1px solid var(--line); }
+.officeStub .chat { background: var(--panel); border-right: 1px solid var(--line); opacity: .9; }
+.officeStub .floor { background:
+  repeating-linear-gradient(90deg, #d7b38422 0 32px, transparent 32px 64px),
+  repeating-linear-gradient(0deg, #d7b38422 0 32px, transparent 32px 64px), #3a2f52; }
+.dim .officeStub { filter: blur(2px) saturate(.6); opacity: .55; }
+
+/* NEW: projects page (lobby) */
+.lobby { position: absolute; inset: 56px 0 0 0; overflow: auto; padding: 28px 36px; }
+.lobbyHead { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 22px; }
+.lobbyHead .grow { flex: 1; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+.card { position: relative; display: grid; grid-template-rows: auto 1fr auto; border: 3px solid var(--ink-px); background: var(--panel); box-shadow: 5px 5px 0 rgba(0,0,0,.45); }
+.card:hover { border-color: var(--accent); }
+.card.missing { opacity: .7; border-style: dashed; border-color: var(--line); }
+.facade { position: relative; height: 104px; background: var(--wall); border-bottom: 3px solid var(--ink-px); overflow: hidden; }
+.facade::before { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 14px; background: var(--wall-dark); }
+.windows { position: absolute; left: 18px; top: 16px; display: grid; grid-template-columns: repeat(4, 22px); gap: 8px 10px; }
+.windows i { width: 22px; height: 18px; background: #2c2440; box-shadow: inset 0 0 0 2px var(--ink-px); }
+.windows i.lit { background: var(--warn); }
+.windows i.lit.soft { background: #ffe9a8; }
+.door { position: absolute; right: 26px; bottom: 0; width: 38px; height: 58px; background: var(--wood); box-shadow: inset 0 0 0 3px var(--wood-dark); }
+.door::after { content: ""; position: absolute; right: 7px; top: 28px; width: 4px; height: 4px; background: var(--warn); }
+.sign { position: absolute; right: 16px; top: 12px; padding: 2px 6px; background: var(--paper); color: var(--ink-px); font: 9px var(--font-label); box-shadow: 2px 2px 0 var(--ink-px); }
+.body { padding: 12px 14px 8px; display: grid; gap: 6px; align-content: start; }
+.body h3 { margin: 0; font: 700 18px var(--font-display); display: flex; align-items: center; gap: 8px; }
+.path { color: var(--muted); font: 15px var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.stats { display: flex; gap: 14px; color: var(--muted); font-size: 12px; }
+.stats b { color: var(--text); font-weight: 600; }
+.foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px 14px; }
+.foot .grow { flex: 1; }
+.dots { width: 34px; padding: 5px 0; border: 2px solid var(--ink-px); background: var(--panel-2); font: 11px var(--font-label); box-shadow: 0 3px 0 var(--ink-px); }
+.cardMenu { position: absolute; right: 12px; bottom: 54px; z-index: 5; width: 210px; padding: 6px; border: 3px solid var(--accent); background: var(--panel); box-shadow: 6px 6px 0 rgba(0,0,0,.55); }
+.emptyLot { display: grid; place-content: center; gap: 10px; min-height: 250px; border: 3px dashed var(--line); color: var(--muted); text-align: center; }
+.emptyLot b { font: 700 16px var(--font-display); color: var(--text); }
+
+/* NEW: folder browser */
+.crumbs { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; font: 16px var(--font-mono); color: var(--muted); }
+.crumbs button { border: 0; background: none; padding: 0 2px; color: var(--muted); font: inherit; }
+.crumbs button:hover { color: var(--accent); }
+.crumbs .last { color: var(--text); }
+.folders { height: 280px; overflow: auto; border: 2px solid var(--ink-px); background: var(--bg); }
+.folder { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-bottom: 1px solid #3e355866; background: none; text-align: left; }
+.folder:hover { background: var(--panel-2); }
+.folder.sel { background: #ff8a5c26; box-shadow: inset 3px 0 0 var(--accent); }
+.folder .ico { width: 18px; height: 14px; background: var(--wood-light); box-shadow: inset 0 0 0 2px var(--wood-dark); position: relative; flex: none; }
+.folder .ico::before { content: ""; position: absolute; left: 0; top: -4px; width: 8px; height: 4px; background: var(--wood-dark); }
+.folder .n { flex: 1; }
+.folder .chip { font-size: 9px; padding: 0 5px; }
+.choice { display: flex; gap: 12px; align-items: center; padding: 10px 12px; border: 2px solid var(--line); background: var(--panel-2); }
+.choice .grow { flex: 1; color: var(--muted); font-size: 13px; }
+.choice .grow b { color: var(--text); }
+.seg { display: inline-flex; border: 2px solid var(--ink-px); box-shadow: 0 3px 0 var(--ink-px); }
+.seg button { padding: 5px 12px; border: 0; background: var(--panel-2); font: 10px var(--font-label); }
+.seg button.on { background: var(--accent); color: var(--accent-ink); }
+
+/* NEW: window states */
+.center { position: absolute; inset: 56px 0 0 0; display: grid; place-items: center; }
+.stateCard { width: min(520px, 92%); display: grid; gap: 14px; padding: 26px; text-align: center; border: 3px solid var(--line); background: var(--panel); box-shadow: 6px 6px 0 rgba(0,0,0,.55); }
+.stateCard h2 { margin: 0; font: 700 22px var(--font-display); }
+.stateCard p { margin: 0; color: var(--muted); }
+.stateCard .actions { justify-content: center; }
+.stateCard.warn { border-color: var(--warn); }
+.stateCard.danger { border-color: var(--danger); }
+.elevator { margin: 4px auto; display: grid; grid-template-columns: repeat(2, 30px); gap: 4px; }
+.elevator i { height: 46px; background: var(--wood); box-shadow: inset 0 0 0 3px var(--wood-dark); animation: slide 1.4s steps(4) infinite alternate; }
+.elevator i:last-child { animation-name: slide2; }
+@keyframes slide { to { transform: translateX(-12px); } }
+@keyframes slide2 { to { transform: translateX(12px); } }
+.steps { display: grid; gap: 4px; text-align: left; font: 15px var(--font-mono); color: var(--muted); margin: 0 auto; }
+.steps .done { color: var(--ok); }
+.steps .now { color: var(--text); }
+.banner { position: absolute; left: 436px; right: 0; top: 56px; z-index: 30; display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 3px solid var(--ink-px); background: var(--danger); color: var(--ink-px); }
+.banner b { font: 12px var(--font-label); }
+.banner code { color: var(--ink-px); font-size: 15px; opacity: .8; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.banner .btn { box-shadow: 0 3px 0 var(--ink-px); }
+
+/* Delete dialog */
+.kept { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.kept div { padding: 10px; border: 2px solid var(--line); background: var(--panel-2); font-size: 13px; }
+.kept h4 { margin: 0 0 6px; font: 10px var(--font-label); }
+.kept .gone h4 { color: var(--danger); }
+.kept .stay h4 { color: var(--ok); }
+.kept ul { margin: 0; padding-left: 16px; color: var(--muted); }
+.kept code { font-size: 14px; color: var(--text); }
+.options { display: grid; gap: 8px; }
+.option { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 2px solid var(--line); background: var(--panel-2); text-align: left; }
+.option:hover { border-color: var(--accent); }
+.option.sel { border-color: var(--accent); background: #ff8a5c1c; }
+.option .radio { width: 14px; height: 14px; margin-top: 3px; flex: none; border: 2px solid var(--muted); }
+.option.sel .radio { background: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--panel); }
+.option b { display: block; font: 11px var(--font-label); color: var(--text); margin-bottom: 2px; }
+.option span { color: var(--muted); font-size: 13px; }
+.featureBox { display: flex; gap: 10px; align-items: center; padding: 10px 12px; border: 2px dashed var(--warn); color: var(--muted); font-size: 13px; }
+.featureBox b { color: var(--text); }
+.confirmName { display: grid; gap: 6px; }
+</style>
+</head>
+<body>
+
+<nav class="picker" aria-label="Screens">
+  <strong>MULTI-PROJECT MOCKUPS</strong>
+  <button data-screen="lobby" aria-pressed="true">1 · Projects page</button>
+  <button data-screen="browse">2 · Open a folder</button>
+  <button data-screen="create">3 · New project</button>
+  <button data-screen="menu">4 · Project menu</button>
+  <button data-screen="opening">5 · Opening</button>
+  <button data-screen="held">6 · Open elsewhere</button>
+  <button data-screen="taken">7 · Taken over</button>
+  <button data-screen="crashed">8 · Daemon stopped</button>
+  <button data-screen="leave">9 · Leaving</button>
+  <button data-screen="delete">10 · Delete</button>
+  <button data-screen="feature">11 · Delete, feature</button>
+  <span class="note">Static mockups for ADR-0014 (step C). Pick a screen; nothing here is wired.</span>
+</nav>
+
+<!-- Reusable bits -->
+<template id="brand">
+  <div class="brand">
+    <svg viewBox="0 0 13 13" shape-rendering="crispEdges" aria-hidden="true"><path fill="#ff8a5c" d="M4 1h1v1H4zM6 1h1v1H6zM8 1h1v1H8zM3 3h1v1H3zM9 3h1v1H9zM4 5h1v1H4zM6 5h1v1H6zM8 5h1v1H8zM2 9h1v1H2zM4 8h1v1H4zM6 8h1v1H6zM8 8h1v1H8zM10 9h1v1h-1zM1 11h1v1H1zM11 11h1v1h-1z"/></svg>
+    Nobody Inc
+  </div>
+</template>
+
+<!-- 1. Projects page -->
+<section class="screen on" id="lobby">
+  <p class="caption"><b>http://localhost:3000</b> without <code>?project=</code>. This window holds no project. Each card is an office building: lit windows mean the project is open (in another window), with its agents at work. <b>Open</b> switches this window to the project; on a project open elsewhere it becomes <b>Open here</b> (takes it over, screen 6). The building with dashed walls lost its folder.</p>
+  <div class="frame">
+    <header class="topbar">
+      <div data-brand></div>
+      <nav class="tabs"><button class="tab sel">Projects</button></nav>
+      <span class="daemon">Launcher 127.0.0.1:7420</span>
+    </header>
+    <div class="lobby">
+      <div class="lobbyHead">
+        <div class="grow">
+          <h1 class="title">Projects</h1>
+          <p class="sub">One window, one project: a project runs while its window is open, and stops when you close it.</p>
+        </div>
+        <button class="btn">Open folder…</button>
+        <button class="btnPrimary">+ New project</button>
+      </div>
+      <div class="grid">
+        <article class="card">
+          <div class="facade">
+            <span class="sign">OPEN</span>
+            <div class="windows"><i class="lit"></i><i class="lit"></i><i></i><i class="lit soft"></i><i class="lit"></i><i></i><i class="lit"></i><i></i></div>
+            <div class="door"></div>
+          </div>
+          <div class="body">
+            <h3><span class="lamp on"></span>nobody-sandbox</h3>
+            <div class="path">~/Documents/workspace/nobody-sandbox</div>
+            <div class="chips"><span class="chip ok">Open in another window</span><span class="chip">git</span></div>
+            <div class="stats"><span><b>3</b> agents working</span><span><b>$1.20</b> today</span><span>feature <b>orders</b></span></div>
+          </div>
+          <div class="foot"><span class="grow"></span><button class="dots">⋯</button><button class="btn">Open here</button></div>
+        </article>
+
+        <article class="card">
+          <div class="facade">
+            <div class="windows"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="door"></div>
+          </div>
+          <div class="body">
+            <h3><span class="lamp"></span>client-portal</h3>
+            <div class="path">~/code/client-portal</div>
+            <div class="chips"><span class="chip">git</span></div>
+            <div class="stats"><span>Last opened <b>yesterday 18:42</b></span></div>
+          </div>
+          <div class="foot"><span class="grow"></span><button class="dots">⋯</button><button class="btnPrimary">Open</button></div>
+          <div class="cardMenu">
+            <button class="item cmd">Show folder path</button>
+            <div class="sep"></div>
+            <button class="item cmd danger">Delete project…</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="facade">
+            <div class="windows"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="door"></div>
+          </div>
+          <div class="body">
+            <h3><span class="lamp"></span>notes</h3>
+            <div class="path">~/notes</div>
+            <div class="chips"><span class="chip warn">Not a git repository</span></div>
+            <div class="stats"><span>Never opened</span></div>
+          </div>
+          <div class="foot"><span class="grow"></span><button class="dots">⋯</button><button class="btnPrimary">Open</button></div>
+        </article>
+
+        <article class="card missing">
+          <div class="facade"><div class="windows"><i></i><i></i><i></i><i></i></div></div>
+          <div class="body">
+            <h3><span class="lamp"></span>old-api</h3>
+            <div class="path">~/code/old-api</div>
+            <div class="chips"><span class="chip danger">Folder missing</span></div>
+            <div class="stats"><span>Moved or deleted outside Nobody Inc</span></div>
+          </div>
+          <div class="foot"><span class="grow"></span><button class="btnDanger">Remove</button></div>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. Open a folder -->
+<section class="screen" id="browse">
+  <p class="caption"><b>Open folder…</b> browses the machine through the launcher (folders only, hidden ones left out). Each folder says whether it is a git repository, already has a <code>.nobody/</code>, or is a known project. Opening a folder without <code>.nobody/</code> sets it up: the director alone, and Claude Code's trust. The window then switches to it.</p>
+  <div class="frame dim">
+    <header class="topbar"><div data-brand></div><nav class="tabs"><button class="tab sel">Projects</button></nav><span class="daemon">Launcher 127.0.0.1:7420</span></header>
+    <div class="lobby"><h1 class="title">Projects</h1></div>
+    <div class="modalBackdrop">
+      <div class="modal" role="dialog" aria-label="Open a folder">
+        <h2>Open a folder</h2>
+        <div class="crumbs"><button>~</button>/<button>code</button>/<span class="last">shop</span><span style="flex:1"></span><button title="Parent folder">↑ up</button></div>
+        <div class="folders">
+          <button class="folder"><span class="ico"></span><span class="n">api</span><span class="chip">git</span></button>
+          <button class="folder sel"><span class="ico"></span><span class="n">backoffice</span><span class="chip">git</span><span class="chip accent">.nobody</span></button>
+          <button class="folder"><span class="ico"></span><span class="n">client-portal</span><span class="chip">git</span><span class="chip ok">known</span></button>
+          <button class="folder"><span class="ico"></span><span class="n">design</span></button>
+          <button class="folder"><span class="ico"></span><span class="n">infra</span><span class="chip">git</span></button>
+          <button class="folder"><span class="ico"></span><span class="n">mobile</span><span class="chip">git</span></button>
+          <button class="folder"><span class="ico"></span><span class="n">scripts</span></button>
+        </div>
+        <div class="choice"><div class="grow"><b>backoffice</b> already has a <code>.nobody/</code> (committed by someone): its teams and agents are used as they are.</div></div>
+        <div class="actions"><button class="btn">Cancel</button><button class="btnPrimary">Open backoffice</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. New project -->
+<section class="screen" id="create">
+  <p class="caption"><b>+ New project</b>: pick where (same browser), type a name. The launcher creates the folder, runs <code>git init</code> with an empty first commit, sets it up, and the window switches to it. A name that exists is refused before anything is written.</p>
+  <div class="frame dim">
+    <header class="topbar"><div data-brand></div><nav class="tabs"><button class="tab sel">Projects</button></nav><span class="daemon">Launcher 127.0.0.1:7420</span></header>
+    <div class="lobby"><h1 class="title">Projects</h1></div>
+    <div class="modalBackdrop">
+      <div class="modal" role="dialog" aria-label="New project">
+        <h2>New project</h2>
+        <label class="label">NAME<input class="input" value="invoice-service"></label>
+        <div class="label">IN</div>
+        <div class="crumbs" style="margin-top:-6px"><button>~</button>/<span class="last">code</span><span style="flex:1"></span><button>↑ up</button></div>
+        <div class="folders" style="height:170px">
+          <button class="folder"><span class="ico"></span><span class="n">client-portal</span><span class="chip">git</span><span class="chip ok">known</span></button>
+          <button class="folder"><span class="ico"></span><span class="n">shop</span></button>
+          <button class="folder"><span class="ico"></span><span class="n">sandbox</span></button>
+        </div>
+        <div class="choice"><div class="grow">Creates <code>~/code/invoice-service</code>, a git repository with an empty first commit, and its <code>.nobody/</code> with the director.</div></div>
+        <div class="actions"><button class="btn">Cancel</button><button class="btnPrimary">Create project</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. Project menu -->
+<section class="screen" id="menu">
+  <p class="caption">In a project window, the project's name replaces "Project <code>name</code>" in the top bar and opens this menu. Picking another project <b>closes this one</b> (its agents stop, no grace period) and opens the other here; Cmd/Ctrl-click opens it in a new window instead. A project open in another window is marked; picking it asks to take it over.</p>
+  <div class="frame">
+    <header class="topbar">
+      <div data-brand></div>
+      <div class="switcher">
+        <button class="switchBtn open"><span class="lamp on"></span><code>nobody-sandbox</code><span class="caret">▾</span></button>
+        <div class="menu">
+          <div class="head">SWITCH PROJECT · THIS ONE CLOSES</div>
+          <button class="item current"><span class="lamp on"></span><span class="name"><code>nobody-sandbox</code><small>~/Documents/workspace/nobody-sandbox</small></span><span class="tag">THIS WINDOW</span></button>
+          <button class="item"><span class="lamp busy"></span><span class="name"><code>backoffice</code><small>~/code/shop/backoffice</small></span><span class="tag">OTHER WINDOW</span></button>
+          <button class="item"><span class="lamp"></span><span class="name"><code>client-portal</code><small>~/code/client-portal</small></span><span class="tag"></span></button>
+          <button class="item"><span class="lamp"></span><span class="name"><code>notes</code><small>~/notes</small></span><span class="tag"></span></button>
+          <div class="sep"></div>
+          <button class="item cmd">All projects…</button>
+          <button class="item cmd">Open folder…</button>
+          <button class="item cmd">+ New project</button>
+          <div class="sep"></div>
+          <button class="item cmd danger">Delete this project…</button>
+        </div>
+      </div>
+      <nav class="tabs"><button class="tab sel">Office</button><button class="tab">Kanban</button><button class="tab">Schedules</button><button class="tab">Staff</button><button class="tab">Settings</button></nav>
+      <span class="daemon">Live</span>
+    </header>
+    <div class="officeStub"><div class="rail"></div><div class="chat"></div><div class="floor"></div></div>
+  </div>
+</section>
+
+<!-- 5. Opening -->
+<section class="screen" id="opening">
+  <p class="caption">While the project daemon starts (a few seconds: database, MCP servers, skills, agents), the window shows the elevator instead of an empty office. If the project's folder is not trusted by Claude Code (trust revoked since), a note says so.</p>
+  <div class="frame">
+    <header class="topbar"><div data-brand></div><div class="switcher"><button class="switchBtn"><span class="lamp busy"></span><code>client-portal</code><span class="caret">▾</span></button></div><nav class="tabs"><button class="tab sel">Office</button><button class="tab">Kanban</button><button class="tab">Schedules</button><button class="tab">Staff</button><button class="tab">Settings</button></nav><span class="daemon warn">Starting…</span></header>
+    <div class="center">
+      <div class="stateCard">
+        <div class="elevator"><i></i><i></i></div>
+        <h2>Opening client-portal</h2>
+        <div class="steps"><span class="done">✓ project daemon started</span><span class="now">› agents arriving at their desks…</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6. Held elsewhere -->
+<section class="screen" id="held">
+  <p class="caption">The project is already open in another window (launcher answered <b>held</b>). In a browser we cannot bring that tab to the front: <b>Open here</b> takes it over (the other window shows screen 7). The desktop app will focus the other window instead.</p>
+  <div class="frame dim">
+    <header class="topbar"><div data-brand></div><div class="switcher"><button class="switchBtn"><span class="lamp busy"></span><code>backoffice</code><span class="caret">▾</span></button></div><nav class="tabs"><button class="tab sel">Office</button></nav><span class="daemon off">Not held</span></header>
+    <div class="officeStub"><div class="rail"></div><div class="chat"></div><div class="floor"></div></div>
+    <div class="modalBackdrop">
+      <div class="modal" role="dialog" aria-label="Open in another window">
+        <h2>backoffice is open in another window</h2>
+        <p class="sub">A project is shown in one window at a time. Opening it here closes it in the other window; its agents keep working.</p>
+        <div class="actions"><button class="btn">Back to projects</button><button class="btnPrimary">Open here</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7. Taken over -->
+<section class="screen" id="taken">
+  <p class="caption">This window's project was opened in another window (launcher sent <b>taken</b>). The office is gone; the window offers to take it back or go to the projects page.</p>
+  <div class="frame">
+    <header class="topbar"><div data-brand></div><div class="switcher"><button class="switchBtn"><span class="lamp busy"></span><code>backoffice</code><span class="caret">▾</span></button></div><nav class="tabs"><button class="tab sel">Office</button></nav><span class="daemon off">Open elsewhere</span></header>
+    <div class="center">
+      <div class="stateCard warn">
+        <h2>Opened in another window</h2>
+        <p>backoffice now lives in another window. Its agents keep working there.</p>
+        <div class="actions"><button class="btn">Back to projects</button><button class="btnPrimary">Take it back</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 8. Crashed -->
+<section class="screen" id="crashed">
+  <p class="caption">The project daemon stopped on its own (crash, invalid <code>.nobody/</code>, lost lock). A red band over the office gives the reason (the daemon's last log line); <b>Restart</b> starts it again. The office stays visible, frozen, until then.</p>
+  <div class="frame">
+    <header class="topbar"><div data-brand></div><div class="switcher"><button class="switchBtn"><span class="lamp"></span><code>nobody-sandbox</code><span class="caret">▾</span></button></div><nav class="tabs"><button class="tab sel">Office</button><button class="tab">Kanban</button><button class="tab">Schedules</button><button class="tab">Staff</button><button class="tab">Settings</button></nav><span class="daemon off">Stopped</span></header>
+    <div class="officeStub" style="filter:grayscale(.7)"><div class="rail"></div><div class="chat"></div><div class="floor"></div></div>
+    <div class="banner"><b>THE PROJECT STOPPED</b><code>parse .nobody/org.yaml: line 4: field chanels not found</code><button class="btn">Restart</button></div>
+  </div>
+</section>
+
+<!-- 9. Leaving -->
+<section class="screen" id="leave">
+  <p class="caption">Switching project from the menu while agents work: the control room asks first. Closing the tab itself only gets the browser's generic "Leave site?" prompt (the desktop app will show this dialog instead).</p>
+  <div class="frame dim">
+    <header class="topbar"><div data-brand></div><div class="switcher"><button class="switchBtn"><span class="lamp on"></span><code>nobody-sandbox</code><span class="caret">▾</span></button></div><nav class="tabs"><button class="tab sel">Office</button></nav><span class="daemon">Live</span></header>
+    <div class="officeStub"><div class="rail"></div><div class="chat"></div><div class="floor"></div></div>
+    <div class="modalBackdrop">
+      <div class="modal" role="dialog" aria-label="Close the project">
+        <h2>Close nobody-sandbox?</h2>
+        <p class="sub"><b style="color:var(--text)">3 agents are working</b> (dev1@dev, dev2@dev, qa1@qa). Closing the project stops them now: their current turn is lost. Mail, tickets and the feature are kept for next time.</p>
+        <div class="actions"><button class="btn">Stay here</button><button class="btnPrimary">Close it and open client-portal</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 10. Delete -->
+<section class="screen" id="delete">
+  <p class="caption"><b>Delete project…</b> (card menu or project menu). It says plainly what goes and what stays, and asks to type the name. Refused while another window has the project open.</p>
+  <div class="frame dim">
+    <header class="topbar"><div data-brand></div><nav class="tabs"><button class="tab sel">Projects</button></nav><span class="daemon">Launcher 127.0.0.1:7420</span></header>
+    <div class="lobby"><h1 class="title">Projects</h1></div>
+    <div class="modalBackdrop">
+      <div class="modal danger" role="dialog" aria-label="Delete project">
+        <h2>Delete client-portal from Nobody Inc?</h2>
+        <div class="kept">
+          <div class="gone"><h4>REMOVED</h4><ul><li><code>.nobody/</code>: teams, agents, schedules</li><li>history: mail, tickets, spend</li><li>the teams' worktrees</li></ul></div>
+          <div class="stay"><h4>KEPT</h4><ul><li>your code, untouched</li><li>every git branch, <code>nobody/*</code> too</li><li>your templates and settings</li></ul></div>
+        </div>
+        <p class="sub">If <code>.nobody/</code> was committed, its deletion shows in git: commit it or not, your choice.</p>
+        <label class="confirmName label">TYPE THE PROJECT NAME TO CONFIRM<input class="input" placeholder="client-portal"></label>
+        <div class="actions"><button class="btn">Cancel</button><button class="btnDanger" disabled style="opacity:.55">Delete</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 11. Delete with a feature -->
+<section class="screen" id="feature">
+  <p class="caption">The launcher refused: a feature is not finished. Nothing was deleted yet. The choices from ADR-0014 (Cancel keeps the project); the red button follows the choice ("Merge and delete" / "Delete anyway"). <b>Merge as it is</b> may still be refused (conflict, uncommitted changes in the project): the reason then shows here and nothing is deleted.</p>
+  <div class="frame dim">
+    <header class="topbar"><div data-brand></div><nav class="tabs"><button class="tab sel">Projects</button></nav><span class="daemon">Launcher 127.0.0.1:7420</span></header>
+    <div class="lobby"><h1 class="title">Projects</h1></div>
+    <div class="modalBackdrop">
+      <div class="modal danger" role="dialog" aria-label="Unfinished feature">
+        <h2>A feature is not finished</h2>
+        <div class="featureBox">Feature <b>Orders API</b> on <code>nobody/orders-api</code></div>
+        <div class="options">
+          <button class="option sel"><span class="radio"></span><span><b>MERGE AS IT IS</b><span>Finish it now: unfinished tickets canceled, the branch merged into its base branch locally (nothing pushed). Then delete.</span></span></button>
+          <button class="option"><span class="radio"></span><span><b>DELETE ANYWAY</b><span>Don't merge. Uncommitted work in the teams' worktrees is lost; the branches stay, you can merge them yourself.</span></span></button>
+        </div>
+        <div class="actions"><button class="btn">Cancel</button><button class="btnDanger">Merge and delete</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Mockup only: screen picker and the shared brand.
+  const brand = document.getElementById("brand").content;
+  document.querySelectorAll("[data-brand]").forEach((el) => el.replaceWith(brand.cloneNode(true)));
+  const buttons = document.querySelectorAll(".picker button");
+  buttons.forEach((b) => b.addEventListener("click", () => {
+    buttons.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    document.querySelectorAll(".screen").forEach((s) => s.classList.toggle("on", s.id === b.dataset.screen));
+    location.hash = b.dataset.screen;
+  }));
+  const start = location.hash.slice(1);
+  if (start) document.querySelector(`.picker [data-screen="${start}"]`)?.click();
+</script>
+</body>
+</html>

@@ -4,7 +4,7 @@ The director talks with you, turns your requests into features and tickets, and 
 
 ## Setting it up
 
-There is nothing to do: the director is always present. It is not in the catalog. `nobodyd init` writes it, alone (you then build the teams, or ask it to), and the daemon writes it when it starts on a project that has none (`org.EnsureDirector`, from `internal/catalog/director/god.md`).
+There is nothing to do: the director is always present. It is not in the catalog. Setting a folder up as a project writes it, alone (you then build the teams, or ask it to; `projects.md`), and the project's daemon writes it when it starts on a project that has none (`org.EnsureDirector`, from `internal/catalog/director/god.md`).
 
 Its file is `.nobody/director/<name>.md`, and its address is that name: rename the file `boss.md` and everyone writes to `boss`. There is exactly one. Edit it like any agent (Staff tab); it can be neither put on leave nor dismissed. Its built-in definition uses Opus and the `default` permission profile.
 

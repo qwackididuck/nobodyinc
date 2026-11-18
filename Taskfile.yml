@@ -40,12 +40,10 @@ tasks:
       - pnpm --dir web install
 
   dev:daemon:
-    desc: Build and run the daemon on a project (PROJECT=<dir>, default ../nobody-sandbox)
+    desc: Build and run the launcher; projects are opened from the control room (ARGS="-start=false" starts no agent)
     deps: [build]
-    vars:
-      PROJECT: '{{.PROJECT | default "../nobody-sandbox"}}'
     cmds:
-      - ./bin/nobodyd -project {{.PROJECT}}
+      - ./bin/nobodyd {{.ARGS}}
 
   dev:web:
     desc: Run the Next.js dev server

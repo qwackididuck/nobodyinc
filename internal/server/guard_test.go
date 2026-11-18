@@ -11,7 +11,7 @@ func TestGuardCrossSite(t *testing.T) {
 	t.Parallel()
 
 	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
-	h := guardCrossSite([]string{"localhost:3000"}, ok)
+	h := GuardCrossSite([]string{"localhost:3000"}, ok)
 
 	tests := []struct {
 		name, method, path, origin, contentType, body string

@@ -1,0 +1,660 @@
+/* Projects (ADR-0014): the projects page, the folder browser, the project
+   menu of the top bar and the window's states. Mock-ups:
+   docs/mockups/multi-project/projects.html. */
+
+/* ---- Projects page ------------------------------------------------------------- */
+
+.page {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.lobby {
+  overflow: auto;
+  padding: 28px 36px;
+}
+
+.lobbyHead {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.grow {
+  flex: 1;
+  min-width: 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  border: 3px solid var(--ink-px);
+  background: var(--panel);
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.45);
+}
+
+.card:hover {
+  border-color: var(--accent);
+}
+
+.card[data-missing="true"] {
+  opacity: 0.7;
+  border-style: dashed;
+  border-color: var(--line);
+}
+
+/* The building: lit windows when the project is open (in a window). */
+.facade {
+  position: relative;
+  height: 104px;
+  overflow: hidden;
+  background: var(--wall);
+  border-bottom: 3px solid var(--ink-px);
+}
+
+.facade::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 14px;
+  background: var(--wall-dark);
+}
+
+.windows {
+  position: absolute;
+  left: 18px;
+  top: 16px;
+  display: grid;
+  grid-template-columns: repeat(4, 22px);
+  gap: 8px 10px;
+}
+
+.windows i {
+  width: 22px;
+  height: 18px;
+  background: #2c2440;
+  box-shadow: inset 0 0 0 2px var(--ink-px);
+}
+
+.windows i[data-lit="true"] {
+  background: var(--warn);
+}
+
+.windows i[data-lit="soft"] {
+  background: #ffe9a8;
+}
+
+.door {
+  position: absolute;
+  right: 26px;
+  bottom: 0;
+  width: 38px;
+  height: 58px;
+  background: var(--wood);
+  box-shadow: inset 0 0 0 3px var(--wood-dark);
+}
+
+.door::after {
+  content: "";
+  position: absolute;
+  right: 7px;
+  top: 28px;
+  width: 4px;
+  height: 4px;
+  background: var(--warn);
+}
+
+.sign {
+  position: absolute;
+  right: 16px;
+  top: 12px;
+  padding: 2px 6px;
+  background: var(--paper);
+  color: var(--ink-px);
+  font: 9px var(--font-label);
+  box-shadow: 2px 2px 0 var(--ink-px);
+}
+
+.body {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 12px 14px 8px;
+}
+
+.body h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font: 700 18px var(--font-display);
+}
+
+.path {
+  overflow: hidden;
+  color: var(--muted);
+  font: 15px var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chipOk {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.chipWarn {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.chipDanger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.chipAccent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stats b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 14px;
+}
+
+.dots {
+  width: 34px;
+  padding: 5px 0;
+  border: 2px solid var(--ink-px);
+  background: var(--panel-2);
+  font: 11px var(--font-label);
+  box-shadow: 0 3px 0 var(--ink-px);
+}
+
+.cardMenu {
+  position: absolute;
+  right: 12px;
+  bottom: 54px;
+  z-index: 5;
+  width: 210px;
+}
+
+.empty {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  min-height: 250px;
+  border: 3px dashed var(--line);
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty b {
+  color: var(--text);
+  font: 700 16px var(--font-display);
+}
+
+/* ---- Menus (project menu, card menu) ------------------------------------------ */
+
+.menu {
+  padding: 6px;
+  border: 3px solid var(--accent);
+  background: var(--panel);
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.55);
+}
+
+.menuHead {
+  padding: 4px 8px 6px;
+  color: var(--muted);
+  font: 9px var(--font-label);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
+.item:hover {
+  background: var(--panel-2);
+}
+
+.item[aria-current="true"] {
+  background: #ff8a5c22;
+}
+
+.itemName {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemName code {
+  display: block;
+  color: var(--text);
+  font: 16px/1 var(--font-mono);
+}
+
+.itemName small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag {
+  color: var(--muted);
+  font: 9px var(--font-label);
+}
+
+.item[aria-current="true"] .tag {
+  color: var(--accent);
+}
+
+.sep {
+  height: 2px;
+  margin: 6px 0;
+  background: var(--line);
+}
+
+.cmd {
+  font: 11px var(--font-label);
+}
+
+.cmdDanger {
+  color: var(--danger);
+}
+
+/* ---- Project menu in the top bar ----------------------------------------------- */
+
+.switcher {
+  position: relative;
+}
+
+.switchBtn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 2px solid var(--line);
+  background: var(--panel-2);
+}
+
+.switchBtn:hover,
+.switchBtn[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.switchBtn code {
+  color: var(--text);
+  font: 16px var(--font-mono);
+}
+
+.caret {
+  color: var(--muted);
+  font: 10px var(--font-label);
+}
+
+.switchMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: 330px;
+}
+
+/* A project's state: running (in a window), starting, or stopped. */
+.lamp {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  background: var(--off);
+  box-shadow: 0 0 0 2px var(--ink-px);
+}
+
+.lamp[data-state="running"] {
+  background: var(--ok);
+}
+
+.lamp[data-state="starting"],
+.lamp[data-state="stopping"] {
+  background: var(--warn);
+}
+
+/* ---- Folder browser ------------------------------------------------------------ */
+
+.crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font: 16px var(--font-mono);
+}
+
+.crumbs button {
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+}
+
+.crumbs button:hover {
+  color: var(--accent);
+}
+
+.crumbLast {
+  color: var(--text);
+}
+
+.folders {
+  height: 280px;
+  overflow: auto;
+  border: 2px solid var(--ink-px);
+  background: var(--bg);
+}
+
+.folders[data-small="true"] {
+  height: 170px;
+}
+
+.folder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid #3e355866;
+  background: none;
+  text-align: left;
+}
+
+.folder:hover {
+  background: var(--panel-2);
+}
+
+.folder[aria-selected="true"] {
+  background: #ff8a5c26;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.folderIcon {
+  position: relative;
+  flex: none;
+  width: 18px;
+  height: 14px;
+  background: var(--wood-light);
+  box-shadow: inset 0 0 0 2px var(--wood-dark);
+}
+
+.folderIcon::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: -4px;
+  width: 8px;
+  height: 4px;
+  background: var(--wood-dark);
+}
+
+.folder .chip {
+  padding: 0 5px;
+  font-size: 9px;
+}
+
+.hint {
+  padding: 10px 12px;
+  border: 2px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.hint b,
+.hint code {
+  color: var(--text);
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+/* ---- Window states -------------------------------------------------------------- */
+
+.center {
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.stateCard {
+  display: grid;
+  gap: 14px;
+  width: min(520px, 100%);
+  padding: 26px;
+  border: 3px solid var(--line);
+  background: var(--panel);
+  box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.stateCard[data-tone="warn"] {
+  border-color: var(--warn);
+}
+
+.stateCard h2 {
+  margin: 0;
+  font: 700 22px var(--font-display);
+}
+
+.stateCard p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.stateCard .actions {
+  justify-content: center;
+}
+
+/* The elevator, while the project's daemon starts. */
+.elevator {
+  display: grid;
+  grid-template-columns: repeat(2, 30px);
+  gap: 4px;
+  margin: 4px auto;
+}
+
+.elevator i {
+  height: 46px;
+  background: var(--wood);
+  box-shadow: inset 0 0 0 3px var(--wood-dark);
+  animation: door-left 1.4s steps(4) infinite alternate;
+}
+
+.elevator i:last-child {
+  animation-name: door-right;
+}
+
+@keyframes door-left {
+  to {
+    transform: translateX(-12px);
+  }
+}
+
+@keyframes door-right {
+  to {
+    transform: translateX(12px);
+  }
+}
+
+/* Over the office when the project's daemon stopped on its own, or the
+   launcher cannot be reached. */
+.banner {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 3px solid var(--ink-px);
+  background: var(--danger);
+  color: var(--ink-px);
+}
+
+.banner[data-tone="warn"] {
+  background: var(--warn);
+}
+
+.banner b {
+  font: 12px var(--font-label);
+}
+
+.banner code {
+  flex: 1;
+  overflow: hidden;
+  color: var(--ink-px);
+  font: 15px var(--font-mono);
+  opacity: 0.8;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Delete dialog -------------------------------------------------------------- */
+
+.kept {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.kept > div {
+  padding: 10px;
+  border: 2px solid var(--line);
+  background: var(--panel-2);
+  font-size: 13px;
+}
+
+.kept h4 {
+  margin: 0 0 6px;
+  font: 10px var(--font-label);
+}
+
+.kept ul {
+  margin: 0;
+  padding-left: 16px;
+  color: var(--muted);
+}
+
+.gone h4 {
+  color: var(--danger);
+}
+
+.stay h4 {
+  color: var(--ok);
+}
+
+.featureBox {
+  padding: 10px 12px;
+  border: 2px dashed var(--warn);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.featureBox b,
+.featureBox code {
+  color: var(--text);
+}
+
+.options {
+  display: grid;
+  gap: 8px;
+}
+
+.option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 2px solid var(--line);
+  background: var(--panel-2);
+  text-align: left;
+}
+
+.option:hover,
+.option[aria-checked="true"] {
+  border-color: var(--accent);
+}
+
+.option[aria-checked="true"] {
+  background: #ff8a5c1c;
+}
+
+.radio {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  border: 2px solid var(--muted);
+}
+
+.option[aria-checked="true"] .radio {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--panel);
+}
+
+.option b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text);
+  font: 11px var(--font-label);
+}
+
+.option span {
+  color: var(--muted);
+  font-size: 13px;
+}

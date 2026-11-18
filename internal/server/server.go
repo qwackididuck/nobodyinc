@@ -171,7 +171,7 @@ func New(d Deps) http.Handler {
 		mux.Handle(pattern, h)
 	}
 
-	return guardCrossSite(d.Origins, mux)
+	return GuardCrossSite(d.Origins, mux)
 }
 
 func (s *server) lookupEnv(name string) (string, bool) {

@@ -103,7 +103,7 @@ Each delivered message shows its `ID`, its sender, its act ("an answer is expect
 - **No infinite loop**: a message leaves the tray as soon as it is delivered. When the agent tries to stop again, the tray is empty and the hook lets it go.
 - **Isolation**: an agent can only acknowledge its own messages (the recipient is part of the update query).
 - **Non-blocking errors**: if the daemon is unreachable, `nobody-hook` exits with code 1. Claude Code shows the error but the agent keeps working.
-- **Configuration through the environment**: the daemon starts each agent with `NOBODY_AGENT` (its address) and `NOBODY_DAEMON_URL`.
+- **Configuration through the environment**: the daemon starts each agent with `NOBODY_AGENT` (its address) and `NOBODY_DAEMON_URL` (its project daemon's own address, a port the launcher chose: `projects.md`).
 - **Never start an agent with `--bare`**: that mode disables hooks.
 
 ## Lesson: tell the agent that mail may arrive

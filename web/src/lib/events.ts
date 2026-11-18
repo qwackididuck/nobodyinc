@@ -1,10 +1,11 @@
-// The daemon's event stream, GET /api/events (docs/events.md).
+// The project daemon's event stream, GET /api/events (docs/events.md),
+// reached through the launcher like every project call (api.ts).
 //
 // Most events only say what changed: the UI reads it again through the REST
 // API. agent.status and message.sent carry data, used by the office
 // animations. "hello" opens every connection: reload everything.
 
-import type { AgentStatus, Message } from "./api";
+import { type AgentStatus, type Message, projectPath } from "./api";
 
 export type DaemonEvent =
   | { type: "hello" }
@@ -46,7 +47,7 @@ const EVENT_TYPES: EventType[] = [
 // itself; the daemon then sends "hello" again. It returns a function closing
 // the stream.
 export function connectEvents(onEvent: (e: DaemonEvent) => void, onConnection: (connected: boolean) => void): () => void {
-  const source = new EventSource("/api/events");
+  const source = new EventSource(projectPath("/api/events"));
 
   source.onopen = () => onConnection(true);
   source.onerror = () => onConnection(false);
