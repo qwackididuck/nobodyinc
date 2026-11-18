@@ -44,7 +44,7 @@ What each schedule did lives in the local database, never in the file (point 8).
 
 - `every`: a Go duration of one minute or more. The first occurrence comes one interval after the schedule is armed (the daemon starts, or the schedule is created, resumed or edited), then once per interval.
 - `cron`: a standard five-field expression, or a descriptor such as `@daily`, parsed by `robfig/cron/v3` (`cron.ParseStandard`; new dependency, accepted by the human).
-- Times are read in **the machine's time zone** (`time.Local`). Around daylight saving changes, we keep the library's behaviour, pinned by a test. On a machine without tzdata (a bare container), the local zone is UTC.
+- Times are read in **the machine's time zone** (`time.Local`). Around daylight saving changes, we keep the library's behaviour, pinned by a test: a time that does not exist that day is skipped, a time that happens twice runs twice. On a machine without tzdata (a bare container), the local zone is UTC.
 
 ### 3. Only while the daemon runs, no catch-up
 

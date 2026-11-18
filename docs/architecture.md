@@ -28,8 +28,9 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 | `internal/skills` | Finds the project's and the user's personal skills, reads and writes `SKILL.md` files, links the personal skills for the agents, discovers Claude Code's built-in skills, finds the skills an agent preloads (ADR-0011). |
 | `internal/catalog` | Agent templates (built-in and `~/.nobody/catalog`) and the agent file format shared with recruits (`agents.md`). |
 | `internal/messaging` | The post office: validates a draft, attaches it to its thread, applies the sending rules (`policy.go`), files it in the recipient's tray. |
-| `internal/store` | SQLite (pure-Go driver), schema evolved by versioned migrations: messages (pending until delivered) and tickets. |
+| `internal/store` | SQLite (pure-Go driver), schema evolved by versioned migrations: messages (pending until delivered), tickets and features, occurrences of scheduled tasks and the director's schedule proposals. |
 | `internal/work` | Tickets and features: team queues, claims, dependencies, deliverables, comments, and who may do what (`tickets.md`). |
+| `internal/schedule` | Scheduled tasks (`schedules.md`, ADR-0012): `.nobody/schedules.yaml` and its only writer, recurrences (interval or cron), the scheduler and its clock. What an occurrence does (a ticket or mail from `nobody` for a free agent) is in `internal/daemon/schedules.go`. |
 | `internal/workspace` | The project's git repository: feature branches, team worktrees, and the merges that move work between teams (`workspaces.md`). |
 | `internal/hook` | Decides what to hand an agent on a Claude Code hook, and formats the mail for the model. |
 | `internal/officemcp` | Each agent's MCP server: `send_message`, `list_contacts` and the ticket tools. The address in the URL is the agent's identity. |
@@ -77,12 +78,12 @@ Agents see neither the user's global settings, hooks and plugins nor the environ
 ## Testing
 
 - Unit tests next to each package.
-- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
+- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block, scheduled tasks with a manual clock) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
 - `test/contract` (`task contract`): the Claude Code behaviours we rely on, against the real CLI.
 
 ## Changes pushed to the browser
 
-The control room does not poll: `GET /api/events` streams every change as Server-Sent Events (agent statuses, messages sent and delivered, approvals, tickets, features, the organization, the catalog), and the UI reads the changed resource again through the REST API. See `docs/events.md` and ADR-0006.
+The control room does not poll: `GET /api/events` streams every change as Server-Sent Events (agent statuses, messages sent and delivered, approvals, tickets, features, the organization, the catalog, scheduled tasks), and the UI reads the changed resource again through the REST API. See `docs/events.md` and ADR-0006.
 
 ## The terminal in the browser
 

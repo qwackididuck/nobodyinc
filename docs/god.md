@@ -41,6 +41,7 @@ you ──── request ──────────────────�
 | Propose a feature | no | yes (`feature_propose`); you start or refuse it |
 | Create and delete teams, restrict their flows | no | yes (`team_create`; `team_delete` and `team_block` only with your agreement) |
 | Recruit, create, edit, put on leave, dismiss agents | no | yes, freely; never itself |
+| Scheduled tasks | no | reads them and proposes new ones (`schedule_propose`); you accept, edited or not, or refuse |
 
 Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `ticket_*`):
 
@@ -55,6 +56,8 @@ Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `tick
 | `agent_recruit`, `agent_create` | Recruit from a template, or create from a definition written from scratch, into a team. |
 | `agent_edit` | Replace an agent's definition (a new role or new instructions restart it with a fresh session). |
 | `agent_leave`, `agent_return`, `agent_dismiss` | As in the Staff tab (`docs/agents.md`, "Lifecycle"). |
+| `schedule_list` | The scheduled tasks, with their next and last occurrence (`docs/schedules.md`). |
+| `schedule_propose` | Proposes a scheduled task. Nothing runs until you accept it, as it is or edited (its card in the chat: Accept, Edit…, Refuse…); it gets `agree` or `refuse`. It has no tool to create, edit, pause or delete one itself. |
 
 It is not a source of knowledge about the project: it knows what you want, the teams know how the project works. The agents' routing rule treats a question to it like a question to you (`docs/agents.md`, "Whom to ask"), and its own prompt asks it to send questions about the project to the agent whose expertise covers them.
 
@@ -67,7 +70,8 @@ Changes to agents are written by the daemon (`internal/staffing`), as when you m
 | `internal/org/director.go` | The director in the organization: its file, its address, exactly one (`EnsureDirector`). |
 | `internal/messaging/policy.go` | It writes to anyone, anyone writes to it. |
 | `internal/work/service.go`, `feature.go` | Its ticket privileges; feature proposals (`ProposeFeature`, `StartProposedFeature`, `RefuseFeature`). |
-| `internal/officemcp/director.go` | Its office tools, exposed at its address only. |
+| `internal/officemcp/director.go`, `schedules.go` | Its office tools, exposed at its address only. |
+| `internal/daemon/scheduleoffice.go` | Its schedule proposals and the human's decisions, as messages (ADR-0012). |
 | `internal/daemon/director.go`, `proposals.go` | The tools' backing (staffing, overview); proposals and decisions as messages. |
 | `internal/catalog/director/god.md` | Its built-in definition (`catalog.Director`), outside the catalog. |
-| `web/src/components/chat/` (`cards.tsx`) | Its chat; proposals with Start / Refuse. |
+| `web/src/components/chat/` (`cards.tsx`) | Its chat; feature proposals with Start / Refuse, schedule proposals with Accept / Edit… / Refuse. |
