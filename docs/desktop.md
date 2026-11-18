@@ -4,7 +4,9 @@ Nobody Inc as an application: started like any app, it shows the projects page, 
 
 ## Using it
 
-- **Build**: `task desktop:build` (macOS) exports the control room, builds the app and the binaries it ships with, and assembles `desktop/build/bin/Nobody Inc.app`. Move it to `/Applications` if you like. It is not signed: the first time, open it with right-click > Open.
+- **Download**: every release (a merge into `main`, see `.github/workflows/ci.yml`) carries `NobodyInc_<version>_macos_universal.dmg`, for Apple silicon and Intel Macs (macOS 13+). Open it and drag Nobody Inc to Applications.
+- **First launch**: the app has no Apple signature (see "Signing" below), so macOS refuses to open it the first time ("Apple could not verify…"). Open System Settings > Privacy & Security, then **Open Anyway** next to the message about Nobody Inc; or, in a terminal, `xattr -dr com.apple.quarantine "/Applications/Nobody Inc.app"`. Once is enough, until the next version.
+- **Build it yourself**: `task desktop:build` (macOS) exports the control room, builds the app and the binaries it ships with, and assembles `desktop/build/bin/Nobody Inc.app` (`ARCHS="arm64 amd64"` for a universal app); `task desktop:dmg` packages it. A build of your own is not quarantined: it opens directly.
 - **Windows**: the first window shows the projects page. **Cmd/Ctrl+N** or **File > New Window** opens another; on Windows and Linux, launching the app again does too. On macOS, clicking the app's icon while it runs only brings it to the front.
 - **One window, one project**, as in the browser (`docs/projects.md`): open a project from the projects page; Cmd/Ctrl-click (or the project menu) opens it in a new window. Opening a project that another window shows brings that window to the front instead.
 - **Closing a window stops its project at once**, its agents with it; mail, tickets, features and the agents' sessions are kept (ADR-0015: they resume where they left off). **Closing the last window quits the app**, which stops every project first.
@@ -20,7 +22,12 @@ Nobody Inc.app/Contents/
   MacOS/nobody-desktop       the app: launcher + windows
   MacOS/nobodyd              started as `nobodyd project ...` for each open project
   MacOS/nobody-hook          the agents' hooks
+  Resources/icons.icns       the icon
 ```
+
+Each binary is universal (`lipo` of an arm64 and an amd64 build; cgo cross-compiles with the system's clang) when built with `ARCHS="arm64 amd64"`, as CI does.
+
+**The icon** is the control room's brand mark (the dotted outline of a person in the top bar, `BrandMark`), in its accent color on a rounded square of its background color. `desktop/cmd/icongen` draws it at every size from the same 13×13 grid (`task desktop:icon`) into `desktop/build/appicon.png` (the About box, embedded) and `desktop/build/darwin/icons.icns` (the bundle); both are versioned.
 
 At start-up (`desktop/app.go`):
 
@@ -45,9 +52,21 @@ Quitting (the last window, Cmd+Q, SIGTERM) runs Wails' `OnShutdown`: the launche
 
 The web view is the system's (WebKit on macOS): the control room must keep working in Safari's engine.
 
+## Signing
+
+The bundle is signed **ad hoc** (`codesign --sign -`, no identity): enough for the system to run it (Apple silicon requires a signature) and to check its files are intact, but it says nothing about who made it. A downloaded app is quarantined by the browser, and Gatekeeper only lets a quarantined app open without a warning if it is:
+
+1. **signed with a Developer ID** certificate (Apple Developer Program, 99 USD a year), which names its author, and
+2. **notarized**: uploaded to Apple, scanned, and stamped (`xcrun notarytool`, then `xcrun stapler`).
+
+What that would bring: no "Open Anyway" step for whoever downloads it; a stable identity, so that macOS keeps the permissions granted to the app (folders, notifications) from one version to the next instead of asking again; and, later, automatic updates (Wails' updater checks signatures). For a tool used by its author and a few people who build or trust it, the ad-hoc signature is enough; signing is worth it once the app is handed to people who should not have to bypass Gatekeeper. It would add to the CI's `desktop` job: the certificate and an App Store Connect API key as secrets, `codesign --options runtime --timestamp` with the identity, then notarization.
+
+On Windows the equivalent is Authenticode (a code-signing certificate), without which SmartScreen warns; Linux has none.
+
 ## Development
 
 - `task desktop:run ARGS="-claude <built test/fakeclaude>"` builds and runs the app from `desktop/build/bin/` with free, deterministic agents (`task web:export` first for the control room). `NOBODY_HOME` points it to a throwaway home.
 - `task desktop:check`: vet, golangci-lint (the main module's configuration) and tests of the desktop module. `task check` does not cover it.
 - The launcher's side is tested in `test/e2e/desktop_test.go` (control room served, windows opened, focus, release).
-- Not done yet: signing and notarization, an icon, Windows and Linux packages, building the app in CI, restoring the last session's windows.
+- **Release**: on `main`, the CI's `desktop` job (a macOS runner) runs the same tasks (`task desktop:build ARCHS="arm64 amd64" VERSION=<tag>`, `task desktop:dmg`) and attaches the DMG to the release.
+- Not done yet: Developer ID signing and notarization, Windows and Linux packages, restoring the last session's windows.

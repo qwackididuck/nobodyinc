@@ -10,7 +10,7 @@ Go 1.27+, Node 22+, pnpm, [Task](https://taskfile.dev), golangci-lint v2, Claude
 
 ## Getting started
 
-The desktop app (macOS for now, [`docs/desktop.md`](docs/desktop.md)):
+The desktop app (macOS for now, [`docs/desktop.md`](docs/desktop.md)): download `NobodyInc_<version>_macos_universal.dmg` from the [releases](https://github.com/qwackididuck/nobodyinc/releases) (the app is not signed by Apple: allow it once in System Settings > Privacy & Security), or build it:
 
 ```bash
 task web:install

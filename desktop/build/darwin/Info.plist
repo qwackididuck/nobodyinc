@@ -11,6 +11,8 @@
     <string>io.github.qwackididuck.nobodyinc</string>
     <key>CFBundleExecutable</key>
     <string>nobody-desktop</string>
+    <key>CFBundleIconFile</key>
+    <string>icons</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleVersion</key>

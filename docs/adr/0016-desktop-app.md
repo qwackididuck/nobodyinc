@@ -51,12 +51,17 @@ An app started from the Finder or the Dock does not get the shell's `PATH`, so `
 
 ### 5. Packaging
 
-`task desktop:build` exports the web, builds the three binaries and assembles `Nobody Inc.app` (`Info.plist` with `NSAllowsLocalNetworking`, the binaries in `Contents/MacOS/`). macOS first; Windows and Linux builds, signing, notarization and the release pipeline come later. The Wails CLI is not needed: the app has no bindings.
+`task desktop:build` exports the web, builds the three binaries and assembles `Nobody Inc.app` (`Info.plist` with `NSAllowsLocalNetworking`, the binaries in `Contents/MacOS/`, the icon in `Contents/Resources/`), signed ad hoc. The Wails CLI is not needed: the app has no bindings.
+
+- **The icon** is the control room's brand mark, drawn by a small Go program (`desktop/cmd/icongen`) from the same grid, so that it can be redrawn exactly; its outputs are versioned.
+- **Releases** (added on 2026-11-19, the human's request): a merge into `main` builds the app on a macOS runner, as universal binaries (arm64 and amd64, cgo cross-compiling with clang), packages it as a DMG and attaches it to the GitHub release next to `nobodyd`.
+- **Signing**: ad hoc only. Without a Developer ID and notarization, a downloaded app needs "Open Anyway" once per version; accepted for now (`docs/desktop.md`, "Signing").
+- macOS first; Windows and Linux builds come later.
 
 ## Not decided here
 
-- Signing, notarization, auto-update (Wails has an updater), an icon.
-- Windows and Linux packages, and building the app in CI.
+- Developer ID signing, notarization, auto-update (Wails has an updater).
+- Windows and Linux packages.
 - Restoring the windows of the last session at start-up.
 
 ## Consequences

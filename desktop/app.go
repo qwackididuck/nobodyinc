@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rand"
+	_ "embed"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -37,6 +38,11 @@ const (
 
 // uniqueID identifies the app for its single instance.
 const uniqueID = "io.github.qwackididuck.nobodyinc"
+
+// appIcon is the app's icon, for its About box (cmd/icongen draws it).
+//
+//go:embed build/appicon.png
+var appIcon []byte
 
 // desktop is the running app: the launcher, the Wails application and its
 // windows, by the id each window holds its project with.
@@ -114,6 +120,7 @@ func run(opts options) error {
 	d.app = application.New(application.Options{
 		Name:        "Nobody Inc",
 		Description: "Teams of Claude Code agents",
+		Icon:        appIcon,
 		Logger:      logger,
 		Assets:      application.AssetOptions{Handler: http.NotFoundHandler()}, // windows load the launcher's URL
 		Mac:         application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
