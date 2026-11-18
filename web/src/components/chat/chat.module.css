@@ -281,12 +281,44 @@
 }
 
 /* The xterm.js container (TerminalView). */
+/* The terminal and, while its session is gone, a banner over it (TerminalView). */
+.terminalFrame {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .xterm {
   flex: 1;
   min-height: 0;
   padding: 6px;
   border-radius: var(--radius);
   background: #000;
+}
+
+.terminalWaiting {
+  position: absolute;
+  inset: auto 12px 12px;
+  padding: 8px 12px;
+  border: 2px solid var(--accent);
+  background: var(--panel);
+  color: var(--text);
+  font: 13px var(--font-ui);
+  animation: terminalBlink 1.2s steps(2, start) infinite;
+}
+
+@keyframes terminalBlink {
+  50% {
+    border-color: var(--line);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminalWaiting {
+    animation: none;
+  }
 }
 
 .body {

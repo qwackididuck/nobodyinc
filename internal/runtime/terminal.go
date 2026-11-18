@@ -55,8 +55,14 @@ func TerminalHandler(s *Supervisor, allowedOrigins []string, logger *slog.Logger
 	})
 }
 
+// sessionEnded is the close reason sent when the agent's process ends (or
+// the viewer was too slow): the control room says so and reconnects, which
+// attaches it to the agent's next session.
+const sessionEnded = "the agent's session ended"
+
 // streamOutput sends the backlog then the live output to the browser. It is
-// the only goroutine writing to the connection.
+// the only goroutine writing to the connection. When the output ends, the
+// connection is closed with sessionEnded.
 func streamOutput(ctx context.Context, done context.CancelFunc, conn *websocket.Conn, backlog []byte, updates <-chan []byte) {
 	defer done()
 
@@ -70,6 +76,10 @@ func streamOutput(ctx context.Context, done context.CancelFunc, conn *websocket.
 		if err := conn.Write(ctx, websocket.MessageBinary, chunk); err != nil {
 			return
 		}
+	}
+
+	if ctx.Err() == nil {
+		_ = conn.Close(websocket.StatusNormalClosure, sessionEnded) // the browser may already be gone
 	}
 }
 

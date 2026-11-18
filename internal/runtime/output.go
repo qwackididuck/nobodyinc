@@ -16,6 +16,8 @@ type Output struct {
 	mu      sync.Mutex
 	backlog []byte
 	viewers map[chan []byte]struct{}
+	// closed is set once the agent's process has ended: no output follows.
+	closed bool
 }
 
 // NewOutput returns an empty Output.
@@ -49,15 +51,36 @@ func (o *Output) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// Close ends every viewer's channel: the agent's process has ended, and its
+// next session, if any, writes to a new Output. Without it, a viewer would
+// stay attached to a terminal that will never move again. Later subscribers
+// get the backlog and a closed channel.
+func (o *Output) Close() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	o.closed = true
+
+	for ch := range o.viewers {
+		delete(o.viewers, ch)
+		close(ch)
+	}
+}
+
 // Subscribe returns, in this order: the current backlog, a channel receiving
 // the output that follows, and a cancel function. The channel is closed when
-// the viewer is too slow or calls cancel.
+// the viewer is too slow, calls cancel, or the process ends (Close).
 func (o *Output) Subscribe() ([]byte, <-chan []byte, func()) {
 	ch := make(chan []byte, viewerBuffer)
 
 	o.mu.Lock()
 	backlog := append([]byte(nil), o.backlog...)
-	o.viewers[ch] = struct{}{}
+
+	if o.closed {
+		close(ch)
+	} else {
+		o.viewers[ch] = struct{}{}
+	}
 	o.mu.Unlock()
 
 	cancel := func() {

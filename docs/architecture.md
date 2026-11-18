@@ -23,8 +23,9 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 
 | Package | Role |
 |---|---|
-| `internal/org` | Loads and validates the project's `.nobody/` (`agents.md`): teams, agents (`<agent>@<team>`), each team's block list (ADR-0009); and the MCP servers every agent gets. |
+| `internal/org` | Loads and validates the project's `.nobody/` (`agents.md`): teams, agents (`<agent>@<team>`), each team's block list (ADR-0009); and the MCP servers and skills every agent gets. |
 | `internal/mcpservers` | Reads and merges the MCP servers of Claude Code's three scopes (`.mcp.json`, `~/.claude.json`), changes them through `claude mcp`, lists a server's tools (ADR-0010). |
+| `internal/skills` | Finds the project's and the user's personal skills, reads and writes `SKILL.md` files, links the personal skills for the agents, discovers Claude Code's built-in skills, finds the skills an agent preloads (ADR-0011). |
 | `internal/catalog` | Agent templates (built-in and `~/.nobody/catalog`) and the agent file format shared with recruits (`agents.md`). |
 | `internal/messaging` | The post office: validates a draft, attaches it to its thread, applies the sending rules (`policy.go`), files it in the recipient's tray. |
 | `internal/store` | SQLite (pure-Go driver), schema evolved by versioned migrations: messages (pending until delivered) and tickets. |
@@ -71,12 +72,12 @@ Hook details, and how urgent questions to busy agents are answered by a fork of 
 
 ## Agent isolation
 
-Agents see neither the user's global settings, hooks and plugins nor the environment of a parent Claude Code session (ADR-0003). They get the project's Claude Code configuration (`CLAUDE.md`, skills, commands, subagents), and the MCP servers of Claude Code's three scopes, merged by the daemon into a private configuration per agent (ADR-0010, `internal/mcpservers`, `agents.md`). They keep the default permission mode: any sensitive action requires approval, which reaches the human through the approval queue of the UI (`approvals.md`).
+Agents see neither the user's global settings, hooks and plugins nor the environment of a parent Claude Code session (ADR-0003). They get the project's Claude Code configuration (`CLAUDE.md`, skills, commands, subagents), the MCP servers of Claude Code's three scopes, merged by the daemon into a private configuration per agent (ADR-0010, `internal/mcpservers`, `agents.md`), and the user's personal skills, linked by the daemon into a directory every agent gets with `--add-dir` (ADR-0011, `internal/skills`). They keep the default permission mode: any sensitive action requires approval, which reaches the human through the approval queue of the UI (`approvals.md`).
 
 ## Testing
 
 - Unit tests next to each package.
-- `test/e2e`: whole scenarios (wake-up, delivery, MCP, refusals by a block) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
+- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
 - `test/contract` (`task contract`): the Claude Code behaviours we rely on, against the real CLI.
 
 ## Changes pushed to the browser

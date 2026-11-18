@@ -32,6 +32,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
 var version = "dev"
@@ -96,18 +97,18 @@ func run(logger *slog.Logger, opts options) error {
 		return err
 	}
 
-	warnIfUntrusted(logger, organization.ProjectDir)
-	warnIfChannels(logger, organization)
-
-	for _, ignored := range organization.IgnoredMCP {
-		logger.Warn("MCP server left out", "server", ignored)
-	}
+	warnAbout(logger, organization)
 
 	addr := listenAddr()
 
 	daemonOpts, err := daemonOptions(logger, opts, organization, addr)
 	if err != nil {
 		return err
+	}
+
+	// Before any agent starts: they all get a directory inside it (ADR-0011).
+	if home, err := nobodyHome(); err == nil {
+		trustNobodyHome(logger, home)
 	}
 
 	d, err := daemon.New(ctx, daemonOpts)
@@ -123,6 +124,21 @@ func run(logger *slog.Logger, opts options) error {
 	}
 
 	return serve(ctx, logger, addr, d.Handler)
+}
+
+// warnAbout logs what the human should fix in the project's configuration:
+// an untrusted project, former channels, MCP servers and skills left out.
+func warnAbout(logger *slog.Logger, organization *org.Org) {
+	warnIfUntrusted(logger, organization.ProjectDir)
+	warnIfChannels(logger, organization)
+
+	for _, ignored := range organization.IgnoredMCP {
+		logger.Warn("MCP server left out", "server", ignored)
+	}
+
+	for _, ignored := range organization.Skills.Ignored {
+		logger.Warn("skill left out", "skill", ignored)
+	}
 }
 
 // ensureDirector gives a configured project its director if it lost it: the
@@ -179,6 +195,11 @@ func daemonOptions(logger *slog.Logger, opts options, organization *org.Org, add
 		return daemon.Options{}, err
 	}
 
+	personalSkills, err := skills.PersonalDir()
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
 	return daemon.Options{
 		Version:      version,
 		Logger:       logger,
@@ -192,11 +213,14 @@ func daemonOptions(logger *slog.Logger, opts options, organization *org.Org, add
 		DBPath:       dbPath,
 		WorktreesDir: filepath.Join(state, "worktrees"),
 		MCPConfigDir: filepath.Join(state, "mcp"),
-		ClaudePath:   opts.claudePath,
-		HookPath:     hookPath,
-		DaemonURL:    "http://" + addr,
-		UserClaudeMD: userClaudeMD(),
-		Origins:      strings.Split(opts.origins, ","),
+		// ADR-0011: personal skills, linked for the agents.
+		SkillsStagingDir:  filepath.Join(state, "skills"),
+		PersonalSkillsDir: personalSkills,
+		ClaudePath:        opts.claudePath,
+		HookPath:          hookPath,
+		DaemonURL:         "http://" + addr,
+		UserClaudeMD:      userClaudeMD(),
+		Origins:           strings.Split(opts.origins, ","),
 	}, nil
 }
 

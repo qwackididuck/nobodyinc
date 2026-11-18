@@ -108,9 +108,9 @@ func TestAgentsMDIsReadWithoutCLAUDEMD(t *testing.T) {
 	}
 }
 
-// askProject runs one headless turn in dir with the agents' flags, and
-// returns its stream-json output.
-func askProject(t *testing.T, dir, prompt string) []byte {
+// askProject runs one headless turn in dir with the agents' flags, plus
+// extraArgs, and returns its stream-json output.
+func askProject(t *testing.T, dir, prompt string, extraArgs ...string) []byte {
 	t.Helper()
 
 	args := append([]string{
@@ -118,7 +118,7 @@ func askProject(t *testing.T, dir, prompt string) []byte {
 		"--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`,
 	}, agentSources...)
 
-	return runCLI(t, dir, nil, args)
+	return runCLI(t, dir, nil, append(args, extraArgs...))
 }
 
 // Where Claude Code finds MCP servers, with the agents' settings sources.

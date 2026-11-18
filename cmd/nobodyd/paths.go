@@ -70,6 +70,26 @@ func resolveProject(logger *slog.Logger, opts options) (string, error) {
 	return projectDir, nil
 }
 
+// trustNobodyHome makes Claude Code trust the daemon's own directory
+// (~/.nobody), before any agent starts: every agent gets the staging
+// directory of the personal skills, inside it, with --add-dir, and Claude
+// Code would otherwise ask at every session start whether to trust it
+// (ADR-0011, runtime.Trust). A failure is only a warning: agents then wait on
+// that question in their terminal. The directory exists by then (stateDir).
+func trustNobodyHome(logger *slog.Logger, home string) {
+	changed, err := runtime.Trust(home)
+	if err != nil {
+		logger.Warn("cannot make Claude Code trust the Nobody Inc directory: agents will ask whether to trust the personal skills",
+			"dir", home, "err", err)
+
+		return
+	}
+
+	if changed {
+		logger.Info("Claude Code now trusts the Nobody Inc directory, where the agents' personal skills are linked", "dir", home)
+	}
+}
+
 // warnIfUntrusted warns when Claude Code does not trust the project yet: each
 // agent would then stop on Claude Code's trust question in its terminal.
 // Agents still start, as the question can be answered from the UI.

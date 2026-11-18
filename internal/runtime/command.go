@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
 //go:embed prompt.tmpl
@@ -82,6 +84,13 @@ type Launch struct {
 	// MCPConfigDir holds each agent's MCP configuration, <address>.json,
 	// readable by the user only (~/.nobody/projects/<id>/mcp).
 	MCPConfigDir string
+	// SkillsStagingDir links the user's personal skills for the agents
+	// (skills.Stage), given to every agent with --add-dir
+	// (~/.nobody/projects/<id>/skills, ADR-0011); "" gives no personal skill.
+	SkillsStagingDir string
+	// PersonalSkillsDir is where the user's personal skills live
+	// (skills.PersonalDir): agents may read them, not write them.
+	PersonalSkillsDir string
 }
 
 // Command builds the claude command for one agent, from its definition
@@ -100,6 +109,12 @@ type Launch struct {
 //     Claude Code's three scopes (org.Org.MCP), written to a private file
 //     (--strict-mcp-config: Claude Code loads nothing else, ADR-0010); the
 //     servers and tools it excludes (mcp_exclude) are disallowed;
+//   - it gets every skill (ADR-0011): the project's, Claude Code's built-in
+//     ones, and the user's personal skills, linked in a staging directory
+//     given with --add-dir; the skills it excludes (skills_exclude) are
+//     turned off with skillOverrides; its SessionStart hook hands it the
+//     skills it preloads (skills:), at every start, resumed sessions
+//     included;
 //   - NOBODY_AGENT and NOBODY_DAEMON_URL tell nobody-hook who and where it is;
 //   - a short onboarding turn brings the agent to the idle state.
 //
@@ -117,7 +132,11 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume st
 		return nil, err
 	}
 
-	settings, err := agentSettings(l.HookPath, m.Agent.Permissions, o.ProjectDir)
+	if err := l.stagePersonalSkills(o); err != nil {
+		return nil, err
+	}
+
+	settings, err := agentSettings(l.HookPath, m.Agent.Definition, o.ProjectDir, []string{l.SkillsStagingDir, l.PersonalSkillsDir})
 	if err != nil {
 		return nil, err
 	}
@@ -127,30 +146,7 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume st
 		return nil, err
 	}
 
-	args := []string{
-		// Only project and local settings: the user's global settings (plugins,
-		// hooks, permission mode) must not leak into agents. See ADR-0003.
-		"--setting-sources", "project,local",
-		"--append-system-prompt", systemPrompt,
-		"--settings", settings,
-		"--permission-mode", permissionMode(m.Agent.Permissions),
-		"--mcp-config", mcpConfig,
-		"--strict-mcp-config",
-		"--allowedTools", allowedTools(m.Agent.Tools),
-	}
-	if disallowed := disallowedTools(m.Agent.MCPExclude); disallowed != "" {
-		args = append(args, "--disallowedTools", disallowed)
-	}
-
-	if m.Agent.Model != "" {
-		args = append(args, "--model", m.Agent.Model)
-	}
-
-	if resume != "" {
-		args = append(args, "--resume", resume, resumeMessage(systemPrompt))
-	} else {
-		args = append(args, onboardingPrompt)
-	}
+	args := append(l.flags(m.Agent.Definition, systemPrompt, settings, mcpConfig), firstPrompt(systemPrompt, resume)...)
 
 	claude := l.ClaudePath
 	if claude == "" {
@@ -162,6 +158,57 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume st
 	cmd.Env = agentEnvironment(cmd.Environ(), m.Address, l.DaemonURL)
 
 	return cmd, nil
+}
+
+// SettingSources are the settings sources agents are started with: only
+// project and local settings, so that the user's global settings (plugins,
+// hooks, permission mode) do not leak into agents (ADR-0003). Anything that
+// must see what an agent sees uses them too (skills.Discovery).
+var SettingSources = []string{"--setting-sources", "project,local"}
+
+// CleanEnvironment is base without the markers of a Claude Code session the
+// daemon may have been started from (see parentSessionVars): what any claude
+// the daemon starts must get.
+func CleanEnvironment(base []string) []string {
+	return withoutParentSession(base)
+}
+
+// flags are the launch flags of an agent, from its definition and what
+// Command prepared.
+func (l Launch) flags(d catalog.Definition, systemPrompt, settings, mcpConfig string) []string {
+	args := append(slices.Clone(SettingSources),
+		"--append-system-prompt", systemPrompt,
+		"--settings", settings,
+		"--permission-mode", permissionMode(d.Permissions),
+		"--mcp-config", mcpConfig,
+		"--strict-mcp-config",
+		"--allowedTools", allowedTools(d.Tools),
+	)
+
+	if l.SkillsStagingDir != "" {
+		args = append(args, "--add-dir", l.SkillsStagingDir)
+	}
+
+	if disallowed := disallowedTools(d.MCPExclude); disallowed != "" {
+		args = append(args, "--disallowedTools", disallowed)
+	}
+
+	if d.Model != "" {
+		args = append(args, "--model", d.Model)
+	}
+
+	return args
+}
+
+// firstPrompt opens the session: the onboarding turn of a new session, or
+// the resume of an existing one with its current system prompt (see
+// resumePrompt).
+func firstPrompt(systemPrompt, resume string) []string {
+	if resume != "" {
+		return []string{"--resume", resume, resumeMessage(systemPrompt)}
+	}
+
+	return []string{onboardingPrompt}
 }
 
 // parentSessionVars identify the Claude Code session the daemon may have been
@@ -269,26 +316,58 @@ func allowedTools(tools []string) string {
 	return officeTools + "," + strings.Join(tools, ",")
 }
 
-// agentSettings is the --settings value: the mail and permission hooks wired
-// to nobody-hook (docs/hooks.md, docs/approvals.md) and the agent's
-// permission rules (permissions.go).
-func agentSettings(hookPath string, p catalog.Permissions, projectDir string) (string, error) {
+// agentSettings is the --settings value: the mail, permission and
+// preloaded-skills hooks wired to nobody-hook (docs/hooks.md,
+// docs/approvals.md), the agent's permission rules (permissions.go), with
+// the outside directories it may not write, and the skills it excludes,
+// turned off (ADR-0011).
+func agentSettings(hookPath string, d catalog.Definition, projectDir string, outside []string) (string, error) {
 	run := []map[string]any{{"hooks": []map[string]any{{"type": "command", "command": hookPath}}}}
 	permission := []map[string]any{{"hooks": []map[string]any{{
 		"type": "command", "command": hookPath, "timeout": int(PermissionHookTimeout.Seconds()),
 	}}}}
 
-	allow, deny := permissionRules(p, projectDir)
+	allow, deny := permissionRules(d.Permissions, projectDir, outside)
 
-	return toJSON(map[string]any{
+	settings := map[string]any{
 		"hooks": map[string]any{
+			"SessionStart":      run,
 			"UserPromptSubmit":  run,
 			"PostToolUse":       run,
 			"Stop":              run,
 			"PermissionRequest": permission,
 		},
 		"permissions": map[string]any{"allow": allow, "deny": deny},
-	})
+	}
+
+	if len(d.SkillsExclude) > 0 {
+		off := make(map[string]string, len(d.SkillsExclude))
+		for _, name := range d.SkillsExclude {
+			off[name] = "off"
+		}
+
+		settings["skillOverrides"] = off
+	}
+
+	return toJSON(settings)
+}
+
+// stageMu keeps agents started at the same time from staging the personal
+// skills over each other.
+var stageMu sync.Mutex
+
+// stagePersonalSkills brings the staging directory in line with the
+// personal skills agents get, before an agent starts (skills.Stage). It is
+// cheap and idempotent: links already in place are kept.
+func (l Launch) stagePersonalSkills(o *org.Org) error {
+	if l.SkillsStagingDir == "" {
+		return nil
+	}
+
+	stageMu.Lock()
+	defer stageMu.Unlock()
+
+	return skills.Stage(l.SkillsStagingDir, o.Skills.Personal())
 }
 
 // writeMCPConfig writes the agent's MCP configuration and returns its path,

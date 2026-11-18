@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/hook"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
 // hookDecision is what nobody-hook receives: the response to print for Claude
@@ -35,8 +36,13 @@ func (s *server) handleHookEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ev.Name == hook.EventPermissionRequest {
+	switch ev.Name {
+	case hook.EventPermissionRequest:
 		s.askHuman(w, r, address, ev)
+
+		return
+	case hook.EventSessionStart:
+		s.handOverPreloadedSkills(w, address, ev)
 
 		return
 	}
@@ -95,4 +101,32 @@ func (s *server) agentAddress(w http.ResponseWriter, r *http.Request) (string, b
 	}
 
 	return address, true
+}
+
+// handOverPreloadedSkills answers a SessionStart event with the skills the
+// agent preloads (its file's skills:, ADR-0011), read where it works.
+// It runs at every session start, resumed sessions included: that is how a
+// change of preloaded skills reaches an agent without losing its memory.
+func (s *server) handOverPreloadedSkills(w http.ResponseWriter, address string, ev hook.Event) {
+	o := s.Org.Current()
+
+	m, ok := o.Member(address)
+	if !ok {
+		s.writeError(w, http.StatusNotFound, fmt.Errorf("no agent %s", address))
+
+		return
+	}
+
+	workDir := ev.Cwd
+	if workDir == "" {
+		workDir = o.ProjectDir
+	}
+
+	preloaded, missing := skills.Preload(m.Agent.Skills, workDir, o.Skills)
+	if len(missing) > 0 {
+		s.Logger.Warn("preloaded skills not found", "agent", address, "skills", missing, "work_dir", workDir)
+	}
+
+	s.Logger.Info("hook event", "agent", address, "event", ev.Name, "source", ev.Source, "preloaded", len(preloaded))
+	s.writeJSON(w, http.StatusOK, hookDecision{Response: hook.PreloadResponse(preloaded), MessageIDs: []string{}})
 }

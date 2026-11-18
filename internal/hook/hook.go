@@ -14,7 +14,10 @@
 //     on it before ending its turn for real. (Claude Code labels such a block
 //     "Stop hook error" in its UI; nothing is wrong, see docs/hooks.md.)
 //
-// Any other event is ignored.
+// Any other event is ignored here. Two events are not about mail and are
+// handled by the daemon itself: PermissionRequest (the approval queue,
+// docs/approvals.md) and SessionStart, which hands the agent the skills it
+// preloads (PreloadResponse, ADR-0011).
 //
 // Delivery is "at least once": Handle only decides what to say. The messages
 // are marked delivered once nobody-hook confirms it printed the answer, so a
@@ -39,6 +42,9 @@ const (
 	// EventPermissionRequest is not about mail: the daemon handles it with
 	// the approval queue (internal/approval), see PermissionResponse.
 	EventPermissionRequest = "PermissionRequest"
+	// EventSessionStart is not about mail either: the daemon hands the agent
+	// the skills it preloads, see PreloadResponse.
+	EventSessionStart = "SessionStart"
 )
 
 // Event is the part of the JSON sent by Claude Code on stdin that we use.
@@ -53,6 +59,8 @@ type Event struct {
 	// Stop hook blocked it. We still deliver new mail in that case: messages
 	// leave the tray once delivered, so this cannot loop forever.
 	StopHookActive bool `json:"stop_hook_active,omitempty"`
+	// Source is set for SessionStart: startup, resume, clear or compact.
+	Source string `json:"source,omitempty"`
 }
 
 // Response is what nobody-hook prints on stdout for Claude Code.
@@ -62,7 +70,7 @@ type Response struct {
 	Decision string `json:"decision,omitempty"`
 	Reason   string `json:"reason,omitempty"`
 	// HookSpecificOutput carries the extra context injected on
-	// UserPromptSubmit and PostToolUse.
+	// UserPromptSubmit, PostToolUse and SessionStart.
 	HookSpecificOutput *SpecificOutput `json:"hookSpecificOutput,omitempty"` //nolint:tagliatelle // field name imposed by Claude Code
 }
 

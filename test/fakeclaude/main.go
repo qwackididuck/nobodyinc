@@ -5,6 +5,8 @@
 // It accepts the same options Nobody Inc passes to claude and plays the same
 // part in the protocol:
 //
+//   - a session start, new or resumed, runs the SessionStart hook, which
+//     hands over the preloaded skills;
 //   - every turn (the initial prompt, then each line typed into its terminal)
 //     runs the UserPromptSubmit hook, then the Stop hook until no more mail
 //     is handed over, exactly as Claude Code does;
@@ -18,7 +20,9 @@
 //     question as a query to <address>;
 //   - a request whose body is "WORK <seconds>" keeps it busy that long;
 //   - a query gets an inform answer; the query "SYSTEM PROMPT?" is answered
-//     with the system prompt it was started with (--append-system-prompt);
+//     with the system prompt it was started with (--append-system-prompt),
+//     and "PRELOADED SKILLS?" with how the session started and what its
+//     SessionStart hook handed over;
 //   - an inform answering one of its queries is forwarded, as done, to whoever
 //     made the original request;
 //   - when send_message fails, the error is escalated to the human;
@@ -33,6 +37,10 @@
 // Started with --fork-session (a fork answering an urgent question), it prints
 // a one-shot JSON answer like claude -p does: ESCALATE if the question
 // contains "UNKNOWN", an answer otherwise.
+//
+// Started with stream-json output and the API out of reach, as the daemon
+// does to discover the built-in skills, it prints an init event listing the
+// project's skills and one built-in skill, then waits to be killed.
 package main
 
 import (
@@ -43,6 +51,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -70,6 +79,10 @@ func run(args []string) error {
 		return err
 	}
 
+	if opts.discovery {
+		return listSkills()
+	}
+
 	if opts.fork {
 		return answerAsFork(opts.prompt)
 	}
@@ -80,6 +93,7 @@ func run(args []string) error {
 	}
 	defer a.mcp.Close()
 
+	a.startSession()
 	a.turn(opts.prompt)
 
 	// Lines typed into the terminal (the daemon's wake-up prompt, or a human)
@@ -102,6 +116,12 @@ type options struct {
 	fork   bool
 	// systemPrompt is --append-system-prompt.
 	systemPrompt string
+	// discovery is the daemon reading the skills a session loads: stream-json
+	// output with the API out of reach (skills.DiscoverBuiltin).
+	discovery    bool
+	outputFormat string
+	// resume is the session --resume continues; "" for a new one.
+	resume string
 }
 
 func parseArgs(args []string) (options, error) {
@@ -111,10 +131,10 @@ func parseArgs(args []string) (options, error) {
 		"--settings": true, "--mcp-config": true, "--append-system-prompt": true,
 		"--setting-sources": true, "--allowedTools": true, "--model": true,
 		"--resume": true, "--tools": true, "--output-format": true, "-p": true,
-		"--permission-mode": true,
+		"--permission-mode": true, "--add-dir": true, "--disallowedTools": true,
 	}
 
-	flags := map[string]bool{"--fork-session": true, "--strict-mcp-config": true}
+	flags := map[string]bool{"--fork-session": true, "--strict-mcp-config": true, "--verbose": true}
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -141,7 +161,31 @@ func parseArgs(args []string) (options, error) {
 		}
 	}
 
+	opts.discovery = opts.outputFormat == "stream-json" && os.Getenv("ANTHROPIC_BASE_URL") == "http://127.0.0.1:1"
+
 	return opts, nil
+}
+
+// fakeBuiltinSkill is the one built-in skill fakeclaude has.
+const fakeBuiltinSkill = "fake-builtin"
+
+// listSkills prints the init event of a session: the project's skills
+// (.claude/skills of the working directory) and fakeBuiltinSkill. Then it
+// waits, as the real claude keeps retrying the unreachable API, until the
+// daemon kills it.
+func listSkills() error {
+	names := []string{fakeBuiltinSkill}
+
+	entries, _ := os.ReadDir(filepath.Join(".claude", "skills")) // no skills directory: no project skill
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+
+	if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "system", "subtype": "init", "skills": names}); err != nil {
+		return err
+	}
+
+	select {}
 }
 
 // set records the value of an option we use; the others are ignored.
@@ -157,6 +201,10 @@ func (opts *options) set(name, value string) error {
 		opts.mcpURL, err = parseMCPURL(value)
 	case "--append-system-prompt":
 		opts.systemPrompt = value
+	case "--output-format":
+		opts.outputFormat = value
+	case "--resume":
+		opts.resume = value
 	}
 
 	return err
@@ -224,6 +272,9 @@ type agent struct {
 	// origins maps a query we sent to the request that made us send it, so the
 	// answer can be forwarded back.
 	origins map[string]mail
+	// preloaded is how the session started and what its SessionStart hook
+	// handed over, for the "PRELOADED SKILLS?" query.
+	preloaded string
 }
 
 func newAgent(opts options) (*agent, error) {
@@ -238,6 +289,20 @@ func newAgent(opts options) (*agent, error) {
 	}
 
 	return &agent{opts: opts, mcp: session, origins: map[string]mail{}}, nil
+}
+
+// startSession runs the SessionStart hook, as Claude Code does when a
+// session starts or is resumed, and keeps what it hands over.
+func (a *agent) startSession() {
+	source := "startup"
+	if a.opts.resume != "" {
+		source = "resume"
+	}
+
+	a.preloaded = "source=" + source + "\n"
+	if resp := a.runHookFrom(hook.EventSessionStart, source); resp != nil && resp.HookSpecificOutput != nil {
+		a.preloaded += resp.HookSpecificOutput.AdditionalContext
+	}
 }
 
 // turn plays one Claude Code turn.
@@ -263,14 +328,20 @@ func (a *agent) turn(prompt string) {
 // runHook runs the hook configured for an event, as Claude Code does: the event
 // as JSON on stdin, the answer as JSON on stdout.
 func (a *agent) runHook(event string) *hook.Response {
+	return a.runHookFrom(event, "")
+}
+
+// runHookFrom is runHook with the SessionStart source.
+func (a *agent) runHookFrom(event, source string) *hook.Response {
 	command, ok := a.opts.hooks[event]
 	if !ok {
 		return nil
 	}
 
 	session := "fake-session-" + os.Getenv("NOBODY_AGENT")
+	cwd, _ := os.Getwd() // an unknown working directory: the daemon falls back to the project
 
-	input, err := json.Marshal(hook.Event{Name: event, SessionID: session})
+	input, err := json.Marshal(hook.Event{Name: event, SessionID: session, Cwd: cwd, Source: source})
 	if err != nil {
 		return nil
 	}
@@ -320,8 +391,12 @@ func (a *agent) react(text string) {
 // answer answers a query: with the system prompt when asked for it.
 func (a *agent) answer(m mail) {
 	body := "answer to: " + m.Body
-	if strings.TrimSpace(m.Body) == "SYSTEM PROMPT?" {
+
+	switch strings.TrimSpace(m.Body) {
+	case "SYSTEM PROMPT?":
 		body = a.opts.systemPrompt
+	case "PRELOADED SKILLS?":
+		body = a.preloaded
 	}
 
 	a.send(map[string]any{"to": m.From, "act": "inform", "subject": "Re: " + m.Subject, "body": body, "in_reply_to": m.ID})

@@ -94,7 +94,7 @@ export function Thread({ agent, onSeen }: Props) {
       </div>
       {view === "terminal" ? (
         <div className={styles.terminal}>
-          <TerminalView address={agent.address} />
+          <TerminalView address={agent.address} status={agent.status} />
         </div>
       ) : (
         <>

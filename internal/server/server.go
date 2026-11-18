@@ -9,6 +9,7 @@
 //   - events.go:    /api/events      changes pushed to the control room (SSE);
 //   - settings.go:  /api/settings    how the daemon runs;
 //   - mcp.go:       /api/mcp*        MCP servers (ADR-0010);
+//   - skills.go:    /api/skills*     skills (ADR-0011);
 //   - hooks.go:     /internal/*      for nobody-hook, called by Claude Code hooks.
 package server
 
@@ -26,6 +27,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 	"github.com/qwackididuck/nobodyinc/internal/staffing"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 	"github.com/qwackididuck/nobodyinc/internal/work"
@@ -70,6 +72,9 @@ type Deps struct {
 	// LookupEnv tells whether an environment variable is set
 	// (GET /api/mcp); nil means os.LookupEnv.
 	LookupEnv func(string) (string, bool)
+	// BuiltinSkills is the daemon's list of Claude Code's built-in skills
+	// (GET /api/skills); nil lists none.
+	BuiltinSkills *skills.Builtin
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits
@@ -133,6 +138,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.updateSettings)
 	s.routeMCP(mux)
+	s.routeSkills(mux)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.decideApproval)
 

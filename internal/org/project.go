@@ -13,6 +13,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
 // ConfigDirName is the directory, at the root of a project, that holds its
@@ -54,8 +55,9 @@ func HasConfig(projectDir string) bool {
 // LoadProject reads the organization of a project from its .nobody/
 // directory: org.yaml for teams and their block lists, one file per agent in
 // teams/<team>/, the team prompts (teams/<team>/TEAM.md) and the project
-// prompt (project.md); and the MCP servers of Claude Code's three scopes
-// (ADR-0010). It returns ErrNoConfig when org.yaml is missing.
+// prompt (project.md); the MCP servers of Claude Code's three scopes
+// (ADR-0010); and the project's and the user's skills (ADR-0011). It returns
+// ErrNoConfig when org.yaml is missing.
 func LoadProject(projectDir string) (*Org, error) {
 	dir, err := filepath.Abs(projectDir)
 	if err != nil {
@@ -85,7 +87,7 @@ func LoadProject(projectDir string) (*Org, error) {
 		return nil, err
 	}
 
-	if err := readMCP(o); err != nil {
+	if err := readClaudeConfig(o); err != nil {
 		return nil, err
 	}
 
@@ -300,6 +302,16 @@ func readOrgFile(dir string) (*Org, error) {
 	return o, nil
 }
 
+// readClaudeConfig reads what every agent gets from Claude Code's own
+// configuration: the MCP servers (readMCP) and the skills (readSkills).
+func readClaudeConfig(o *Org) error {
+	if err := readMCP(o); err != nil {
+		return err
+	}
+
+	return readSkills(o)
+}
+
 // readMCP reads the MCP servers every agent gets: the project's .mcp.json
 // and the local and user scopes of ~/.claude.json (internal/mcpservers).
 func readMCP(o *Org) error {
@@ -314,6 +326,21 @@ func readMCP(o *Org) error {
 	}
 
 	o.MCP, o.IgnoredMCP = found.Servers, found.Ignored
+
+	return nil
+}
+
+// readSkills reads the skills of the project's .claude/skills and the user's
+// personal skills (internal/skills).
+func readSkills(o *Org) error {
+	personal, err := skills.PersonalDir()
+	if err != nil {
+		return err
+	}
+
+	if o.Skills, err = skills.Load(o.ProjectDir, personal); err != nil {
+		return fmt.Errorf("skills: %w", err)
+	}
 
 	return nil
 }

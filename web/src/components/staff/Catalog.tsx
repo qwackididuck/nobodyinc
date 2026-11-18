@@ -151,6 +151,20 @@ function Sheet({ template, team: wanted }: { template: Template; team?: string }
             </span>
           ))}
         </dd>
+        <dt>SKILLS</dt>
+        <dd>
+          <span className={ui.chip}>all skills</span>
+          {(template.skills ?? []).map((s) => (
+            <span key={s} className={ui.chip}>
+              preloads {s}
+            </span>
+          ))}
+          {(template.skills_exclude ?? []).map((s) => (
+            <span key={s} className={ui.chip}>
+              except {s}
+            </span>
+          ))}
+        </dd>
       </dl>
       {template.prompt && <pre className={styles.instructions}>{template.prompt}</pre>}
       <form className={styles.recruit} onSubmit={recruit}>

@@ -279,3 +279,48 @@
     overflow-x: auto;
   }
 }
+
+/* Skills (Skills.tsx). */
+.skillGroup {
+  margin: 8px 0 0;
+  font: 11px var(--font-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+summary.skillGroup {
+  cursor: pointer;
+}
+
+.skillWarn {
+  padding: 0 5px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font: 9px var(--font-label);
+  text-transform: uppercase;
+}
+
+.skillBody {
+  min-height: 16em;
+  font-family: var(--font-mono);
+}
+
+.otherKeys {
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 2px dashed var(--line);
+  font: 16px var(--font-mono);
+  color: var(--muted);
+}
+
+.builtin {
+  display: grid;
+  gap: 8px;
+}
+
+.builtinChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

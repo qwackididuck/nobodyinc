@@ -1,12 +1,15 @@
 package runtime
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
 )
 
 // Claude Code asks whether to trust a folder the first time it starts there,
@@ -89,4 +92,91 @@ func trustedIn(configPath, dir string) (bool, error) {
 			return false, nil
 		}
 	}
+}
+
+// ErrNoClaudeConfig is returned by Trust when Claude Code has no global
+// config yet: it has never been set up on this machine.
+var ErrNoClaudeConfig = errors.New("no Claude Code config yet: run claude once")
+
+// Trust makes Claude Code trust dir, as accepting its trust question would,
+// and reports whether it had to: nothing is written when dir or a parent is
+// already trusted.
+//
+// The daemon trusts its own directory (~/.nobody) this way, before starting
+// any agent (ADR-0011): every agent gets the staging directory of the
+// personal skills with --add-dir, and Claude Code would otherwise ask, at
+// every session start, whether to trust it. Claude Code owns the file and
+// rewrites it while it runs, so the write is kept short: the file is read
+// again just before, every other key is kept, and the new file replaces the
+// old one atomically. A change made by a running Claude Code in between could
+// still be lost; the next start trusts the directory again if needed.
+func Trust(dir string) (bool, error) {
+	path, err := claudeConfigPath()
+	if err != nil {
+		return false, err
+	}
+
+	return trustIn(path, dir)
+}
+
+// trustIn is Trust on the config file at configPath.
+func trustIn(configPath, dir string) (bool, error) {
+	if trusted, err := trustedIn(configPath, dir); err != nil || trusted {
+		return false, err
+	}
+
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return false, err
+	}
+
+	data, err := os.ReadFile(configPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, ErrNoClaudeConfig
+	}
+
+	if err != nil {
+		return false, err
+	}
+
+	updated, err := withTrustedProject(data, resolved)
+	if err != nil {
+		return false, fmt.Errorf("trust %s in Claude Code's config %s: %w", dir, configPath, err)
+	}
+
+	if err := atomicfile.WritePrivate(configPath, updated); err != nil {
+		return false, fmt.Errorf("trust %s in Claude Code's config: %w", dir, err)
+	}
+
+	return true, nil
+}
+
+// withTrustedProject returns Claude Code's config with
+// projects.<dir>.hasTrustDialogAccepted set, every other key kept as it was
+// (numbers included).
+func withTrustedProject(data []byte, dir string) ([]byte, error) {
+	var config map[string]any
+
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+
+	if err := dec.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	projects, _ := config["projects"].(map[string]any)
+	if projects == nil {
+		projects = map[string]any{}
+	}
+
+	project, _ := projects[dir].(map[string]any)
+	if project == nil {
+		project = map[string]any{}
+	}
+
+	project["hasTrustDialogAccepted"] = true
+	projects[dir] = project
+	config["projects"] = projects
+
+	return json.MarshalIndent(config, "", "  ")
 }

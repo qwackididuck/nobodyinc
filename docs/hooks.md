@@ -19,6 +19,8 @@ A Nobody Inc agent is an ordinary Claude Code session. To hand it its mail witho
 | `PostToolUse` | **Urgent** mail only, as extra context, without stopping the agent | Urgent mail arriving while the agent works. |
 | `Stop` | All waiting mail; the end of the turn is refused and the mail is given as the reason | Mail that arrived during a turn: the agent deals with it before finishing. |
 
+Two more hooks are not about mail. `PermissionRequest` sends an agent's permission requests to the human (`docs/approvals.md`). `SessionStart` hands the agent the skills it preloads (its file's `skills:`, `docs/agents.md` "Skills"): at every session start, new, resumed (`source: resume`) or compacted, the daemon answers with each skill's instructions as extra context, read in the directory the agent works in (`skills.Preload`, `hook.PreloadResponse`). Nothing is acknowledged.
+
 So the two trays behave like this: `normal` mail is never handed over mid-work; `urgent` mail reaches the agent right after its next tool call.
 
 > Claude Code labels a blocking `Stop` hook "Stop hook error" in its UI, even though the hook works as documented (known issue, e.g. anthropics/claude-code#84385). Waking idle agents through `UserPromptSubmit` avoids it in the most common case.
@@ -80,6 +82,12 @@ Answer on `PostToolUse` when urgent mail is waiting:
 
 ```json
 { "hookSpecificOutput": { "hookEventName": "PostToolUse", "additionalContext": "URGENT mail arrived…" } }
+```
+
+Answer on `SessionStart` for an agent that preloads skills:
+
+```json
+{ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": "Skills preloaded for you…\n<preloaded_skill name=\"review\" dir=\"…\">…</preloaded_skill>" } }
 ```
 
 No mail: the hook prints nothing, and the agent carries on.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
 type fakeInbox map[messaging.Priority][]messaging.Message
@@ -189,4 +190,22 @@ func messageIDs(messages []messaging.Message) []string {
 	}
 
 	return ids
+}
+
+func TestPreloadResponse(t *testing.T) {
+	t.Parallel()
+
+	if PreloadResponse(nil) != nil {
+		t.Fatal("no preloaded skill should give no response")
+	}
+
+	r := PreloadResponse([]skills.Preloaded{{Name: "review", Dir: "/p/.claude/skills/review", Body: "Check the tests."}})
+	if r == nil || r.HookSpecificOutput == nil || r.HookSpecificOutput.HookEventName != EventSessionStart {
+		t.Fatalf("response = %+v", r)
+	}
+
+	got := r.HookSpecificOutput.AdditionalContext
+	if want := "<preloaded_skill name=\"review\" dir=\"/p/.claude/skills/review\">\nCheck the tests.\n</preloaded_skill>"; !strings.Contains(got, want) {
+		t.Errorf("context lacks %q:\n%s", want, got)
+	}
 }

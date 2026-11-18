@@ -6,6 +6,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
 // Texts shown to the agent before its mail. They are written for the model:
@@ -66,4 +67,35 @@ func replyHint(m messaging.Message) string {
 	default:
 		return " (no answer needed: do not reply)"
 	}
+}
+
+// preloadIntro opens the preloaded skills. They come at every session start
+// (startup, resume, compaction), so the agent is told they replace any
+// earlier copy.
+const preloadIntro = "Skills preloaded for you (your agent file lists them under skills:). " +
+	"Follow them whenever they apply; you do not need to invoke them with the Skill tool. " +
+	"If an earlier copy of a skill appears in this conversation, this one replaces it. " +
+	"Paths in a skill are relative to its dir."
+
+// PreloadResponse builds the answer to a SessionStart event: the
+// instructions of the skills the agent preloads, as extra context; nil when
+// there are none.
+func PreloadResponse(preloaded []skills.Preloaded) *Response {
+	if len(preloaded) == 0 {
+		return nil
+	}
+
+	var b strings.Builder
+
+	b.WriteString(preloadIntro)
+	b.WriteString("\n")
+
+	for _, p := range preloaded {
+		fmt.Fprintf(&b, "\n<preloaded_skill name=%q dir=%q>\n%s\n</preloaded_skill>\n", p.Name, p.Dir, p.Body)
+	}
+
+	return &Response{HookSpecificOutput: &SpecificOutput{
+		HookEventName:     EventSessionStart,
+		AdditionalContext: b.String(),
+	}}
 }

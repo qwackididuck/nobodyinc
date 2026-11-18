@@ -27,6 +27,7 @@ permissions:
 tools: [Read, Edit]
 mcp_exclude: [gitlab/delete_project, ragflow]
 skills: [drawio]
+skills_exclude: [loop]
 from: dev@2
 on_leave: true
 ---
@@ -42,12 +43,13 @@ With tests.
 					Allow:   []string{"Bash(go test *)"},
 					Deny:    []string{"Read(./.env)"},
 				},
-				Tools:      []string{"Read", "Edit"},
-				MCPExclude: []string{"gitlab/delete_project", "ragflow"},
-				Skills:     []string{"drawio"},
-				From:       "dev@2",
-				OnLeave:    true,
-				Prompt:     "You write Go.\nWith tests.",
+				Tools:         []string{"Read", "Edit"},
+				MCPExclude:    []string{"gitlab/delete_project", "ragflow"},
+				Skills:        []string{"drawio"},
+				SkillsExclude: []string{"loop"},
+				From:          "dev@2",
+				OnLeave:       true,
+				Prompt:        "You write Go.\nWith tests.",
 			},
 		},
 		{
@@ -89,6 +91,16 @@ With tests.
 			name:    "auto profile with haiku",
 			file:    "---\nmodel: haiku\npermissions: {profile: auto}\n---\n",
 			wantErr: "Haiku",
+		},
+		{
+			name:    "skill both preloaded and excluded",
+			file:    "---\nskills: [drawio]\nskills_exclude: [drawio, loop]\n---\n",
+			wantErr: `skill "drawio" is both preloaded`,
+		},
+		{
+			name:    "invalid skill name",
+			file:    "---\nskills_exclude: [../evil]\n---\n",
+			wantErr: "skills_exclude",
 		},
 		{
 			name:    "unknown profile",
@@ -135,7 +147,7 @@ func TestFormatRoundTrip(t *testing.T) {
 			def: Definition{
 				Description: "d", Version: 2, Role: "r", Model: "opus",
 				Permissions: Permissions{Profile: ProfileAuto, Allow: []string{"Edit"}, Deny: []string{"Read(./.env)"}},
-				Tools:       []string{"Read"}, MCPExclude: []string{"gitlab"}, Skills: []string{"drawio"},
+				Tools:       []string{"Read"}, MCPExclude: []string{"gitlab"}, Skills: []string{"drawio"}, SkillsExclude: []string{"loop"},
 				From: "dev@1", OnLeave: true, Prompt: "Line 1\n\nLine 2",
 			},
 		},
