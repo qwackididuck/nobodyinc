@@ -108,6 +108,28 @@ type budgetGuard struct {
 
 	// wake asks the loop (run) for a reconcile; it holds at most one.
 	wake chan struct{}
+
+	// commits are the agents released for one turn to commit their work in
+	// progress after a refusal; the outcome applies at the end of the turn
+	// (ADR-0013, point 5). Kept in memory: a daemon restart drops them, and
+	// the agents stay held.
+	commits map[string]commitTurn
+	// toDirector are the requests that just went to the director, told
+	// outside the lock by onAwaitingDirector.
+	toDirector []budget.Request
+
+	// onAwaitingDirector, when set, tells the director a request waits for
+	// it (budgetOffice). afterCommit applies a refusal's outcome once the
+	// agent's commit turn is over.
+	onAwaitingDirector func(ctx context.Context, r budget.Request)
+	afterCommit        func(ctx context.Context, agent string, c commitTurn)
+}
+
+// commitTurn is what follows an agent's commit turn.
+type commitTurn struct {
+	request string
+	ticket  string
+	outcome budget.Outcome
 }
 
 func newBudgetGuard(book *budget.Book, st *store.Store, o org.Source, statuses *runtime.Statuses,
@@ -116,6 +138,7 @@ func newBudgetGuard(book *budget.Book, st *store.Store, o org.Source, statuses *
 	return &budgetGuard{
 		book: book, store: st, org: o, statuses: statuses, clock: clock, bus: bus, logger: logger,
 		held: map[string][]budget.Scope{}, reached: map[budget.Scope]budget.Gauge{}, wake: make(chan struct{}, 1),
+		commits: map[string]commitTurn{},
 	}
 }
 
@@ -195,7 +218,45 @@ func (g *budgetGuard) reconcile(ctx context.Context) error {
 		g.bus.Publish(events.Event{Type: events.BudgetsChanged, Data: events.Empty{}})
 	}
 
+	g.flushDirector(ctx)
+
 	return nil
+}
+
+// flushDirector tells the director about the requests that just went to it.
+func (g *budgetGuard) flushDirector(ctx context.Context) {
+	g.mu.Lock()
+	requests := g.toDirector
+	g.toDirector = nil
+	g.mu.Unlock()
+
+	if g.onAwaitingDirector == nil {
+		return
+	}
+
+	for _, r := range requests {
+		g.onAwaitingDirector(ctx, r)
+	}
+}
+
+// grantCommitTurn releases a held agent for one turn, to commit its work in
+// progress; the outcome applies when that turn ends.
+func (g *budgetGuard) grantCommitTurn(agent string, c commitTurn) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	g.commits[agent] = c
+}
+
+// takeCommitTurn ends an agent's commit turn, if it had one.
+func (g *budgetGuard) takeCommitTurn(agent string) (commitTurn, bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	c, ok := g.commits[agent]
+	delete(g.commits, agent)
+
+	return c, ok
 }
 
 // reconcileLocked does reconcile's work under g.mu; it returns the idle
@@ -228,7 +289,9 @@ func (g *budgetGuard) reconcileLocked(ctx context.Context) ([]string, []string, 
 		order = append(order, gauge.Scope)
 
 		for _, a := range budget.Covered(gauge.Scope, o, inProgress) {
-			held[a] = append(held[a], gauge.Scope)
+			if _, committing := g.commits[a]; !committing {
+				held[a] = append(held[a], gauge.Scope)
+			}
 		}
 	}
 
@@ -344,6 +407,7 @@ func (g *budgetGuard) ensureRequest(
 	// after their Stop): the director explains it instead.
 	if r.Status == budget.RequestAwaitingAgent && r.AskedAgent == "" && !slices.ContainsFunc(covered, g.inTurn) {
 		r.Status = budget.RequestAwaitingDirector
+		g.toDirector = append(g.toDirector, r)
 
 		return true, g.store.UpdateBudgetRequest(ctx, r)
 	}
@@ -375,6 +439,10 @@ func (g *budgetGuard) openRequest(ctx context.Context, gauge budget.Gauge) (budg
 	g.logger.Info("budget reached", "budget", gauge.Scope.String(), "request", r.ID,
 		"spent_usd", gauge.SpentUSD, "limit_usd", gauge.LimitUSD, "threshold", gauge.Threshold)
 
+	if status == budget.RequestAwaitingDirector {
+		g.toDirector = append(g.toDirector, r)
+	}
+
 	return r, nil
 }
 
@@ -396,11 +464,26 @@ func closedReason(settings budget.Settings, r budget.Request, now time.Time) str
 // simply ends its turn on budget hold. It reports false for an agent no
 // budget holds.
 func (g *budgetGuard) atStop(ctx context.Context, address string) (*hook.Response, bool, error) {
+	// A commit turn is over: its outcome applies now (the ticket canceled or
+	// given back, or the agent kept on hold).
+	if c, ok := g.takeCommitTurn(address); ok && g.afterCommit != nil {
+		g.afterCommit(ctx, address, c)
+	}
+
 	// The turn's spend may have just arrived: decide on fresh figures.
 	if err := g.reconcile(ctx); err != nil {
 		return nil, false, err
 	}
 
+	response, held, err := g.decideStop(ctx, address)
+
+	g.flushDirector(ctx)
+
+	return response, held, err
+}
+
+// decideStop is atStop's decision, under g.mu.
+func (g *budgetGuard) decideStop(ctx context.Context, address string) (*hook.Response, bool, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -445,10 +528,29 @@ func (g *budgetGuard) askOrPassOn(ctx context.Context, r budget.Request, address
 			return nil, false, err
 		}
 
+		g.toDirector = append(g.toDirector, r)
 		g.bus.Publish(events.Event{Type: events.BudgetsChanged, Data: events.Empty{}})
 	}
 
 	return nil, false, nil
+}
+
+// holding lists the agents a reached budget holds now.
+func (g *budgetGuard) holding(scope budget.Scope) []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	var agents []string
+
+	for a, scopes := range g.held {
+		if slices.Contains(scopes, scope) {
+			agents = append(agents, a)
+		}
+	}
+
+	slices.Sort(agents)
+
+	return agents
 }
 
 // budgetRequestPrompt refuses the end of a turn once, and asks the agent to

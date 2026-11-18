@@ -34,6 +34,9 @@ type Request struct {
 	// LimitUSD and SpentUSD are where the budget stood when it was reached.
 	LimitUSD float64 `json:"limit_usd"`
 	SpentUSD float64 `json:"spent_usd"`
+	// FeatureRemainingUSD is, for a ticket of a feature with a budget, what
+	// the feature has left to allocate (computed, not stored).
+	FeatureRemainingUSD *float64 `json:"feature_remaining_usd,omitempty"`
 	// CardMessage is the director's message to the human carrying the card.
 	CardMessage  string     `json:"card_message,omitempty"`
 	ExtendedUSD  *float64   `json:"extended_usd,omitempty"`
@@ -64,6 +67,24 @@ const (
 // Open reports whether the request still waits for someone.
 func (s RequestStatus) Open() bool {
 	return s == RequestAwaitingAgent || s == RequestAwaitingDirector || s == RequestAwaitingHuman
+}
+
+// Submission is what the director adds when it passes a request on to the
+// human: its opinion and the amount it recommends; for a request nobody
+// justified (a staff or feature budget, an agent that stopped without
+// answering), the justification and the amount to ask for.
+type Submission struct {
+	Opinion        string   `json:"opinion"`
+	RecommendedUSD *float64 `json:"recommended_usd,omitempty"`
+	Justification  string   `json:"justification,omitempty"`
+	AmountUSD      *float64 `json:"amount_usd,omitempty"`
+}
+
+// Overview is what the director reads about budgets (budget_list).
+type Overview struct {
+	Settings Settings  `json:"settings"`
+	Spend    Summary   `json:"spend"`
+	Requests []Request `json:"open_requests"`
 }
 
 // Refusal is the human's answer when refusing an extension.

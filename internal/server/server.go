@@ -92,6 +92,9 @@ type Deps struct {
 	// response to give it, and whether it is held (hooks.go); nil holds
 	// nobody.
 	BudgetStop func(ctx context.Context, address string) (*hook.Response, bool, error)
+	// BudgetOffice backs the budget requests and cap proposals
+	// (budgets.go); nil answers 501.
+	BudgetOffice BudgetOffice
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits

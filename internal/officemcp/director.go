@@ -103,6 +103,8 @@ type FeatureProposeInput struct {
 	Need               string `json:"need"                  jsonschema:"what is wanted and why, as agreed with the human"`
 	AcceptanceCriteria string `json:"acceptance_criteria"   jsonschema:"how to know the feature is done, testable"`
 	BaseBranch         string `json:"base_branch,omitempty" jsonschema:"branch to start from; omit for the project's current branch"`
+	//nolint:lll // a struct tag cannot be split
+	BudgetUSD *float64 `json:"budget_usd,omitempty" jsonschema:"the feature's budget in USD (list price) to propose; you then give each ticket a budget out of it"`
 }
 
 // FeatureProposeOutput confirms the proposal.
@@ -260,6 +262,7 @@ func (t tools) featurePropose(ctx context.Context, _ *mcp.CallToolRequest, in Fe
 ) {
 	f, err := t.tickets.ProposeFeature(ctx, t.self, work.FeatureDraft{
 		Title: in.Title, Description: in.Need, AcceptanceCriteria: in.AcceptanceCriteria, BaseBranch: in.BaseBranch,
+		Budget: work.Budget{USD: in.BudgetUSD},
 	})
 	if err != nil {
 		return nil, FeatureProposeOutput{}, err

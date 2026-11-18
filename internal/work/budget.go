@@ -149,3 +149,76 @@ func (s *Service) SetBudget(ctx context.Context, by, id string, b Budget) (Ticke
 
 	return s.save(ctx, t, "", org.HumanAddress)
 }
+
+// ExtendTicketBudget raises a ticket's budget by usd: an extension the human
+// granted (ADR-0013, point 6). Inside a feature with a budget it comes out
+// of what the feature has left to allocate, and raises the feature's budget
+// by what is missing.
+func (s *Service) ExtendTicketBudget(ctx context.Context, id string, usd float64) (Ticket, error) {
+	s.budgetMu.Lock()
+	defer s.budgetMu.Unlock()
+
+	t, err := s.Store.GetTicket(ctx, id)
+	if err != nil {
+		return Ticket{}, err
+	}
+
+	if !t.IsSet() {
+		return Ticket{}, fmt.Errorf("%w: %s has no budget", ErrConflict, t.ID)
+	}
+
+	raised := *t.USD + usd
+
+	if t.Feature != "" {
+		if err := s.coverFromFeature(ctx, t, raised); err != nil {
+			return Ticket{}, err
+		}
+	}
+
+	t.USD = &raised
+
+	return s.save(ctx, t, "", org.HumanAddress)
+}
+
+// coverFromFeature raises the budget of a ticket's feature, if it has one,
+// by what it lacks for the ticket's new budget.
+func (s *Service) coverFromFeature(ctx context.Context, t Ticket, raised float64) error {
+	f, err := s.Store.GetFeature(ctx, t.Feature)
+	if err != nil {
+		return err
+	}
+
+	if !f.IsSet() {
+		return nil
+	}
+
+	if missing := raised - (f.Left() + t.allocation()); missing > 0 {
+		grown := *f.USD + missing
+		f.USD = &grown
+
+		return s.Store.UpdateFeature(ctx, f)
+	}
+
+	return nil
+}
+
+// ExtendFeatureBudget raises a feature's budget by usd: an extension the
+// human granted.
+func (s *Service) ExtendFeatureBudget(ctx context.Context, id string, usd float64) (Feature, error) {
+	s.budgetMu.Lock()
+	defer s.budgetMu.Unlock()
+
+	f, err := s.Store.GetFeature(ctx, id)
+	if err != nil {
+		return Feature{}, err
+	}
+
+	if !f.IsSet() {
+		return Feature{}, fmt.Errorf("%w: %s has no budget", ErrConflict, f.ID)
+	}
+
+	grown := *f.USD + usd
+	f.USD = &grown
+
+	return f, s.Store.UpdateFeature(ctx, f)
+}

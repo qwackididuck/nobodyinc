@@ -235,6 +235,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	staffService := newStaffing(ctx, opts, staffingDeps{catalog: cat, agents: supervisor, messages: messages, bus: bus, git: git})
 
+	budgetOffice := newBudgetOffice(budgets, st, tickets, messages, opts, bus)
 	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
 
 	builtinSkills := discoverBuiltinSkills(ctx, opts)
@@ -258,9 +259,10 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		BuiltinSkills: builtinSkills,
 		Schedules:     schedules,
 		// What the agents spend; wired to the supervisor and the forker.
-		Spend:      wireSpend(st, opts, bus, supervisor, forker, budgets.guard),
-		Budgets:    budgets.book,
-		BudgetStop: budgets.guard.atStop,
+		Spend:        wireSpend(st, opts, bus, supervisor, forker, budgets.guard),
+		Budgets:      budgets.book,
+		BudgetStop:   budgets.guard.atStop,
+		BudgetOffice: budgetOffice,
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,
@@ -270,7 +272,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		},
 		Extra: map[string]http.Handler{
 			"/mcp/{address}": officemcp.Handler(officemcp.Office{
-				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules,
+				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules, Budgets: budgetOffice,
 				Version: opts.Version,
 			}),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),

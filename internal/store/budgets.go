@@ -259,3 +259,121 @@ func (s *Store) MonthlyExtensions(ctx context.Context, month string) (map[budget
 
 	return extensions, rows.Err()
 }
+
+// InsertBudgetProposal stores a cap the director proposed and returns it
+// with its ID.
+func (s *Store) InsertBudgetProposal(ctx context.Context, p budget.Proposal) (budget.Proposal, error) {
+	data, err := json.Marshal(p.Cap)
+	if err != nil {
+		return budget.Proposal{}, err
+	}
+
+	res, err := s.db.ExecContext(ctx, `
+		INSERT INTO budget_proposals (scope_kind, scope_id, cap, reason, status, proposed_by, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		p.Scope.Kind, p.Scope.ID, string(data), p.Reason, p.Status, p.ProposedBy, formatTime(p.CreatedAt))
+	if err != nil {
+		return budget.Proposal{}, fmt.Errorf("insert budget proposal: %w", err)
+	}
+
+	n, err := res.LastInsertId()
+	if err != nil {
+		return budget.Proposal{}, err
+	}
+
+	p.ID = budget.FormatProposalID(n)
+
+	return p, nil
+}
+
+// UpdateBudgetProposal saves a proposal's cap (edited by the human), status,
+// message, reason and decision time.
+func (s *Store) UpdateBudgetProposal(ctx context.Context, p budget.Proposal) error {
+	n, err := budget.ParseProposalID(p.ID)
+	if err != nil {
+		return err
+	}
+
+	data, err := json.Marshal(p.Cap)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		UPDATE budget_proposals SET cap = ?, status = ?, proposal_message = ?, refusal_reason = ?, decided_at = ? WHERE id = ?`,
+		string(data), p.Status, p.ProposalMessage, p.RefusalReason, formatOptionalTime(p.DecidedAt), n)
+	if err != nil {
+		return fmt.Errorf("update budget proposal %s: %w", p.ID, err)
+	}
+
+	return nil
+}
+
+// GetBudgetProposal returns one proposal.
+func (s *Store) GetBudgetProposal(ctx context.Context, id string) (budget.Proposal, error) {
+	n, err := budget.ParseProposalID(id)
+	if err != nil {
+		return budget.Proposal{}, err
+	}
+
+	p, err := scanBudgetProposal(s.db.QueryRowContext(ctx, selectBudgetProposals+` WHERE id = ?`, n))
+	if errors.Is(err, sql.ErrNoRows) {
+		return budget.Proposal{}, fmt.Errorf("%w: budget proposal %s", budget.ErrNotFound, id)
+	}
+
+	return p, err
+}
+
+// ListBudgetProposals returns every proposal, newest first.
+func (s *Store) ListBudgetProposals(ctx context.Context) ([]budget.Proposal, error) {
+	rows, err := s.db.QueryContext(ctx, selectBudgetProposals+` ORDER BY id DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list budget proposals: %w", err)
+	}
+	defer rows.Close()
+
+	proposals := []budget.Proposal{}
+
+	for rows.Next() {
+		p, err := scanBudgetProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		proposals = append(proposals, p)
+	}
+
+	return proposals, rows.Err()
+}
+
+const selectBudgetProposals = `
+	SELECT id, scope_kind, scope_id, cap, reason, status, proposed_by, proposal_message, refusal_reason, created_at, decided_at
+	FROM budget_proposals`
+
+func scanBudgetProposal(row scanner) (budget.Proposal, error) {
+	var (
+		p                     budget.Proposal
+		n                     int64
+		capJSON, created, dec string
+	)
+
+	if err := row.Scan(&n, &p.Scope.Kind, &p.Scope.ID, &capJSON, &p.Reason, &p.Status, &p.ProposedBy, &p.ProposalMessage,
+		&p.RefusalReason, &created, &dec); err != nil {
+		return budget.Proposal{}, err
+	}
+
+	p.ID = budget.FormatProposalID(n)
+
+	if err := json.Unmarshal([]byte(capJSON), &p.Cap); err != nil {
+		return budget.Proposal{}, fmt.Errorf("read the cap of %s: %w", p.ID, err)
+	}
+
+	var err error
+	if p.CreatedAt, err = parseTime(created); err != nil {
+		return budget.Proposal{}, err
+	}
+
+	p.DecidedAt, err = parseOptionalTime(dec)
+
+	return p, err
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"time"
@@ -18,6 +19,12 @@ func (s *server) routeBudgets(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/spend", s.getSpend)
 	mux.HandleFunc("PATCH /api/tickets/{id}", s.updateTicketBudget)
 	mux.HandleFunc("POST /internal/agents/{address}/statusline", s.reportStatusLine)
+	mux.HandleFunc("GET /api/budget-requests", s.listBudgetRequests)
+	mux.HandleFunc("POST /api/budget-requests/{id}/extend", s.extendBudget)
+	mux.HandleFunc("POST /api/budget-requests/{id}/refuse", s.refuseBudget)
+	mux.HandleFunc("GET /api/budget-proposals", s.listBudgetProposals)
+	mux.HandleFunc("POST /api/budget-proposals/{id}/accept", s.acceptBudgetProposal)
+	mux.HandleFunc("POST /api/budget-proposals/{id}/refuse", s.refuseBudgetProposal)
 }
 
 // statusLineReport is the part of the statusLine JSON the daemon reads
@@ -142,4 +149,128 @@ func (s *server) updateBudgets(w http.ResponseWriter, r *http.Request) {
 	default:
 		s.writeJSON(w, http.StatusOK, saved)
 	}
+}
+
+// BudgetOffice is what backs the budget requests and the director's cap
+// proposals (implemented in internal/daemon). Only the human decides.
+type BudgetOffice interface {
+	Requests(ctx context.Context, open bool) ([]budget.Request, error)
+	Extend(ctx context.Context, id string, usd float64) (budget.Request, error)
+	Refuse(ctx context.Context, id string, r budget.Refusal) (budget.Request, error)
+	Proposals(ctx context.Context) ([]budget.Proposal, error)
+	AcceptProposal(ctx context.Context, id string, edited *budget.Cap) (budget.Proposal, error)
+	RefuseProposal(ctx context.Context, id, reason string) (budget.Proposal, error)
+}
+
+// budgetOfficeAvailable answers 501 when the daemon has no budget office.
+func (s *server) budgetOfficeAvailable(w http.ResponseWriter) bool {
+	if s.BudgetOffice == nil {
+		s.writeError(w, http.StatusNotImplemented, errors.New("budget requests are not available"))
+
+		return false
+	}
+
+	return true
+}
+
+// budgetReply answers a budget office call: its value, or its error as a
+// status (404, 400, 409; a ticket error as the ticket routes do).
+func (s *server) budgetReply(w http.ResponseWriter, v any, err error) {
+	switch {
+	case err == nil:
+		s.writeJSON(w, http.StatusOK, v)
+	case errors.Is(err, budget.ErrNotFound):
+		s.writeError(w, http.StatusNotFound, err)
+	case errors.Is(err, budget.ErrInvalid):
+		s.writeError(w, http.StatusBadRequest, err)
+	case errors.Is(err, budget.ErrConflict):
+		s.writeError(w, http.StatusConflict, err)
+	default:
+		s.ticketError(w, err)
+	}
+}
+
+func (s *server) listBudgetRequests(w http.ResponseWriter, r *http.Request) {
+	if s.budgetOfficeAvailable(w) {
+		requests, err := s.BudgetOffice.Requests(r.Context(), r.URL.Query().Get("open") == "true")
+		s.budgetReply(w, requests, err)
+	}
+}
+
+func (s *server) extendBudget(w http.ResponseWriter, r *http.Request) {
+	if !s.budgetOfficeAvailable(w) {
+		return
+	}
+
+	var body struct {
+		AmountUSD float64 `json:"amount_usd"`
+	}
+	if err := decodeJSON(w, r, &body, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	request, err := s.BudgetOffice.Extend(r.Context(), r.PathValue("id"), body.AmountUSD)
+	s.budgetReply(w, request, err)
+}
+
+func (s *server) refuseBudget(w http.ResponseWriter, r *http.Request) {
+	if !s.budgetOfficeAvailable(w) {
+		return
+	}
+
+	var refusal budget.Refusal
+	if err := decodeJSON(w, r, &refusal, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	request, err := s.BudgetOffice.Refuse(r.Context(), r.PathValue("id"), refusal)
+	s.budgetReply(w, request, err)
+}
+
+func (s *server) listBudgetProposals(w http.ResponseWriter, r *http.Request) {
+	if s.budgetOfficeAvailable(w) {
+		proposals, err := s.BudgetOffice.Proposals(r.Context())
+		s.budgetReply(w, proposals, err)
+	}
+}
+
+func (s *server) acceptBudgetProposal(w http.ResponseWriter, r *http.Request) {
+	if !s.budgetOfficeAvailable(w) {
+		return
+	}
+
+	var body struct {
+		Cap *budget.Cap `json:"cap"`
+	}
+
+	if r.ContentLength != 0 {
+		if err := decodeJSON(w, r, &body, true); err != nil && !errors.Is(err, io.EOF) {
+			s.writeError(w, http.StatusBadRequest, err)
+
+			return
+		}
+	}
+
+	proposal, err := s.BudgetOffice.AcceptProposal(r.Context(), r.PathValue("id"), body.Cap)
+	s.budgetReply(w, proposal, err)
+}
+
+func (s *server) refuseBudgetProposal(w http.ResponseWriter, r *http.Request) {
+	if !s.budgetOfficeAvailable(w) {
+		return
+	}
+
+	var body refusal
+	if err := decodeJSON(w, r, &body, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	proposal, err := s.BudgetOffice.RefuseProposal(r.Context(), r.PathValue("id"), body.Reason)
+	s.budgetReply(w, proposal, err)
 }

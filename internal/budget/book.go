@@ -1,6 +1,8 @@
 package budget
 
 import (
+	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -58,6 +60,90 @@ func (b *Book) Replace(s Settings) (Settings, error) {
 	}
 
 	err := b.change(func(Settings) (Settings, error) { return s, nil })
+
+	return b.Get(), err
+}
+
+// Cap returns the cap of an agent, a team or the staff, if set.
+func (s Settings) Cap(scope Scope) (Cap, bool) {
+	switch scope.Kind {
+	case KindStaff:
+		if s.Staff != nil {
+			return *s.Staff, true
+		}
+	case KindTeam:
+		c, ok := s.Teams[scope.ID]
+
+		return c, ok
+	case KindAgent:
+		c, ok := s.Agents[scope.ID]
+
+		return c, ok
+	case KindTicket, KindFeature:
+	}
+
+	return Cap{}, false
+}
+
+// withCap returns the settings with an agent, team or staff cap set.
+func (s Settings) withCap(scope Scope, c Cap) Settings {
+	switch scope.Kind {
+	case KindStaff:
+		s.Staff = &c
+	case KindTeam:
+		s.Teams = maps.Clone(s.Teams)
+		if s.Teams == nil {
+			s.Teams = map[string]Cap{}
+		}
+
+		s.Teams[scope.ID] = c
+	case KindAgent:
+		s.Agents = maps.Clone(s.Agents)
+		if s.Agents == nil {
+			s.Agents = map[string]Cap{}
+		}
+
+		s.Agents[scope.ID] = c
+	case KindTicket, KindFeature:
+	}
+
+	return s
+}
+
+// SetCap sets an agent, team or staff cap (an accepted proposal), keeping
+// the rest of the file as it is.
+func (b *Book) SetCap(scope Scope, c Cap) (Settings, error) {
+	if !scope.IsCap() {
+		return Settings{}, fmt.Errorf("%w: %s is not an agent, team or staff budget", ErrInvalid, scope)
+	}
+
+	candidate := Settings{Threshold: DefaultThreshold}.withCap(scope, c)
+	if err := candidate.Check(); err != nil {
+		return Settings{}, err
+	}
+
+	if err := candidate.CheckOrg(b.org.Current()); err != nil {
+		return Settings{}, err
+	}
+
+	err := b.change(func(s Settings) (Settings, error) { return s.withCap(scope, c), nil })
+
+	return b.Get(), err
+}
+
+// RaiseCap raises an existing cap by usd: an extension of a cumulative cap
+// (ADR-0013, point 6).
+func (b *Book) RaiseCap(scope Scope, usd float64) (Settings, error) {
+	err := b.change(func(s Settings) (Settings, error) {
+		c, ok := s.Cap(scope)
+		if !ok {
+			return Settings{}, fmt.Errorf("%w: %s has no cap", ErrConflict, scope)
+		}
+
+		c.LimitUSD += usd
+
+		return s.withCap(scope, c), nil
+	})
 
 	return b.Get(), err
 }
