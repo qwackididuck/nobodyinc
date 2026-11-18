@@ -27,26 +27,37 @@ import (
 // real project daemons (the nobodyd binary) with fakeclaude agents. Its
 // grace period runs on a manual clock.
 type testLauncher struct {
-	url   string
-	clock *schedule.ManualClock
-	home  string
+	url      string
+	clock    *schedule.ManualClock
+	home     string
+	launcher *launcher.Launcher
 }
 
 func startLauncher(t *testing.T) *testLauncher {
 	t.Helper()
 
+	return startLauncherWith(t, func(*launcher.Options) {})
+}
+
+// startLauncherWith is startLauncher with options changed by change, e.g.
+// the desktop app's hooks.
+func startLauncherWith(t *testing.T, change func(*launcher.Options)) *testLauncher {
+	t.Helper()
+
 	home := t.TempDir()
 	clock := schedule.NewManualClock(time.Date(2026, 11, 18, 9, 0, 0, 0, time.UTC))
 
-	l := launcher.New(launcher.Options{
+	opts := launcher.Options{
 		Logger:      slog.New(slog.DiscardHandler),
 		Home:        home,
 		Executable:  nobodydBinary,
 		ProjectArgs: []string{"-claude", fakeClaude, "-hook", hookBinary},
 		Output:      io.Discard,
 		Clock:       clock,
-	})
+	}
+	change(&opts)
 
+	l := launcher.New(opts)
 	srv := httptest.NewServer(l.Handler)
 
 	t.Cleanup(func() {
@@ -54,7 +65,7 @@ func startLauncher(t *testing.T) *testLauncher {
 		srv.Close()
 	})
 
-	return &testLauncher{url: srv.URL, clock: clock, home: home}
+	return &testLauncher{url: srv.URL, clock: clock, home: home, launcher: l}
 }
 
 // do calls the launcher and checks the status.
@@ -140,9 +151,10 @@ type testWindow struct {
 }
 
 type windowMessage struct {
-	Type  string `json:"type"`
-	State string `json:"state"`
-	Error string `json:"error"`
+	Type    string `json:"type"`
+	State   string `json:"state"`
+	Error   string `json:"error"`
+	Focused bool   `json:"focused"`
 }
 
 func (tl *testLauncher) attach(t *testing.T, project, window string, takeover bool) *testWindow {

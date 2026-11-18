@@ -28,6 +28,9 @@ type (
 		stateEvent
 
 		Type string `json:"type"`
+		// Focused, with "held": the desktop app brought the window holding
+		// the project to the front (Options.OnHeld).
+		Focused bool `json:"focused,omitempty"`
 	}
 	// incoming is a message from the window: "release" (stop the project
 	// now, the window switches project) or "start" (start it again after it
@@ -171,10 +174,17 @@ func (c *windowConn) handle(msg incoming) bool {
 	return false
 }
 
-// refuse tells a window it cannot hold the project, and closes.
+// refuse tells a window it cannot hold the project, and closes. In the
+// desktop app, the window holding the project is brought to the front
+// instead (Options.OnHeld), and the window that asked is told so.
 func (c *windowConn) refuse(ctx context.Context, err error) {
 	if errors.Is(err, errHeld) {
-		c.send(ctx, outgoing{Type: "held"})
+		focused := false
+		if onHeld := c.l.opts.OnHeld; onHeld != nil {
+			focused = onHeld(c.entry.ID, c.l.leases.holder(c.entry.ID))
+		}
+
+		c.send(ctx, outgoing{Type: "held", Focused: focused})
 		_ = c.conn.Close(statusHeld, err.Error()) // it may be gone already
 
 		return

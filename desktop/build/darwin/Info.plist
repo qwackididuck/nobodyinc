@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The macOS bundle of the desktop app (ADR-0016, task desktop:build). -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Nobody Inc</string>
+    <key>CFBundleDisplayName</key>
+    <string>Nobody Inc</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.qwackididuck.nobodyinc</string>
+    <key>CFBundleExecutable</key>
+    <string>nobody-desktop</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleVersion</key>
+    <string>VERSION</string>
+    <key>CFBundleShortVersionString</key>
+    <string>VERSION</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <!-- The windows load the launcher on http://127.0.0.1. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

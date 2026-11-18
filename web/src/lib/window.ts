@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { attachURL } from "./launcher";
+import { attachURL, openDesktopWindow } from "./launcher";
 
 // projectURL is the address of a project's window ("" for the projects page).
 export function projectURL(id: string | null): string {
@@ -16,16 +16,19 @@ export function projectURL(id: string | null): string {
 }
 
 const WINDOW_KEY = "nobody.window";
+const DESKTOP_KEY = "nobody.desktop";
 
 // windowID identifies this window to the launcher. It survives a reload (the
 // same window gets its hold back within the grace period), so it is kept in
 // sessionStorage, which is per tab. A duplicated tab copies it: the launcher
-// then gives the project to the newest connection.
+// then gives the project to the newest connection. In the desktop app, the
+// app chooses it (?window=<id> in the window's first URL, ADR-0016), so that
+// closing the window releases its project at once.
 export function windowID(): string {
   try {
     let id = window.sessionStorage.getItem(WINDOW_KEY);
     if (!id) {
-      id = crypto.randomUUID();
+      id = new URLSearchParams(window.location.search).get("window") ?? crypto.randomUUID();
       window.sessionStorage.setItem(WINDOW_KEY, id);
     }
     return id;
@@ -37,14 +40,40 @@ export function windowID(): string {
 
 let windowIDFallback: string | undefined;
 
+// inDesktopApp reports whether this page runs in a window of the desktop app
+// (?desktop=1 in the window's first URL, kept for the window's lifetime).
+export function inDesktopApp(): boolean {
+  try {
+    if (new URLSearchParams(window.location.search).get("desktop") === "1") {
+      window.sessionStorage.setItem(DESKTOP_KEY, "1");
+    }
+    return window.sessionStorage.getItem(DESKTOP_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+// openWindow opens url (projectURL) in a new window: a browser tab, or in
+// the desktop app a new native window, since a web view has no tabs.
+export function openWindow(url: string): void {
+  if (!inDesktopApp()) {
+    window.open(url, "_blank");
+    return;
+  }
+  const project = new URL(url, window.location.href).searchParams.get("project");
+  void openDesktopWindow(project ?? undefined);
+}
+
 // The window's hold on its project, as the control room shows it:
 //   - opening: connecting, or the daemon is starting;
 //   - running: the office can be shown;
 //   - crashed: the daemon stopped on its own (error says why);
 //   - held: another window has the project (we may take it over);
+//   - shownElsewhere: another window has the project, and the desktop app
+//     brought it to the front (this window goes back to the projects page);
 //   - taken: another window took the project from this one;
 //   - reconnecting: the connection to the launcher dropped, retrying.
-export type HoldStatus = "opening" | "running" | "crashed" | "held" | "taken" | "reconnecting";
+export type HoldStatus = "opening" | "running" | "crashed" | "held" | "shownElsewhere" | "taken" | "reconnecting";
 
 export interface Hold {
   status: HoldStatus;
@@ -65,7 +94,7 @@ const RELEASE_TIMEOUT_MS = 2000;
 
 type LauncherMessage =
   | { type: "state"; state: "stopped" | "starting" | "running" | "stopping"; error?: string }
-  | { type: "held" }
+  | { type: "held"; focused?: boolean }
   | { type: "taken" };
 
 // useHold holds project from this window while the component is mounted;
@@ -93,7 +122,7 @@ export function useHold(project: string, takeover = false): Hold {
         const msg = JSON.parse(String(e.data)) as LauncherMessage;
         retries = 0;
         if (msg.type === "held") {
-          setStatus("held");
+          setStatus(msg.focused ? "shownElsewhere" : "held");
         } else if (msg.type === "taken") {
           setStatus("taken");
         } else if (msg.state === "running") {

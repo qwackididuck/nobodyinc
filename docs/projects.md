@@ -72,6 +72,7 @@ Details:
 - The window reconnects on its own when the connection drops: within the grace period it keeps its hold; after it, the project was stopped, and the window opens it again (it is still that window's project).
 - Switching project while agents work asks first, naming them; closing the tab gets the browser's own "Leave site?" prompt (`LeaveGuard`).
 - The projects page holds nothing.
+- **In the desktop app** (`desktop.md`, ADR-0016): closing a window releases its project at once (no grace period); opening a project another window holds brings that window to the front instead of the "open in another window" screen; Cmd/Ctrl-click opens a native window.
 
 ## What stops with a project
 

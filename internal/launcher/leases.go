@@ -153,6 +153,43 @@ func (ls *leases) release(project string, h *hold) {
 	ls.onExpired(project)
 }
 
+// releaseWindow ends at once the hold of window, whatever project it holds,
+// and reports whether it held one: the desktop app closed the window
+// (ADR-0016).
+func (ls *leases) releaseWindow(window string) bool {
+	ls.mu.Lock()
+
+	for project, h := range ls.byProject {
+		if h.window != window {
+			continue
+		}
+
+		h.stopGrace()
+		delete(ls.byProject, project)
+		ls.mu.Unlock()
+
+		ls.onExpired(project)
+
+		return true
+	}
+
+	ls.mu.Unlock()
+
+	return false
+}
+
+// holder returns the window holding the project, "" if none.
+func (ls *leases) holder(project string) string {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+
+	if h := ls.byProject[project]; h != nil {
+		return h.window
+	}
+
+	return ""
+}
+
 // held reports whether a window holds the project, connected or within its
 // grace period.
 func (ls *leases) held(project string) bool {

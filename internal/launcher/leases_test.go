@@ -188,6 +188,34 @@ func TestLeasesRelease(t *testing.T) {
 	}
 }
 
+// The desktop app closes a window: whatever project it holds is let go at
+// once (ADR-0016).
+func TestLeasesReleaseWindow(t *testing.T) {
+	t.Parallel()
+
+	ls, _, expired := newTestLeases()
+
+	if _, err := ls.acquire("shop", "w1", false, noop); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := ls.holder("shop"); got != "w1" {
+		t.Fatalf("holder = %q, want w1", got)
+	}
+
+	if ls.releaseWindow("w2") {
+		t.Fatal("w2 holds nothing")
+	}
+
+	if !ls.releaseWindow("w1") {
+		t.Fatal("w1 holds shop")
+	}
+
+	if got := <-expired; got != "shop" || ls.held("shop") || ls.holder("shop") != "" {
+		t.Fatalf("release of w1: expired %q, held %v", got, ls.held("shop"))
+	}
+}
+
 func TestLeasesDeleting(t *testing.T) {
 	t.Parallel()
 

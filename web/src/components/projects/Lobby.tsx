@@ -3,7 +3,7 @@
 import { type MouseEvent, useCallback, useEffect, useState } from "react";
 
 import { deleteProject, listProjects, type Project, type ProjectActivity, projectActivity } from "@/lib/launcher";
-import { projectURL, windowID } from "@/lib/window";
+import { openWindow, projectURL, windowID } from "@/lib/window";
 import ui from "../ui/ui.module.css";
 import { BareTopBar } from "./BareTopBar";
 import { DeleteProject } from "./DeleteProject";
@@ -56,7 +56,7 @@ export function Lobby() {
   }, [refresh]);
 
   const open = (e: MouseEvent, url: string) => {
-    if (e.metaKey || e.ctrlKey) window.open(url, "_blank");
+    if (e.metaKey || e.ctrlKey) openWindow(url);
     else window.location.assign(url);
   };
 

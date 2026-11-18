@@ -6,6 +6,9 @@
 #   any branch (develop included): lint, vet, tests
 #   main:                          lint, vet, tests, build, release
 #
+# The desktop app (desktop/, its own Go module with cgo, ADR-0016) is built
+# locally with `task desktop:build` for now: not here.
+#
 # A release gets the next vX.Y.Z tag, computed from the conventional commits
 # since the previous tag (feat -> minor, fix -> patch, BREAKING CHANGE ->
 # major). Commits that do not call for a release (docs, chore, test…) produce
@@ -112,6 +115,24 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      # The control room, exported as a static site and embedded in nobodyd
+      # (internal/webui, ADR-0016): the binary alone serves it.
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - name: Export the control room
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          NOBODY_WEB_EXPORT=1 pnpm --dir web exec next build
+          cp -R web/out/. internal/webui/dist/
 
       # Pure Go (no cgo), so every target builds from Linux.
       - name: Build binaries

@@ -12,6 +12,8 @@ info:
     the project daemon's `/api/...` (REST, event stream and terminal
     WebSockets alike); the launcher answers 503 while the project is not
     running. Agents (nobody-hook, MCP) talk to their project daemon directly.
+    The launcher also serves the control room itself (its static export) at
+    `/`, so that the page and the API share one origin (ADR-0016).
 
     The project daemon's API has these audiences:
     - `/api/*` is used by the supervision web UI and the human operator;
@@ -160,8 +162,11 @@ paths:
         - `{"type": "state", "state": "starting" | "running" | "stopped", "error"?: string}`:
           the project daemon's state (`stopped` with `error` when it exited
           unexpectedly or failed to start; the window may attach again);
-        - `{"type": "held"}` then closes with code 4409: another window
-          holds the project. Attach again with `takeover=true` to take it;
+        - `{"type": "held", "focused"?: true}` then closes with code 4409:
+          another window holds the project. Attach again with
+          `takeover=true` to take it. In the desktop app, `focused` says the
+          app brought the window holding it to the front instead: the
+          window that asked goes back to the projects page (ADR-0016);
         - `{"type": "taken"}` then closes with code 4409: another window
           took the project over.
         The window may send `{"type": "release"}`: the project stops at once,
@@ -189,6 +194,34 @@ paths:
       responses:
         "101":
           description: WebSocket established
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/windows:
+    post:
+      operationId: openWindow
+      tags: [launcher]
+      summary: Open a new window of the desktop app
+      description: |
+        Served only by the desktop app's launcher (ADR-0016): a web view has
+        no browser tabs, so "open in a new window" asks the app. Without
+        `project`, the window shows the projects page. Elsewhere, 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                project:
+                  type: string
+                  description: The project the window opens; none for the projects page.
+      responses:
+        "204":
+          description: The window is opening
+        "400":
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
 

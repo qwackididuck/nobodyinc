@@ -11,3 +11,10 @@ web/node_modules/
 web/.next/
 web/out/
 web/next-env.d.ts
+
+# The control room's export, embedded in the binaries (task web:export).
+internal/webui/dist/*
+!internal/webui/dist/README.md
+
+# The desktop app (task desktop:build).
+desktop/build/bin/
