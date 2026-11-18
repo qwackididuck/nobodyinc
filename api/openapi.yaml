@@ -3012,9 +3012,10 @@ components:
 
     BudgetRequest:
       type: object
-      required: [id, scope, status, held_agents, limit_usd, spent_usd, created_at]
+      required: [id, scope, status, active, held_agents, limit_usd, spent_usd, created_at]
       description: |
-        One request per budget at its threshold (ADR-0013, point 5).
+        One request per budget at its threshold (ADR-0013, point 5), active
+        while the budget stays reached.
         `awaiting_agent`: the first agent to stop is asked to justify it
         (ticket, agent, team budgets); `awaiting_director`: the director is to
         give its opinion, or for a staff or feature budget its justification;
@@ -3030,10 +3031,17 @@ components:
         status:
           type: string
           enum: [awaiting_agent, awaiting_director, awaiting_human, extended, refused, closed]
+        active:
+          type: boolean
+          description: Its budget is still reached; at most one request per budget is active.
         held_agents:
           type: array
+          description: The agents its budget holds now (empty once it is no longer active).
           items:
             type: string
+        asked_agent:
+          type: string
+          description: The agent asked to justify it, the first to stop.
         requested_by:
           type: string
           description: The agent that justified it, or the director for a staff or feature budget.

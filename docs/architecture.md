@@ -38,7 +38,8 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 | `internal/runtime` | Starts each agent (`claude` in a PTY), tracks its status and session, wakes it up when mail arrives, answers urgent questions to busy agents with a session fork, streams its terminal over a WebSocket. |
 | `internal/server` | The HTTP API described in `api/openapi.yaml`. |
 | `internal/daemon` | Wires all of the above together, turns ticket events into notices, picks the member of a team that gets team-addressed work; `cmd/nobodyd` adds flags and a listener. |
-| `cmd/nobody-hook` | Relay run by Claude Code on hooks: forwards the event to the daemon, prints the answer, acknowledges. |
+| `internal/budget` | Costs and budgets (ADR-0013, `budgets.md`): turns the agents' running costs into spend records, the budgets file, gauges, which budgets cover which agents. |
+| `cmd/nobody-hook` | Relay run by Claude Code on hooks: forwards the event to the daemon, prints the answer, acknowledges. As every agent's statusLine (`nobody-hook statusline`), it posts the session's running cost and prints nothing. |
 
 ## Conversation rules
 
@@ -69,7 +70,7 @@ Hook details, and how urgent questions to busy agents are answered by a fork of 
 
 ## Agent status
 
-`stopped → starting → working ⇄ idle → exited`, plus `awaiting_approval` while a permission request waits for the human, derived from the hooks: a `Stop` with nothing to deliver means the agent really finished its turn (`idle`); any other event means it is working. At launch, a short onboarding turn brings the agent to `idle`, the state in which mail wakes it up.
+`stopped → starting → working ⇄ idle → exited`, plus `awaiting_approval` while a permission request waits for the human, and `budget_hold` instead of `idle` while a budget at its threshold holds the agent (`budgets.md`), derived from the hooks: a `Stop` with nothing to deliver means the agent really finished its turn (`idle`); any other event means it is working. At launch, a short onboarding turn brings the agent to `idle`, the state in which mail wakes it up.
 
 ## Agent isolation
 
@@ -78,7 +79,7 @@ Agents see neither the user's global settings, hooks and plugins nor the environ
 ## Testing
 
 - Unit tests next to each package.
-- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block, scheduled tasks with a manual clock) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
+- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block, scheduled tasks with a manual clock, costs and budgets through fakeclaude's statusLine) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
 - `test/contract` (`task contract`): the Claude Code behaviours we rely on, against the real CLI.
 
 ## Changes pushed to the browser

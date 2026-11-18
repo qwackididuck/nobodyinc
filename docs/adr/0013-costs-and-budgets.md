@@ -1,6 +1,6 @@
 # ADR-0013 — Costs and budgets: measured from the statusLine, enforced at the end of a turn
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-18
 
 ## Context
@@ -89,9 +89,9 @@ Everything happens at **X % of a budget, 80 % by default**: one threshold for th
 
 When a spend record brings a budget to its threshold, the agents that budget covers are **held**:
 
-1. An agent in the middle of a turn **finishes its turn**. At its `Stop`, the daemon refuses the stop **once** and asks it to call the new office tool `budget_request` (amount asked, justification: where it is, what remains), unless point 5 gives the justification to the director. An agent that stops again without calling it is held anyway; its request then carries no justification.
+1. An agent in the middle of a turn **finishes its turn**. At its `Stop`, the daemon refuses the stop **once** and asks it to call the new office tool `budget_request` (amount asked, justification: where it is, what remains), unless point 5 gives the justification to the director. An agent that stops again without calling it is held anyway, and its request goes to the director unjustified. So does a request none of whose agents is in a turn to be asked (the turn's last cost report arrived after their `Stop`).
 2. An idle agent is held at once, without being woken up.
-3. A held agent is **on budget hold, its session kept**: the process stays alive and is never woken up; mail waits in its trays; it is offered no ticket (`pickMember`, claims refused like `checkFree`) and no schedule occurrence (`scheduledWork.freeAgent`: the occurrence waits). Its status is `budget_hold`, shown in the office with an empty-wallet icon. What the human types into its terminal still reaches it, and is still counted.
+3. A held agent is **on budget hold, its session kept**: the process stays alive and is never woken up; mail waits in its trays; it is offered no ticket (`pickMember` picks it only when nobody else runs, and its claims are refused: `work.Service.CheckClaim`) and no schedule occurrence (`scheduledWork.freeAgent`: the occurrence waits). Its status is `budget_hold`, shown in the office with an empty-wallet icon. What the human types into its terminal still reaches it, and is still counted.
 
 A hold is not stored as such: an agent is held while a budget that covers it is reached. Anything that takes a budget back under its threshold (an extension, a monthly reset, a budget raised or removed, budgets turned off) releases its agents by itself, and a hold survives a daemon restart since the spend and the budgets do. The daemon works the holds out again after every spend record, budget change and ticket or feature change, and at the start of every month. A held agent restarted (daemon restart, definition change) runs its first turn (onboarding or resume) and is held again at its end. A ticket whose budget, or its feature's, is reached cannot be claimed.
 
@@ -102,14 +102,14 @@ There is **one request per budget**, whatever the number of agents it holds. An 
 - For a **ticket, agent or team** budget, the **first agent to stop** writes the justification with `budget_request`. The others are held without being asked. The request then goes to the **director**, as mail, who passes it on to the human **with its opinion** (`budget_submit`: its opinion and the amount it recommends).
 - For a **global** budget, **staff or feature**, no agent is asked: the **director writes the justification** with `budget_submit`, since it has the overall view.
 
-The director grants nothing: it has no tool to change a budget. Its submission appears in **the director's chat** as a card for the human, with the request, the justification and the director's opinion, and an alert. There is no badge on the held agent's avatar.
+The director grants nothing: it has no tool to change a budget. Its submission appears in **the director's chat** as a card for the human, with the request, the justification and the director's opinion, and a badge on the director's avatar while it waits. There is no badge on the held agent's avatar. For a request nobody justified, `budget_submit` requires the director's justification and the amount to ask for.
 
 The human decides on the card, and the code enforces it:
 
-- **Extend +$X** (the amount asked, editable).
-- **Refuse**, choosing the outcome for each held agent: **cancel** its ticket, **give the ticket back** to its team's queue, or **keep it on hold**. **"Commit the work in progress first"** is a box combined with that outcome: the agent is released for one short turn with a notice from `nobody` ("commit your work in progress, comment the ticket, then stop"), and the outcome applies at the end of that turn. What that turn spends is shown, never stopped. No outcome is imposed by default.
+- **Extend +$X** (the director's recommendation, or the amount asked, editable). Only a request the director passed on can be decided.
+- **Refuse**, choosing the outcome for each held agent: **cancel** its ticket, **give the ticket back** to its team's queue, or **keep it on hold**, the only choice for an agent without a ticket. The card offers one outcome for every agent, and lets the human change it agent by agent. **"Commit the work in progress first"** is a box combined with that outcome: each held agent with a ticket is released for one short turn with a notice from `nobody` ("commit your work in progress, comment the ticket, then stop"), and its outcome applies at the end of that turn. What that turn spends is shown, never stopped. The commit turns are kept in memory: a daemon restart drops them, and their agents stay held. No outcome is imposed by default.
 
-The agents and the director hear the decision as notices from `nobody`. A released agent is woken up with its memory intact.
+The director gets the human's answer to its card as `agree` or `refuse`; the held agents get a notice from `nobody`. A released agent is woken up with its memory intact.
 
 If the director is not running when a request needs it, the request waits in its tray like any mail.
 
@@ -120,9 +120,11 @@ If the director is not running when a request needs it, the request waits in its
 - A **monthly** agent, team or staff cap: the extension holds **for the current month only** (recorded in the database); the cap in `budgets.yaml` does not change.
 - A **cumulative** cap: the new cap is written to `budgets.yaml`.
 
+An extension that would leave the budget at its threshold is refused, with the minimum that would release its agents: it would keep them on hold.
+
 ### 7. A monthly reset lifts a hold
 
-When a month begins, monthly caps start again from 0. Agents held **only** by a monthly cap are released, and its pending request is closed as "monthly reset"; the director and the human are told. A cumulative cap never resets: its agents stay on hold until the human decides.
+When a month begins, monthly caps start again from 0. Agents held **only** by a monthly cap are released, and its pending request is closed with the reason "the monthly reset", which its card and the API show; no message is sent. A cumulative cap never resets: its agents stay on hold until the human decides.
 
 ### 8. The director proposes caps, the human decides
 
@@ -132,7 +134,7 @@ The director gets `budget_list` (the caps, the spend per level and per month) an
 
 ### 9. Turning budgets off
 
-`enabled: false` in `budgets.yaml` (Settings) turns budgets off for the project: no caps, thresholds, holds or requests, and no budget field in the forms or tools. **Spend is still measured and shown.** Holds and pending requests are lifted when budgets are turned off.
+`enabled: false` in `budgets.yaml` (Settings) turns budgets off for the project: no caps, thresholds, holds or requests; the forms hide their budget fields, and a budget given anyway (through a tool or the API) is refused. **Spend is still measured and shown.** Holds and pending requests are lifted when budgets are turned off.
 
 ### 10. What the human sees
 

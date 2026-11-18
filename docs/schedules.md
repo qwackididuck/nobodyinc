@@ -60,11 +60,11 @@ Every occurrence is signed by **`nobody`**:
 - Nobody can answer `nobody`, and a ticket created by `nobody` tells nobody when it is done. Results stay where the work left them, in the ticket and the history, and the agent writes to the human only when its instructions say so. Write instructions accordingly ("if an alert is red, write to human").
 - **Scheduled work is outside any feature.** Its ticket belongs to no feature: claiming it syncs nothing, closing it delivers nothing to the feature branch, it never blocks finishing the feature and is not archived with it. The agent still works where it is, which is its team's worktree during a feature. A commit it makes for a scheduled ticket stays on the team's branch. Scheduled tasks are meant for work that delivers no code.
 - An occurrence blocked on a permission request waits like any work: with the `default` profile, every sensitive action goes to the approval queue, also at night. The control room warns about it when the target uses that profile.
-- No spending guard yet: costs are not measured (see "Costs and budgets" in the roadmap). In message mode, occurrences pile up in the agent's session until Claude Code compacts it.
+- What an occurrence costs is measured (`docs/budgets.md`): the agent's spend while it runs counts for the occurrence, shown in the schedule's history, and each schedule's spend for the month shows on the office's spending board. There is no cap per occurrence; the agent's, team's and staff's caps apply, and an agent on budget hold gets no occurrence (it waits). In message mode, occurrences pile up in the agent's session until Claude Code compacts it.
 
 ### History
 
-Each occurrence is a row of `schedule_runs`, kept after its schedule is deleted: the trigger (`schedule`, or `manual` for "Run now"), when it fell due, started and ended, the agent, the ticket or message, a note, and its status:
+Each occurrence is a row of `schedule_runs`, kept after its schedule is deleted: the trigger (`schedule`, or `manual` for "Run now"), when it fell due, started and ended, the agent, the ticket or message, a note, what it cost (`spent_usd`), and its status:
 
 ```
 waiting ──► running ──► done
