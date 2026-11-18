@@ -526,6 +526,7 @@ paths:
         - `features.changed`: ChangedEvent (feature ID)
         - `org.changed`: `{}` (an agent was recruited, edited, put on leave, brought back or dismissed)
         - `catalog.changed`: `{}`
+        - `schedules.changed`: `{}` (a schedule, one of its occurrences or a proposal changed)
       responses:
         "200":
           description: The event stream, until the client or the daemon closes it
@@ -1040,6 +1041,253 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/schedules:
+    get:
+      operationId: listSchedules
+      summary: Scheduled tasks, in the order of .nobody/schedules.yaml
+      description: |
+        Recurring work the daemon hands to agents while it runs (ADR-0012,
+        docs/schedules.md). Each schedule comes with its next occurrence, its
+        last one, and a warning when its target uses the `default`
+        permission profile.
+      responses:
+        "200":
+          description: Schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleView"
+    post:
+      operationId: createSchedule
+      summary: Create a schedule (enabled)
+      description: Written to .nobody/schedules.yaml, to be committed by the human.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Schedule"
+      responses:
+        "201":
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+    put:
+      operationId: updateSchedule
+      summary: Edit a schedule
+      description: |
+        Replaces the schedule (its id and `enabled` stay as they are; an `id`
+        in the body must match the path). The recurrence is armed again from
+        now. An occurrence still waiting for a free agent is canceled; one
+        already running goes on to its end.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Schedule"
+      responses:
+        "200":
+          description: Schedule edited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteSchedule
+      summary: Delete a schedule; its history stays
+      description: An occurrence still waiting is canceled; one already running goes on to its end.
+      responses:
+        "204":
+          description: Schedule deleted
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/{id}/pause:
+    post:
+      operationId: pauseSchedule
+      summary: Pause a schedule (enabled false)
+      description: No new occurrence; an occurrence still waiting is canceled, one already running goes on to its end.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleID"
+      responses:
+        "200":
+          description: Schedule paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/{id}/resume:
+    post:
+      operationId: resumeSchedule
+      summary: Resume a paused or disabled schedule, armed from now
+      description: Refused (400) when its target no longer exists; edit the target first.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleID"
+      responses:
+        "200":
+          description: Schedule resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/{id}/run:
+    post:
+      operationId: runSchedule
+      summary: Run one occurrence now ("Run now")
+      description: |
+        Follows the usual dispatch rules (ADR-0012, point 6): the occurrence
+        waits for a free target agent, or is recorded as `unavailable` when
+        none of them runs. Works on a paused schedule too. Refused (409)
+        while an occurrence of this schedule is waiting or running.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleID"
+      responses:
+        "202":
+          description: The occurrence, as recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleRun"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/schedule-runs:
+    get:
+      operationId: listScheduleRuns
+      summary: Occurrences of scheduled tasks, newest first
+      description: Kept after their schedule is deleted.
+      parameters:
+        - name: schedule
+          in: query
+          description: Only this schedule's occurrences.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Occurrences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleRun"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/schedule-proposals:
+    get:
+      operationId: listScheduleProposals
+      summary: The director's schedule proposals, newest first
+      responses:
+        "200":
+          description: Proposals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleProposal"
+
+  /api/schedule-proposals/{id}/accept:
+    post:
+      operationId: acceptScheduleProposal
+      summary: Accept a schedule the director proposed, possibly edited
+      description: |
+        Writes the schedule (enabled) to .nobody/schedules.yaml. The body may
+        carry the schedule as the human edited it; without it, the proposal
+        is accepted as it is. The director gets an "agree" answer.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleProposalID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                schedule:
+                  $ref: "#/components/schemas/Schedule"
+      responses:
+        "200":
+          description: Proposal accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleProposal"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Already decided, or a schedule with this id exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/schedule-proposals/{id}/refuse:
+    post:
+      operationId: refuseScheduleProposal
+      summary: Refuse a schedule the director proposed
+      description: The director gets a "refuse" answer, with the reason.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleProposalID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Proposal refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleProposal"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
   /api/tickets:
     get:
       operationId: listTickets
@@ -1337,6 +1585,22 @@ components:
       schema:
         type: string
         example: T-12
+
+    ScheduleID:
+      name: id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ScheduleIDValue"
+
+    ScheduleProposalID:
+      name: id
+      in: path
+      required: true
+      description: Proposal ID, "SP-<number>"
+      schema:
+        type: string
+        example: SP-2
 
   responses:
     Error:
@@ -1938,6 +2202,125 @@ components:
         base_branch:
           description: Branch the feature starts from; defaults to the project's current branch.
           type: string
+
+    ScheduleIDValue:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+      example: grafana-watch
+
+    Schedule:
+      type: object
+      description: |
+        A scheduled task, as written in .nobody/schedules.yaml. Exactly one
+        of `every` and `cron` is set.
+      required: [title, target, mode, instructions]
+      additionalProperties: false
+      properties:
+        id:
+          $ref: "#/components/schemas/ScheduleIDValue"
+        title:
+          type: string
+        every:
+          type: string
+          description: A Go duration of one minute or more, counted from when the schedule is armed.
+          example: 10m
+        cron:
+          type: string
+          description: Five standard fields or a descriptor (`@daily`), in the machine's time zone.
+          example: "0 9 * * 1-5"
+        target:
+          type: string
+          description: An agent ("monitor@ops"), a team ("@ops", its first free member) or the director (message mode only).
+        mode:
+          type: string
+          enum: [ticket, message]
+          description: "`ticket`: a ticket assigned to the agent, outside any feature; `message`: mail from nobody."
+        enabled:
+          type: boolean
+          readOnly: true
+          description: False when paused, or disabled by the daemon because its target is gone.
+        instructions:
+          type: string
+
+    ScheduleView:
+      allOf:
+        - $ref: "#/components/schemas/Schedule"
+        - type: object
+          required: [id, enabled]
+          properties:
+            next_run:
+              type: string
+              format: date-time
+              description: The next occurrence; absent when not enabled.
+            last_run:
+              $ref: "#/components/schemas/ScheduleRun"
+            warning:
+              type: string
+              description: E.g. the target uses the `default` permission profile, so its work waits for approvals.
+
+    ScheduleRun:
+      type: object
+      description: One occurrence of a schedule (ADR-0012, point 8).
+      required: [id, schedule_id, schedule_title, trigger, status, due_at]
+      properties:
+        id:
+          type: integer
+        schedule_id:
+          type: string
+        schedule_title:
+          type: string
+        trigger:
+          type: string
+          enum: [schedule, manual]
+        status:
+          type: string
+          enum: [waiting, running, done, canceled, skipped, unavailable, interrupted]
+        due_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        agent:
+          type: string
+        ticket:
+          type: string
+        message:
+          type: string
+        note:
+          type: string
+          description: Why it was skipped, canceled, unavailable or interrupted.
+
+    ScheduleProposal:
+      type: object
+      required: [id, schedule, status, proposed_by, created_at]
+      properties:
+        id:
+          type: string
+          example: SP-2
+        schedule:
+          $ref: "#/components/schemas/Schedule"
+        status:
+          type: string
+          enum: [proposed, accepted, refused]
+        proposed_by:
+          type: string
+        proposal_message:
+          type: string
+          description: ID of the "propose" message sent to the human.
+        refusal_reason:
+          type: string
+        warning:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
 
     TicketStatus:
       type: string

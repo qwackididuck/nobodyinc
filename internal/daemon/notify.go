@@ -51,8 +51,8 @@ func (n *ticketNotifier) onEvent(e work.Event) {
 		}
 
 		n.notifyUnblocked(ctx, t)
-	case work.EventClaimed:
-		// The claimer knows; nobody else needs to be told.
+	case work.EventClaimed, work.EventCanceled:
+		// The claimer knows; a canceled ticket is nobody's work any more.
 	}
 }
 

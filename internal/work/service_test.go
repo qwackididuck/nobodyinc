@@ -360,3 +360,46 @@ func TestDirectorChangesAnyTicketStatus(t *testing.T) {
 		t.Fatalf("the director should be able to send a ticket back to the queue: %v", err)
 	}
 }
+
+// TestScheduledWorkStaysOutOfTheFeature: a ticket filed with NoFeature
+// (scheduled work, ADR-0012) belongs to no feature, so claiming and closing it
+// never touch git; canceling a ticket is announced.
+func TestScheduledWorkStaysOutOfTheFeature(t *testing.T) {
+	t.Parallel()
+
+	s, events := newService(t)
+	ws := &fakeWorkspace{}
+	s.Workspace = ws
+	ctx := context.Background()
+
+	if _, err := s.StartFeature(ctx, org.HumanAddress, work.FeatureDraft{Title: "Add the order API"}); err != nil {
+		t.Fatal(err)
+	}
+
+	tk, err := s.Create(ctx, org.SystemAddress, work.Draft{
+		Title: "Watch the dashboard", Team: "dev", Assignee: "dev1@dev", NoFeature: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if tk.Feature != "" || tk.Status != work.StatusInProgress {
+		t.Fatalf("scheduled ticket = %+v, want no feature, in progress", tk)
+	}
+
+	ws.doneErr = errors.New("must not be called")
+
+	if _, err := s.SetStatus(ctx, "dev1@dev", tk.ID, work.StatusDone); err != nil {
+		t.Fatalf("closing a ticket outside the feature delivers nothing: %v", err)
+	}
+
+	other := create(t, s, "dev")
+	if _, err := s.SetStatus(ctx, org.HumanAddress, other.ID, work.StatusCanceled); err != nil {
+		t.Fatal(err)
+	}
+
+	last := (*events)[len(*events)-1]
+	if last.Kind != work.EventCanceled || last.Ticket.ID != other.ID || last.By != org.HumanAddress {
+		t.Fatalf("last event = %+v, want canceled %s by the human", last, other.ID)
+	}
+}

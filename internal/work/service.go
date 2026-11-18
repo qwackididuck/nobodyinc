@@ -85,6 +85,7 @@ const (
 	EventClaimed  EventKind = "claimed"
 	EventReleased EventKind = "released"
 	EventDone     EventKind = "done"
+	EventCanceled EventKind = "canceled"
 )
 
 // Draft is what a creator provides.
@@ -95,6 +96,10 @@ type Draft struct {
 	Team               string
 	Assignee           string // optional: assign right away instead of queueing
 	BlockedBy          []string
+	// NoFeature keeps the ticket out of the active feature: no git relay,
+	// it never blocks finishing the feature and is not archived with it.
+	// Scheduled work is filed this way (ADR-0012).
+	NoFeature bool
 }
 
 // Service applies the ticket rules described in the package documentation.
@@ -134,9 +139,11 @@ func (s *Service) Create(ctx context.Context, by string, d Draft) (Ticket, error
 		return Ticket{}, err
 	}
 
-	feature, err := s.activeFeatureID(ctx)
-	if err != nil {
-		return Ticket{}, err
+	feature := ""
+	if !d.NoFeature {
+		if feature, err = s.activeFeatureID(ctx); err != nil {
+			return Ticket{}, err
+		}
 	}
 
 	now := s.now()
@@ -258,7 +265,7 @@ func transition(status Status) (EventKind, error) {
 	case StatusOpen:
 		return EventReleased, nil
 	case StatusCanceled:
-		return "", nil
+		return EventCanceled, nil
 	case StatusInProgress:
 		return "", fmt.Errorf("%w: claim a ticket to start it", ErrInvalid)
 	default:
