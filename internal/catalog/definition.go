@@ -48,7 +48,14 @@ type Definition struct {
 	// ("gitlab/delete_project") the agent does not get. Every agent gets every
 	// server of Claude Code's three scopes otherwise (ADR-0010).
 	MCPExclude []string `json:"mcp_exclude,omitempty" yaml:"mcp_exclude,omitempty"`
-	Skills     []string `json:"skills,omitempty"      yaml:"skills,omitempty"`
+	// Skills are preloaded, as in a Claude Code subagent definition: their
+	// content is handed to the agent at every session start (ADR-0011). The
+	// agent gets every other skill too, to invoke when it needs one.
+	Skills []string `json:"skills,omitempty" yaml:"skills,omitempty"`
+	// SkillsExclude lists the skills the agent does not get, built-in ones
+	// included. An exclusion naming a skill absent from this machine is
+	// ignored.
+	SkillsExclude []string `json:"skills_exclude,omitempty" yaml:"skills_exclude,omitempty"`
 	// From is "<template>@<version>" for a recruit; information only.
 	From string `json:"from,omitempty" yaml:"from,omitempty"`
 	// OnLeave stops the agent while keeping its file and session.
@@ -214,11 +221,41 @@ func (d Definition) Validate() error {
 		}
 	}
 
+	errs = append(errs, validateSkills(d.Skills, d.SkillsExclude)...)
+
 	if d.Version < 0 {
 		errs = append(errs, fmt.Errorf("version %d: must be positive", d.Version))
 	}
 
 	return errors.Join(errs...)
+}
+
+// skillName is Claude Code's rule for skill names (skills.ValidName; not
+// imported, to keep the file format free of the skills package).
+var skillName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
+
+// validateSkills checks the names in skills and skills_exclude, and refuses
+// a skill both preloaded and excluded.
+func validateSkills(preload, exclude []string) []error {
+	var errs []error
+
+	for field, names := range map[string][]string{"skills": preload, "skills_exclude": exclude} {
+		for _, name := range names {
+			if !skillName.MatchString(name) {
+				errs = append(errs, fmt.Errorf("%s: %q is not a skill name (lowercase letters, digits and hyphens)", field, name))
+			}
+		}
+	}
+
+	for _, name := range preload {
+		if slices.Contains(exclude, name) {
+			errs = append(errs, fmt.Errorf("skill %q is both preloaded (skills) and excluded (skills_exclude): choose one", name))
+		}
+	}
+
+	slices.SortFunc(errs, func(a, b error) int { return strings.Compare(a.Error(), b.Error()) })
+
+	return errs
 }
 
 // exclusionPart is a server or tool name in an mcp_exclude entry.

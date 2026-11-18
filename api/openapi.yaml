@@ -748,6 +748,136 @@ paths:
         "502":
           $ref: "#/components/responses/Error"
 
+  /api/skills:
+    get:
+      operationId: listSkills
+      summary: Skills every agent gets
+      description: |
+        The project's skills (.claude/skills of its main checkout), the
+        user's personal skills (skills/ of Claude Code's configuration
+        directory) and Claude Code's built-in skills (ADR-0011). Every agent
+        gets every skill but those its file excludes (skills_exclude). A
+        personal skill named like a project skill is shadowed: agents get the
+        project's. Built-in skills are discovered by starting claude without
+        reaching the API; when that failed, builtin_error says why.
+      responses:
+        "200":
+          description: Skills, by scope then name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+
+  /api/skills/builtin/refresh:
+    post:
+      operationId: refreshBuiltinSkills
+      summary: Discover Claude Code's built-in skills again
+      description: |
+        Starts claude with the agents' flags and the API out of reach, reads
+        the skills its init event lists, and stops it. Nothing leaves the
+        machine and no model is called.
+      responses:
+        "200":
+          description: The list after the refresh
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+
+  /api/skills/{scope}/{name}:
+    parameters:
+      - name: scope
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/SkillScope"
+      - name: name
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/SkillName"
+    get:
+      operationId: getSkill
+      summary: One project or personal skill, to edit it
+      responses:
+        "200":
+          description: The skill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: saveSkill
+      summary: Create or change a project or personal skill
+      description: |
+        Writes <dir>/<name>/SKILL.md: name and description in its header,
+        then the body. The other keys of an existing header are kept as they
+        are; the other files of the skill's directory are not touched. A
+        project skill must then be committed to reach agents working on a
+        feature. A personal skill serves every project, and the user's own
+        Claude Code. Agents restart once idle, resuming their session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SkillInput"
+      responses:
+        "200":
+          description: Skill saved; the list after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+        "400":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteSkill
+      summary: Delete a project or personal skill
+      description: |
+        Removes the skill's whole directory. Agents restart once idle,
+        resuming their session.
+      responses:
+        "204":
+          description: Skill deleted
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/skills/personal/{name}/copy-to-project:
+    post:
+      operationId: copySkillToProject
+      summary: Copy a personal skill into the project
+      description: |
+        Copies the skill's whole directory into the project's .claude/skills.
+        The copy then shadows the personal skill for this project's agents;
+        each is edited on its own. Refused when the project already has a
+        skill of that name.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/SkillName"
+      responses:
+        "201":
+          description: Skill copied; the list after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
   /api/features:
     get:
       operationId: listFeatures
@@ -1357,7 +1487,20 @@ components:
           items: {type: string}
         skills:
           type: array
-          items: {type: string}
+          description: |
+            Skills preloaded: their content is handed to the agent at every
+            session start, by its SessionStart hook (ADR-0011). The agent gets
+            every other skill too, to invoke when it needs one.
+          items:
+            $ref: "#/components/schemas/SkillName"
+        skills_exclude:
+          type: array
+          description: |
+            Skills the agent does not get, built-in ones included. An exclusion
+            naming a skill absent from this machine is ignored. A skill cannot
+            be both preloaded and excluded.
+          items:
+            $ref: "#/components/schemas/SkillName"
         from:
           type: string
         on_leave:
@@ -1590,6 +1733,90 @@ components:
           description: Addresses of the agents that exclude the whole server (mcp_exclude).
           items:
             type: string
+
+    SkillName:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+      description: A skill's name, also the name of its directory.
+
+    SkillScope:
+      type: string
+      enum: [project, personal]
+      description: |
+        Where a skill the control room can change lives: project is
+        .claude/skills of the project (committed with it); personal is
+        skills/ of Claude Code's configuration directory, for all the user's
+        projects and their own Claude Code.
+
+    Skill:
+      type: object
+      required: [name, description, scope, has_hooks]
+      properties:
+        name:
+          $ref: "#/components/schemas/SkillName"
+        description:
+          type: string
+        scope:
+          type: string
+          enum: [project, personal, builtin]
+        has_hooks:
+          type: boolean
+          description: |
+            The skill declares hooks: invoking it asks for permission, so it
+            goes to the human's approval queue.
+        committed:
+          type: boolean
+          description: |
+            Project skills only: the skill is committed and unchanged. Agents
+            working on a feature only see committed skills.
+        shadowed:
+          type: boolean
+          description: "Personal skills only: a project skill has the same name and wins."
+
+    SkillList:
+      type: object
+      required: [skills]
+      properties:
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/Skill"
+        builtin_error:
+          type: string
+          description: Why the built-in skills could not be discovered; absent when they were.
+
+    SkillInput:
+      type: object
+      required: [description, body]
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+          minLength: 1
+          description: What the skill does and when to use it; the model chooses skills from it.
+        body:
+          type: string
+          description: The skill's instructions (the markdown after the header).
+
+    SkillDetail:
+      type: object
+      required: [name, scope, description, body, other_keys]
+      properties:
+        name:
+          $ref: "#/components/schemas/SkillName"
+        scope:
+          $ref: "#/components/schemas/SkillScope"
+        description:
+          type: string
+        body:
+          type: string
+        other_keys:
+          type: string
+          description: |
+            The rest of the header (allowed-tools, hooks...), as YAML, read-only:
+            kept as it is when the skill is saved.
+        has_hooks:
+          type: boolean
 
     HumanDraft:
       type: object
@@ -1874,6 +2101,9 @@ components:
           type: object
         stop_hook_active:
           type: boolean
+        source:
+          type: string
+          description: SessionStart only (startup, resume, clear or compact).
 
     HookDecision:
       type: object

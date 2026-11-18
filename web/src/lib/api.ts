@@ -47,7 +47,10 @@ export interface AgentDefinition {
   // MCP servers ("gitlab") or single tools ("gitlab/delete_project") the
   // agent does not get; it gets every other server (ADR-0010).
   mcp_exclude?: string[];
+  // Skills preloaded: handed to the agent at every session start (ADR-0011).
   skills?: string[];
+  // Skills the agent does not get, built-in ones included.
+  skills_exclude?: string[];
   from?: string;
   on_leave?: boolean;
   prompt?: string;
@@ -528,6 +531,74 @@ export interface MCPTool {
 // listMCPTools has the daemon start the server and ask for its tools.
 export function listMCPTools(name: string): Promise<MCPTool[]> {
   return getJSON<MCPTool[]>(`/api/mcp/${encodeURIComponent(name)}/tools`);
+}
+
+// --- Skills (ADR-0011): every agent gets every skill, but those it excludes ---
+
+// Where a skill the control room can change lives: the project's
+// .claude/skills (committed), or the user's personal skills (all projects).
+export type SkillScope = "project" | "personal";
+
+export interface Skill {
+  name: string;
+  description: string;
+  scope: SkillScope | "builtin";
+  // Invoking it asks for permission: it goes to the approval queue.
+  has_hooks: boolean;
+  // Project skills only: committed and unchanged. Agents working on a
+  // feature only see committed skills.
+  committed?: boolean;
+  // Personal skills only: a project skill has the same name and wins.
+  shadowed?: boolean;
+}
+
+export interface SkillList {
+  skills: Skill[];
+  // Why the built-in skills could not be discovered.
+  builtin_error?: string;
+}
+
+// SkillDetail is a skill to edit; other_keys is the rest of its header
+// (allowed-tools, hooks...), read-only and kept when saving.
+export interface SkillDetail {
+  name: string;
+  scope: SkillScope;
+  description: string;
+  body: string;
+  other_keys: string;
+  has_hooks: boolean;
+}
+
+export const SKILL_NAME_PATTERN = "[a-z0-9][a-z0-9\\-]{0,63}";
+
+export function listSkills(): Promise<SkillList> {
+  return getJSON<SkillList>("/api/skills");
+}
+
+// refreshBuiltinSkills has the daemon discover Claude Code's built-in skills
+// again, without calling the model.
+export function refreshBuiltinSkills(): Promise<SkillList> {
+  return postJSON<SkillList>("/api/skills/builtin/refresh", {});
+}
+
+export function getSkill(scope: SkillScope, name: string): Promise<SkillDetail> {
+  return getJSON<SkillDetail>(`/api/skills/${scope}/${encodeURIComponent(name)}`);
+}
+
+// saveSkill creates or changes a skill's SKILL.md; agents restart once idle.
+export function saveSkill(scope: SkillScope, name: string, description: string, body: string): Promise<SkillList> {
+  return sendJSON<SkillList>("PUT", `/api/skills/${scope}/${encodeURIComponent(name)}`, { description, body });
+}
+
+// deleteSkill removes the skill's whole directory.
+export function deleteSkill(scope: SkillScope, name: string): Promise<void> {
+  return send("DELETE", `/api/skills/${scope}/${encodeURIComponent(name)}`);
+}
+
+// copySkillToProject copies a personal skill into the project, where it then
+// shadows the personal one.
+export function copySkillToProject(name: string): Promise<SkillList> {
+  return postJSON<SkillList>(`/api/skills/personal/${encodeURIComponent(name)}/copy-to-project`, {});
 }
 
 export async function sendMessage(draft: HumanDraft): Promise<Message> {

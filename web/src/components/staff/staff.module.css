@@ -517,3 +517,36 @@
   font: 12px var(--font-ui);
   color: var(--text);
 }
+
+/* One skill and its three-way choice (SkillChoices). */
+.skillRow {
+  display: grid;
+  grid-template-columns: minmax(8em, auto) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 2px solid var(--line);
+  font: 13px var(--font-ui);
+}
+
+.skillRow > .hint {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.skillHooks {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font: 9px var(--font-label);
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+@media (max-width: 640px) {
+  .skillRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

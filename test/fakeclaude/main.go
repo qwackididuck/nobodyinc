@@ -33,6 +33,10 @@
 // Started with --fork-session (a fork answering an urgent question), it prints
 // a one-shot JSON answer like claude -p does: ESCALATE if the question
 // contains "UNKNOWN", an answer otherwise.
+//
+// Started with stream-json output and the API out of reach, as the daemon
+// does to discover the built-in skills, it prints an init event listing the
+// project's skills and one built-in skill, then waits to be killed.
 package main
 
 import (
@@ -43,6 +47,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -68,6 +73,10 @@ func run(args []string) error {
 	opts, err := parseArgs(args)
 	if err != nil {
 		return err
+	}
+
+	if opts.discovery {
+		return listSkills()
 	}
 
 	if opts.fork {
@@ -102,6 +111,10 @@ type options struct {
 	fork   bool
 	// systemPrompt is --append-system-prompt.
 	systemPrompt string
+	// discovery is the daemon reading the skills a session loads: stream-json
+	// output with the API out of reach (skills.DiscoverBuiltin).
+	discovery    bool
+	outputFormat string
 }
 
 func parseArgs(args []string) (options, error) {
@@ -111,10 +124,10 @@ func parseArgs(args []string) (options, error) {
 		"--settings": true, "--mcp-config": true, "--append-system-prompt": true,
 		"--setting-sources": true, "--allowedTools": true, "--model": true,
 		"--resume": true, "--tools": true, "--output-format": true, "-p": true,
-		"--permission-mode": true,
+		"--permission-mode": true, "--add-dir": true, "--disallowedTools": true,
 	}
 
-	flags := map[string]bool{"--fork-session": true, "--strict-mcp-config": true}
+	flags := map[string]bool{"--fork-session": true, "--strict-mcp-config": true, "--verbose": true}
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -141,7 +154,31 @@ func parseArgs(args []string) (options, error) {
 		}
 	}
 
+	opts.discovery = opts.outputFormat == "stream-json" && os.Getenv("ANTHROPIC_BASE_URL") == "http://127.0.0.1:1"
+
 	return opts, nil
+}
+
+// fakeBuiltinSkill is the one built-in skill fakeclaude has.
+const fakeBuiltinSkill = "fake-builtin"
+
+// listSkills prints the init event of a session: the project's skills
+// (.claude/skills of the working directory) and fakeBuiltinSkill. Then it
+// waits, as the real claude keeps retrying the unreachable API, until the
+// daemon kills it.
+func listSkills() error {
+	names := []string{fakeBuiltinSkill}
+
+	entries, _ := os.ReadDir(filepath.Join(".claude", "skills")) // no skills directory: no project skill
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+
+	if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"type": "system", "subtype": "init", "skills": names}); err != nil {
+		return err
+	}
+
+	select {}
 }
 
 // set records the value of an option we use; the others are ignored.
@@ -157,6 +194,8 @@ func (opts *options) set(name, value string) error {
 		opts.mcpURL, err = parseMCPURL(value)
 	case "--append-system-prompt":
 		opts.systemPrompt = value
+	case "--output-format":
+		opts.outputFormat = value
 	}
 
 	return err

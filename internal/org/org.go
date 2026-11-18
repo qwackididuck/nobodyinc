@@ -19,6 +19,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
 // OfficeServer is the name of the office MCP server every agent gets
@@ -55,6 +56,11 @@ type Org struct {
 	// server's name), as "<name> (<scope>): <why>"; the daemon warns about
 	// them.
 	IgnoredMCP []string `yaml:"-"`
+	// Skills are the project's skills and the user's personal skills
+	// (ADR-0011, internal/skills); Found.Ignored lists those that could not
+	// be read, for a warning. Claude Code's built-in skills are not part of
+	// the organization: the daemon discovers them (skills.Builtin).
+	Skills skills.Found `yaml:"-"`
 	// God is the director, the agent who talks with the human and leads the
 	// teams; nil when the project has none (see director.go).
 	God *Agent `yaml:"-"`

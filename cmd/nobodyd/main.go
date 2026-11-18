@@ -32,6 +32,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
 var version = "dev"
@@ -101,6 +102,10 @@ func run(logger *slog.Logger, opts options) error {
 
 	for _, ignored := range organization.IgnoredMCP {
 		logger.Warn("MCP server left out", "server", ignored)
+	}
+
+	for _, ignored := range organization.Skills.Ignored {
+		logger.Warn("skill left out", "skill", ignored)
 	}
 
 	addr := listenAddr()
@@ -179,6 +184,11 @@ func daemonOptions(logger *slog.Logger, opts options, organization *org.Org, add
 		return daemon.Options{}, err
 	}
 
+	personalSkills, err := skills.PersonalDir()
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
 	return daemon.Options{
 		Version:      version,
 		Logger:       logger,
@@ -192,11 +202,14 @@ func daemonOptions(logger *slog.Logger, opts options, organization *org.Org, add
 		DBPath:       dbPath,
 		WorktreesDir: filepath.Join(state, "worktrees"),
 		MCPConfigDir: filepath.Join(state, "mcp"),
-		ClaudePath:   opts.claudePath,
-		HookPath:     hookPath,
-		DaemonURL:    "http://" + addr,
-		UserClaudeMD: userClaudeMD(),
-		Origins:      strings.Split(opts.origins, ","),
+		// ADR-0011: personal skills, linked for the agents.
+		SkillsStagingDir:  filepath.Join(state, "skills"),
+		PersonalSkillsDir: personalSkills,
+		ClaudePath:        opts.claudePath,
+		HookPath:          hookPath,
+		DaemonURL:         "http://" + addr,
+		UserClaudeMD:      userClaudeMD(),
+		Origins:           strings.Split(opts.origins, ","),
 	}, nil
 }
 

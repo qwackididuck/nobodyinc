@@ -8,6 +8,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
@@ -20,6 +21,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/server"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
+	"github.com/qwackididuck/nobodyinc/internal/skills"
 	"github.com/qwackididuck/nobodyinc/internal/staffing"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 	"github.com/qwackididuck/nobodyinc/internal/work"
@@ -57,6 +59,12 @@ type Options struct {
 	// MCPConfigDir holds each agent's MCP configuration, readable by the user
 	// only (~/.nobody/projects/<id>/mcp, ADR-0010).
 	MCPConfigDir string
+	// SkillsStagingDir links the user's personal skills for the agents
+	// (~/.nobody/projects/<id>/skills, ADR-0011); "" gives them none.
+	SkillsStagingDir string
+	// PersonalSkillsDir is where the user's personal skills live
+	// (skills.PersonalDir); agents may read it, not write it.
+	PersonalSkillsDir string
 	// ClaudePath and HookPath are the executables run for each agent.
 	ClaudePath string
 	HookPath   string
@@ -128,6 +136,9 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 			DaemonURL:    opts.DaemonURL,
 			WorkDir:      git.workDir,
 			MCPConfigDir: opts.MCPConfigDir,
+			// Personal skills reach agents through the staging directory.
+			SkillsStagingDir:  opts.SkillsStagingDir,
+			PersonalSkillsDir: opts.PersonalSkillsDir,
 			UserInstructions: func() string {
 				return readUserInstructions(opts.Logger, opts.UserClaudeMD)
 			},
@@ -212,6 +223,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
 
+	builtinSkills := discoverBuiltinSkills(ctx, opts)
+
 	handler := server.New(server.Deps{
 		Version:   opts.Version,
 		Logger:    opts.Logger,
@@ -227,6 +240,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Origins:   opts.Origins,
 		Events:    bus,
 		Settings:  liveSettings,
+		// Claude Code's built-in skills, discovered in the background.
+		BuiltinSkills: builtinSkills,
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,
@@ -402,4 +417,31 @@ func newStaffing(ctx context.Context, opts Options, deps staffingDeps) *staffing
 			notices.send(context.WithoutCancel(ctx), before, after)
 		},
 	}
+}
+
+// discoverBuiltinSkills returns the list of Claude Code's built-in skills,
+// filled in the background: discovering them starts claude, without the
+// model, which takes a few seconds (skills.DiscoverBuiltin). The control room
+// can refresh it (POST /api/skills/builtin/refresh).
+func discoverBuiltinSkills(ctx context.Context, opts Options) *skills.Builtin {
+	builtin := skills.NewBuiltin(func(ctx context.Context) ([]string, error) {
+		o := opts.Org.Current()
+
+		return skills.DiscoverBuiltin(ctx, skills.Discovery{
+			ClaudePath: opts.ClaudePath,
+			Args:       runtime.SettingSources,
+			Dir:        o.ProjectDir,
+			Env:        runtime.CleanEnvironment(os.Environ()),
+		}, o.Skills)
+	})
+
+	go func() {
+		builtin.Refresh(ctx)
+
+		if _, err := builtin.Names(); err != nil {
+			opts.Logger.Warn("built-in skills not discovered", "err", err)
+		}
+	}()
+
+	return builtin
 }

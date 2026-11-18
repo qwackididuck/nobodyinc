@@ -3,6 +3,7 @@
 import { type AgentDefinition, PROFILES } from "@/lib/api";
 import ui from "../ui/ui.module.css";
 import { MCPExclusions } from "./MCPExclusions";
+import { SkillChoices } from "./SkillChoices";
 import styles from "./staff.module.css";
 
 // The tools most agents are given; others can be typed.
@@ -18,8 +19,8 @@ interface Props {
 
 // DefinitionFields edits the fields of an agent or template file: role,
 // expertise, model, permission profile and rules, tools, the MCP servers or
-// tools it does not get (MCPExclusions), skills and the instructions
-// (docs/agents.md).
+// tools it does not get (MCPExclusions), the skills it preloads or does not
+// get (SkillChoices) and the instructions (docs/agents.md).
 export function DefinitionFields({ value, onChange, template = false }: Props) {
   const set = (patch: Partial<AgentDefinition>) => onChange({ ...value, ...patch });
   const setPermissions = (patch: NonNullable<AgentDefinition["permissions"]>) => set({ permissions: { ...value.permissions, ...patch } });
@@ -97,6 +98,11 @@ export function DefinitionFields({ value, onChange, template = false }: Props) {
         </div>
       </div>
       <MCPExclusions value={value.mcp_exclude ?? []} onChange={(mcpExclude) => set({ mcp_exclude: mcpExclude })} />
+      <SkillChoices
+        preload={value.skills ?? []}
+        exclude={value.skills_exclude ?? []}
+        onChange={(preload, exclude) => set({ skills: preload, skills_exclude: exclude })}
+      />
       <label className={ui.label}>
         ALLOW RULES, ONE PER LINE
         <textarea

@@ -30,19 +30,37 @@ var protectedDirs = []string{".nobody", ".claude"}
 // ("//"), in the project's main checkout, which the daemon reads: a worktree
 // lives outside the project (workspace.Repo.WorktreesDir), so the relative
 // rules alone would not cover it.
-func protectedRules(projectDir string) []string {
+//
+// The outside directories are protected by absolute path too: the staging
+// directory of the personal skills, which every agent gets with --add-dir,
+// and the personal skills themselves, which its symbolic links lead to. Only
+// the human changes skills (ADR-0011).
+func protectedRules(projectDir string, outside []string) []string {
 	var rules []string
 
 	for _, dir := range protectedDirs {
 		rules = append(rules, "Edit(./"+dir+"/**)", "Write(./"+dir+"/**)")
 
 		if projectDir != "" {
-			abs := "/" + filepath.ToSlash(filepath.Join(projectDir, dir)) // "//abs/path": absolute in Claude Code rules
-			rules = append(rules, "Edit("+abs+"/**)", "Write("+abs+"/**)")
+			rules = append(rules, absoluteDenyRules(filepath.Join(projectDir, dir))...)
+		}
+	}
+
+	for _, dir := range outside {
+		if dir != "" {
+			rules = append(rules, absoluteDenyRules(dir)...)
 		}
 	}
 
 	return rules
+}
+
+// absoluteDenyRules forbid writing anywhere under dir, given by its absolute
+// path ("//abs/path" in Claude Code rules).
+func absoluteDenyRules(dir string) []string {
+	abs := "/" + filepath.ToSlash(dir)
+
+	return []string{"Edit(" + abs + "/**)", "Write(" + abs + "/**)"}
 }
 
 // allowlistAllow is what the allowlist profile runs without asking, on top of
@@ -82,9 +100,9 @@ func permissionMode(p catalog.Permissions) string {
 
 // permissionRules returns the allow and deny rules written into the agent's
 // settings: the profile's presets, the agent's own rules, and the protection
-// of .nobody/ and .claude/. Deny rules always win over allow rules in Claude
-// Code.
-func permissionRules(p catalog.Permissions, projectDir string) ([]string, []string) {
+// of .nobody/, .claude/ and the outside directories (protectedRules). Deny
+// rules always win over allow rules in Claude Code.
+func permissionRules(p catalog.Permissions, projectDir string, outside []string) ([]string, []string) {
 	var allow, deny []string
 
 	if p.EffectiveProfile() == catalog.ProfileAllowlist {
@@ -94,7 +112,7 @@ func permissionRules(p catalog.Permissions, projectDir string) ([]string, []stri
 
 	allow = append(allow, p.Allow...)
 	deny = append(deny, p.Deny...)
-	deny = append(deny, protectedRules(projectDir)...)
+	deny = append(deny, protectedRules(projectDir, outside)...)
 
 	return dedupe(allow), dedupe(deny)
 }

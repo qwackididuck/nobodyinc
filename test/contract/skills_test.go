@@ -22,6 +22,7 @@ import (
 //   - the user's personal skills are not loaded without the "user" settings
 //     source, but a directory given with --add-dir brings its own
 //     .claude/skills, symbolic links included;
+//   - a skill whose header is not valid YAML is still loaded;
 //   - skillOverrides {"<name>": "off"} hides a skill, built-in or not, from
 //     the model; a deny rule would leave it listed;
 //   - a session's init event lists every skill even when the API cannot be
@@ -108,6 +109,21 @@ func TestSkillOverridesHideSkills(t *testing.T) {
 
 	if !slices.Contains(after, "kept-probe") {
 		t.Errorf("kept-probe should stay listed: %v", after)
+	}
+}
+
+// A skill whose header is not valid YAML, such as an unquoted description
+// holding ": ", is still loaded: skills.ParseFile reads such a header line by
+// line instead of refusing it. No model is called.
+func TestSkillWithAnInvalidYAMLHeaderIsLoaded(t *testing.T) {
+	t.Parallel()
+
+	project := t.TempDir()
+	writeProjectFile(t, project, ".claude/skills/colon-probe/SKILL.md",
+		"---\nname: colon-probe\ndescription: Reviews a change: tests, naming, docs.\n---\nSay PROBE.\n")
+
+	if skills := initSkills(t, project, nil); !slices.Contains(skills, "colon-probe") {
+		t.Errorf("colon-probe is not loaded: %v", skills)
 	}
 }
 

@@ -19,6 +19,7 @@ export function toDefinition(t: Template): AgentDefinition {
     tools: t.tools,
     mcp_exclude: t.mcp_exclude,
     skills: t.skills,
+    skills_exclude: t.skills_exclude,
     prompt: t.prompt,
   };
 }
@@ -31,6 +32,7 @@ export function cleanDefinition(d: AgentDefinition): AgentDefinition {
     tools: clean(d.tools),
     mcp_exclude: clean(d.mcp_exclude),
     skills: clean(d.skills),
+    skills_exclude: clean(d.skills_exclude),
     permissions: { ...d.permissions, allow: clean(d.permissions?.allow), deny: clean(d.permissions?.deny) },
   };
 }

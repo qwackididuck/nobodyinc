@@ -84,6 +84,7 @@ func (t Template) Recruit() Definition {
 	// Slices are copied so that editing the recruit never alters the template.
 	d.Tools = slices.Clone(d.Tools)
 	d.MCPExclude = slices.Clone(d.MCPExclude)
+	d.SkillsExclude = slices.Clone(d.SkillsExclude)
 	d.Skills = slices.Clone(d.Skills)
 	d.Permissions.Allow = slices.Clone(d.Permissions.Allow)
 	d.Permissions.Deny = slices.Clone(d.Permissions.Deny)
