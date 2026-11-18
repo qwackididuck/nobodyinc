@@ -41,6 +41,7 @@ permissions:
 tools: [Read, Edit, Write, Bash, Grep, Glob]
 mcp_exclude: [gitlab/delete_project]                  # every MCP server, but this tool
 skills: []
+skills_exclude: []
 ---
 You implement what the specs describe, with unit tests.
 When something is unclear, ask the specs team before guessing.
@@ -95,7 +96,8 @@ A recruited agent has the same fields, plus the ones that only make sense in a t
 | `permissions.allow`, `permissions.deny` | Claude Code permission rules added to the profile. | generated `--settings` |
 | `tools` | Tools the agent may use without asking, added to the office tools. | `--allowedTools` |
 | `mcp_exclude` | MCP servers (`gitlab`) or single tools (`gitlab/delete_project`) the agent does not get; it gets every other server (see "MCP servers"). An exclusion naming a server absent from the machine is ignored. | `--disallowedTools mcp__<server>` or `mcp__<server>__<tool>` |
-| `skills` | Skills made available to the agent. | not applied yet (ADR-0004) |
+| `skills` | Skills preloaded, as in a Claude Code subagent definition: their instructions are handed to the agent at every session start. It gets every other skill too (see "Skills"). | `SessionStart` hook |
+| `skills_exclude` | Skills the agent does not get, built-in ones included. An exclusion naming a skill absent from the machine is ignored; a skill cannot be both preloaded and excluded. | `skillOverrides: {<name>: "off"}` in the generated `--settings` |
 | `from` | `<template>@<version>` it was recruited from. Information only: template updates are never applied. | — |
 | `on_leave` | `true` while the agent is on leave. | not started |
 | body | The agent's instructions. | system prompt, after the shared prompts (see "The prompt cascade") |
@@ -166,6 +168,8 @@ Agents run in the project (or their team's worktree during a feature) with `--se
 - `.claude/skills/`, `.claude/commands/`, `.claude/agents/` (subagents) and `.claude/settings.json`;
 - in a worktree, only what is committed: an untracked skill or a git-ignored `.claude/` is not there.
 
+Your own personal skills reach them too, through the daemon (see "Skills").
+
 ## MCP servers
 
 Every agent gets every MCP server of Claude Code's three scopes (ADR-0010), read by the daemon from Claude Code's own files, so that a server is declared once, for you and for the agents:
@@ -200,6 +204,33 @@ Every agent gets every MCP server of Claude Code's three scopes (ADR-0010), read
 | Read to edit, edit | `GET` / `PUT /api/mcp/{name}` |
 | Remove | `DELETE /api/mcp/{name}?scope=` |
 | Its tools | `GET /api/mcp/{name}/tools` |
+
+## Skills
+
+Every agent gets every skill (ADR-0011), checked by `test/contract/skills_test.go`:
+
+| Kind | Where | How it reaches agents |
+|---|---|---|
+| project | `<project>/.claude/skills/<name>/SKILL.md`, committed | Claude Code loads it itself (the `project` settings source), from the directory the agent works in: during a feature, only committed skills are in its worktree |
+| personal | `~/.claude/skills/` (`$CLAUDE_CONFIG_DIR/skills` when set) | the daemon links them into `~/.nobody/projects/<id>/skills/.claude/skills/`, given to every agent with `--add-dir`: Claude Code would only load them with the `user` settings source, which agents do not get (ADR-0003) |
+| built-in | Claude Code's own (`loop`, `simplify`…) | Claude Code itself |
+
+A personal skill named like a project skill is shadowed: agents get the project's. Plugins' skills stay out, with plugins.
+
+- **Excluding**: an agent's `skills_exclude` turns skills off with `skillOverrides` in its settings, so that the model does not even see them (a deny rule `Skill(name)` would leave them listed).
+- **Preloading**: an agent's `skills` are handed over by its `SessionStart` hook (`docs/hooks.md`) at every session start, new, resumed or compacted: a project skill is read in the directory the agent works in, else the personal skill of that name. Claude Code's own `skills:` does nothing on a main session (only for subagents), and a resumed session ignores a new system prompt: the hook is how a change of preloaded skills reaches an agent while it keeps its memory. A skill removed from `skills` stays in the history of a resumed session.
+- **Hooks**: invoking a skill whose header declares `hooks` asks for permission, so it reaches your approval queue (`docs/approvals.md`); its hooks run once approved. The control room marks such skills.
+- **Writing**: agents may read the staging directory and your personal skills, never write them (absolute deny rules, like `.nobody/` and `.claude/`). Only you change skills.
+- **Changing**: Settings → Skills in the control room, or the API, creates, edits and deletes project and personal skills. A new skill asks where it goes: the whole project (`.claude/skills`, to commit) or you on all your projects (personal). The daemon writes the `SKILL.md` itself (Claude Code has no command for skills): name, description and instructions; the other keys of an existing header (`allowed-tools`, `hooks`, `model`…) and the skill's other files are kept. A header Claude Code accepts but that is not valid YAML (an unquoted description with `: `) is read line by line, and saved as valid YAML. "Copy to project" copies a personal skill's whole directory into the project, where it then shadows the personal one.
+- **Built-in skills** are discovered by starting `claude` with the agents' flags and `ANTHROPIC_BASE_URL` on a closed port: its `init` event lists every skill, and nothing leaves the machine (killing a normal session right after `init` would not do: its first API request leaves earlier). The list is read when the daemon starts and on "Refresh".
+- **Restarts**: when the skills change (one added, removed, or with a new content), every agent restarts once idle, resuming its session. A file changed by hand is picked up at the next change made through Nobody Inc, or when the daemon restarts.
+
+| Action | Endpoint |
+|---|---|
+| List (with hooks, committed, shadowed) | `GET /api/skills` |
+| Discover the built-in skills again | `POST /api/skills/builtin/refresh` |
+| Read to edit, create or change, delete | `GET` / `PUT` / `DELETE /api/skills/{project\|personal}/{name}` |
+| Copy a personal skill into the project | `POST /api/skills/personal/{name}/copy-to-project` |
 
 ## Lifecycle
 
