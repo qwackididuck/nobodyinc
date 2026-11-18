@@ -38,7 +38,7 @@ Structured data still comes only from hooks, the statusLine and OTel, never from
 
 ### 2. Spend is recorded as dated deltas, attributed when it happens
 
-The daemon receives running totals per session. It turns them into **spend records** in the local database (new migration `0008`): for each report, the delta since the previous report of the same agent and session. **A total lower than the previous one is a new start** (a resumed session, `/clear`, a fresh session): the delta is then the total itself. Reports whose delta is 0 write nothing.
+The daemon receives running totals per session. It turns them into **spend records** in the local database (migration `0008`): for each report, the delta since the previous report of the same agent and session. A **new start** counts from 0: another session ID (a fresh session, `/clear`), or a new process, since a session resumed with `--resume` keeps its ID while its total starts again from 0; the supervisor tells the meter whenever it starts an agent. Within a running session the total only grows: a lower total is a report that arrived late, behind a newer one (several statusLine runs may post at once), and is ignored rather than taken as a new start, which would count the spend twice. Reports whose delta is 0 write nothing.
 
 Each record is attributed when it is written, from the daemon's state at that moment:
 
@@ -152,5 +152,5 @@ Spend reaches the control room through the REST API (`/api/spend`, `/api/budgets
 - A new agent status, `budget_hold`, which wake-ups, ticket picking and schedules respect.
 - The figure is Claude Code's estimate at list price: it can drift from what a provider bills, and it ignores what a subscription covers.
 - Spend is lost between a report and the next only if the daemon is down; a statusLine report lost while the daemon runs is caught up by the next running total, except at the end of a session.
-- Tickets and features get budget columns; new tables for spend records, holds, requests and proposals (migration `0008`); a new file `.nobody/budgets.yaml`. No new dependency.
+- Tickets and features get budget columns; new tables for spend records (migration `0008`), then holds, requests and proposals (later migrations); a new file `.nobody/budgets.yaml`. No new dependency.
 - Behaviours checked against the real CLI: `test/contract/statusline_test.go`. Rerun after every Claude Code upgrade.

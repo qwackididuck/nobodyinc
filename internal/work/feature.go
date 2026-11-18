@@ -34,6 +34,9 @@ type Feature struct {
 	MergeCommit string    `json:"merge_commit,omitempty"`
 	CreatedBy   string    `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
+	// SpentUSD is what its tickets spent, all time (ADR-0013); read-only,
+	// computed by the store.
+	SpentUSD float64 `json:"spent_usd"`
 }
 
 // FeatureStatus is where a feature stands.

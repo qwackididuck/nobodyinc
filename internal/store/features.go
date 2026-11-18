@@ -116,7 +116,7 @@ func (s *Store) DeactivateFeature(ctx context.Context, id string) error {
 
 const selectFeatures = `
 	SELECT id, title, description, acceptance_criteria, slug, base_branch, branch, active, status,
-		proposal_message, refusal_reason, merge_commit, created_by, created_at
+		proposal_message, refusal_reason, merge_commit, created_by, created_at, ` + featureSpent + `
 	FROM features`
 
 func scanFeature(row scanner) (work.Feature, error) {
@@ -126,7 +126,7 @@ func scanFeature(row scanner) (work.Feature, error) {
 		createdAt string
 	)
 	if err := row.Scan(&n, &f.Title, &f.Description, &f.AcceptanceCriteria, &f.Slug, &f.BaseBranch, &f.Branch, &f.Active,
-		&f.Status, &f.ProposalMessage, &f.RefusalReason, &f.MergeCommit, &f.CreatedBy, &createdAt); err != nil {
+		&f.Status, &f.ProposalMessage, &f.RefusalReason, &f.MergeCommit, &f.CreatedBy, &createdAt, &f.SpentUSD); err != nil {
 		return work.Feature{}, err
 	}
 

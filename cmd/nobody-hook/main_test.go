@@ -122,3 +122,35 @@ func TestRunErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestReportStatusLine(t *testing.T) {
+	t.Parallel()
+
+	var (
+		gotPath string
+		gotBody string
+	)
+
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		gotPath, gotBody = r.URL.EscapedPath(), string(body)
+
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(daemon.Close)
+
+	report := `{"session_id":"s1","cost":{"total_cost_usd":0.25}}`
+	cfg := config{agent: "dev1@dev", daemonURL: daemon.URL}
+
+	if err := reportStatusLine(t.Context(), strings.NewReader(report), cfg, daemon.Client()); err != nil {
+		t.Fatal(err)
+	}
+
+	if gotPath != "/internal/agents/dev1@dev/statusline" || gotBody != report {
+		t.Fatalf("posted %q to %s, want the report to /internal/agents/dev1@dev/statusline", gotBody, gotPath)
+	}
+
+	if err := reportStatusLine(t.Context(), strings.NewReader(report), config{daemonURL: daemon.URL}, daemon.Client()); err == nil {
+		t.Fatal("no error without NOBODY_AGENT")
+	}
+}

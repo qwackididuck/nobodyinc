@@ -50,6 +50,11 @@ type Supervisor struct {
 	// on leave or no longer in the organization (apply.go), so that what it
 	// leaves behind (tickets, mail) can be handed over.
 	OnRetired func(address string)
+	// OnStart, when set, is called whenever an agent's process is about to
+	// start, before it can report anything: a resumed session keeps its ID
+	// but its running cost starts again from 0 (budget.Meter.Forget). It is
+	// called with the supervisor's lock held and must not call back into it.
+	OnStart func(address string)
 
 	mu     sync.Mutex
 	agents map[string]*agentProcess
@@ -285,6 +290,10 @@ func (s *Supervisor) start(ctx context.Context, address, resume string) error {
 	cmd, resumed, err := s.command(ctx, o, member, resume)
 	if err != nil {
 		return err
+	}
+
+	if s.OnStart != nil {
+		s.OnStart(address)
 	}
 
 	terminal, err := startInPTY(cmd)

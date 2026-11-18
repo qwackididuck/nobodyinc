@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -71,7 +72,7 @@ func newForkEnv(t *testing.T, forkAnswer string) (*Forker, *messaging.Service, *
 		Run: func(_ context.Context, _ string, args []string) ([]byte, error) {
 			calls = append(calls, strings.Join(args, " "))
 
-			return []byte(`{"result":` + quote(forkAnswer) + `,"is_error":false}`), nil
+			return []byte(`{"result":` + quote(forkAnswer) + `,"is_error":false,"session_id":"s-fork","total_cost_usd":0.012}`), nil
 		},
 	}
 
@@ -147,6 +148,32 @@ func TestForkEscalationChangesNothing(t *testing.T) {
 
 	if len(st.messages) != 1 || len(st.requeued) != 1 || st.requeued[0] != q.ID {
 		t.Fatalf("an escalated question must go back to the tray: %d messages, requeued %v", len(st.messages), st.requeued)
+	}
+}
+
+// The fork's cost goes to the agent that asked, answered or escalated alike
+// (ADR-0013).
+func TestForkCostIsChargedToTheAsker(t *testing.T) {
+	t.Parallel()
+
+	for _, answer := range []string{"PostgreSQL 16.", "ESCALATE"} {
+		t.Run(answer, func(t *testing.T) {
+			t.Parallel()
+
+			f, svc, _, _ := newForkEnv(t, answer)
+
+			var charged []string
+
+			f.RecordCost = func(_ context.Context, asker, session string, cost float64) {
+				charged = append(charged, fmt.Sprintf("%s %s %.3f", asker, session, cost))
+			}
+
+			f.Answer(context.Background(), urgentQuery(t, svc))
+
+			if len(charged) != 1 || charged[0] != "dev1@dev s-fork 0.012" {
+				t.Fatalf("charged %v, want [dev1@dev s-fork 0.012]", charged)
+			}
+		})
 	}
 }
 

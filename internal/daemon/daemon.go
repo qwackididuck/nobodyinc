@@ -264,6 +264,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		// Claude Code's built-in skills, discovered in the background.
 		BuiltinSkills: builtinSkills,
 		Schedules:     schedules,
+		// What the agents spend; wired to the supervisor and the forker.
+		Spend: wireSpend(st, opts, bus, supervisor, forker),
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,

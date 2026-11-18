@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/budget"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
@@ -62,6 +63,7 @@ func newTestEnvWithWait(t *testing.T, approvalWait time.Duration) testEnv {
 		Approvals:    approvals,
 		Tickets:      tickets,
 		ApprovalWait: approvalWait,
+		Spend:        &budget.Meter{Store: st, Attribute: ticketInProgress(st)},
 	})
 
 	return testEnv{handler: h, store: st, statuses: statuses, approvals: approvals}

@@ -58,6 +58,9 @@ type Ticket struct {
 	// Archived: the ticket of a finished feature, kept for the record and no
 	// longer worked on (ADR-0007).
 	Archived bool `json:"archived,omitempty"`
+	// SpentUSD is what was spent on it, all time (ADR-0013); read-only,
+	// computed by the store.
+	SpentUSD float64 `json:"spent_usd"`
 }
 
 // Deliverable is something produced for a ticket.

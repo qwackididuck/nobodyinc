@@ -326,7 +326,8 @@ func (s *Store) DeleteTickets(ctx context.Context, ids []string) error {
 }
 
 const selectTickets = `
-	SELECT id, title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at, archived
+	SELECT id, title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at, archived,
+		` + ticketSpent + `
 	FROM tickets`
 
 func scanTicket(row scanner) (work.Ticket, error) {
@@ -336,7 +337,7 @@ func scanTicket(row scanner) (work.Ticket, error) {
 		createdAt, updatedAt string
 	)
 	if err := row.Scan(&n, &t.Title, &t.Description, &t.AcceptanceCriteria, &t.Team, &t.Feature, &t.Assignee,
-		&t.Status, &t.CreatedBy, &createdAt, &updatedAt, &t.Archived); err != nil {
+		&t.Status, &t.CreatedBy, &createdAt, &updatedAt, &t.Archived, &t.SpentUSD); err != nil {
 		return work.Ticket{}, err
 	}
 

@@ -15,6 +15,15 @@
 // Exit codes follow Claude Code's convention: 0 on success, 1 on error. Exit
 // code 1 is a non-blocking error: Claude Code shows it but the agent keeps
 // working, which is what we want if the daemon is unreachable.
+//
+// # statusLine mode
+//
+// Run as `nobody-hook statusline`, it is the agent's statusLine instead
+// (ADR-0013): Claude Code hands it a JSON description of the session, with
+// its running cost, whenever the session changes. It posts that JSON to the
+// daemon, which records what the agent spent, and prints nothing, so the
+// agent's terminal is unchanged. It always exits 0: a lost report costs
+// nothing, the next one carries the running total.
 package main
 
 import (
@@ -32,10 +41,22 @@ import (
 
 const defaultDaemonURL = "http://127.0.0.1:7420"
 
+// statusLineTimeout bounds a statusLine report: Claude Code waits for the
+// command before drawing its status line.
+const statusLineTimeout = 5 * time.Second
+
 func main() {
 	cfg := config{
 		agent:     os.Getenv("NOBODY_AGENT"),
 		daemonURL: os.Getenv("NOBODY_DAEMON_URL"),
+	}
+
+	if len(os.Args) > 1 && os.Args[1] == "statusline" {
+		// Silent on purpose: whatever a statusLine prints shows in the agent's
+		// terminal, and a lost report is caught up by the next one.
+		_ = reportStatusLine(context.Background(), os.Stdin, cfg, &http.Client{Timeout: statusLineTimeout})
+
+		return
 	}
 	// Long enough for a permission request waiting for the human; Claude Code
 	// kills the hook at its own timeout anyway.
@@ -91,6 +112,24 @@ func run(ctx context.Context, stdin io.Reader, stdout io.Writer, cfg config, cli
 	}
 
 	return postJSON(ctx, client, hookURL+"/ack", ack, nil)
+}
+
+// reportStatusLine posts the statusLine JSON read on stdin to the daemon.
+func reportStatusLine(ctx context.Context, stdin io.Reader, cfg config, client *http.Client) error {
+	if cfg.agent == "" {
+		return errors.New("NOBODY_AGENT is not set")
+	}
+
+	if cfg.daemonURL == "" {
+		cfg.daemonURL = defaultDaemonURL
+	}
+
+	report, err := io.ReadAll(stdin)
+	if err != nil {
+		return fmt.Errorf("read statusLine JSON: %w", err)
+	}
+
+	return postJSON(ctx, client, cfg.daemonURL+"/internal/agents/"+url.PathEscape(cfg.agent)+"/statusline", report, nil)
 }
 
 // maxErrorBody bounds how much of a daemon error is quoted in our own error.
