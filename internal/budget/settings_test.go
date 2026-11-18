@@ -179,7 +179,7 @@ func TestGauges(t *testing.T) {
 	allTime := Totals{StaffUSD: 70, Teams: map[string]float64{"dev": 46}, Agents: map[string]float64{"dev1@dev": 30}}
 	ticket := Budgeted{Scope: Scope{Kind: KindTicket, ID: "T-1"}, LimitUSD: 2, SpentUSD: 1}
 
-	gauges := Gauges(s, month, allTime, []Budgeted{ticket})
+	gauges := Gauges(s, month, allTime, map[Scope]float64{{Kind: KindStaff}: 50}, []Budgeted{ticket})
 
 	want := []struct {
 		kind      Kind
@@ -187,7 +187,7 @@ func TestGauges(t *testing.T) {
 		threshold int
 		reached   bool
 	}{
-		{KindStaff, 20, 80, false}, // monthly: this month
+		{KindStaff, 20, 80, false}, // monthly: this month, 100 + 50 extended
 		{KindTeam, 46, 90, true},   // cumulative: all time, its own threshold
 		{KindAgent, 8, 80, true},   // 8 of 10 = 80 %
 		{KindTicket, 1, 80, false},
@@ -199,13 +199,13 @@ func TestGauges(t *testing.T) {
 
 	for i, w := range want {
 		g := gauges[i]
-		if g.Scope.Kind != w.kind || g.SpentUSD != w.spent || g.Threshold != w.threshold || g.Reached() != w.reached {
+		if g.Scope.Kind != w.kind || g.SpentUSD != w.spent || g.Threshold != w.threshold || g.Reached() != w.reached || g.Held != w.reached {
 			t.Fatalf("gauge %d = %+v (reached %v), want %+v", i, g, g.Reached(), w)
 		}
 	}
 
 	s.Enabled = false
-	if len(Gauges(s, month, allTime, []Budgeted{ticket})) != 0 {
+	if len(Gauges(s, month, allTime, nil, []Budgeted{ticket})) != 0 {
 		t.Fatal("no gauge while budgets are turned off")
 	}
 }

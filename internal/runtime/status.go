@@ -12,7 +12,8 @@ import (
 type Status string
 
 // The life of an agent: stopped → starting → working ⇄ idle → exited, with
-// working ⇄ awaiting_approval while a permission request is pending.
+// working ⇄ awaiting_approval while a permission request is pending, and
+// budget_hold instead of idle while a budget holds it (ADR-0013).
 const (
 	StatusStopped  Status = "stopped"  // not launched
 	StatusStarting Status = "starting" // process launched, no hook event yet
@@ -21,6 +22,9 @@ const (
 	StatusExited   Status = "exited"   // process ended
 	// StatusAwaitingApproval: blocked on a permission only the human can give.
 	StatusAwaitingApproval Status = "awaiting_approval"
+	// StatusBudgetHold: a budget at its threshold holds it; its session is
+	// kept, it is never woken up and gets no work (ADR-0013, point 4).
+	StatusBudgetHold Status = "budget_hold"
 )
 
 // Statuses records the status of every agent, and the Claude Code session it
@@ -89,17 +93,21 @@ func (s *Statuses) Busy(address string) bool {
 	return st == StatusWorking || st == StatusAwaitingApproval
 }
 
+// ObserveHeldStop records the end of a turn of an agent a budget holds: it
+// is on budget hold, not idle, so nothing reacts as if it were free
+// (OnIdle is not called).
+func (s *Statuses) ObserveHeldStop(address string, ev hook.Event) {
+	s.rememberSession(address, ev)
+	s.Set(address, StatusBudgetHold)
+}
+
 // ObserveHook updates an agent's status from a hook event. delivered is the
 // number of messages handed over in response to that event.
 //
 // A Stop with nothing delivered means the agent really ends its turn: it is
 // idle. Any other event means it is still working.
 func (s *Statuses) ObserveHook(address string, ev hook.Event, delivered int) {
-	if ev.SessionID != "" {
-		s.mu.Lock()
-		s.sessions[address] = ev.SessionID
-		s.mu.Unlock()
-	}
+	s.rememberSession(address, ev)
 
 	switch {
 	case ev.Name == hook.EventStop && delivered == 0:
@@ -108,5 +116,14 @@ func (s *Statuses) ObserveHook(address string, ev hook.Event, delivered int) {
 		s.Set(address, StatusAwaitingApproval)
 	default:
 		s.Set(address, StatusWorking)
+	}
+}
+
+// rememberSession records the session an agent runs, from a hook event.
+func (s *Statuses) rememberSession(address string, ev hook.Event) {
+	if ev.SessionID != "" {
+		s.mu.Lock()
+		s.sessions[address] = ev.SessionID
+		s.mu.Unlock()
 	}
 }

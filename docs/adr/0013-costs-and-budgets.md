@@ -93,7 +93,7 @@ When a spend record brings a budget to its threshold, the agents that budget cov
 2. An idle agent is held at once, without being woken up.
 3. A held agent is **on budget hold, its session kept**: the process stays alive and is never woken up; mail waits in its trays; it is offered no ticket (`pickMember`, claims refused like `checkFree`) and no schedule occurrence (`scheduledWork.freeAgent`: the occurrence waits). Its status is `budget_hold`, shown in the office with an empty-wallet icon. What the human types into its terminal still reaches it, and is still counted.
 
-A hold is recorded in the database, so it survives a daemon restart: the agent is started again, and stays on hold.
+A hold is not stored as such: an agent is held while a budget that covers it is reached. Anything that takes a budget back under its threshold (an extension, a monthly reset, a budget raised or removed, budgets turned off) releases its agents by itself, and a hold survives a daemon restart since the spend and the budgets do. The daemon works the holds out again after every spend record, budget change and ticket or feature change, and at the start of every month. A held agent restarted (daemon restart, definition change) runs its first turn (onboarding or resume) and is held again at its end. A ticket whose budget, or its feature's, is reached cannot be claimed.
 
 ### 5. One request per budget; the director escalates, the human decides
 

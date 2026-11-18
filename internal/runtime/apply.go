@@ -90,7 +90,7 @@ func (s *Supervisor) midTurn(address string) bool {
 	switch s.Statuses.Get(address) {
 	case StatusStarting, StatusWorking, StatusAwaitingApproval:
 		return true
-	case StatusStopped, StatusIdle, StatusExited:
+	case StatusStopped, StatusIdle, StatusExited, StatusBudgetHold:
 		return false
 	default:
 		return false

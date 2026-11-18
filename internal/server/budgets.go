@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/budget"
-	"github.com/qwackididuck/nobodyinc/internal/work"
 )
 
 // routeBudgets registers the costs and budgets endpoints.
@@ -94,76 +93,13 @@ func (s *server) getSpend(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, summary)
 }
 
-// gauges says where every budget stands now: the caps of budgets.yaml, the
-// features started and not finished, and the tickets not archived, done or
-// canceled that have a budget.
+// gauges says where every budget stands now (budget.Evaluate).
 func (s *server) gauges(ctx context.Context) ([]budget.Gauge, error) {
 	if s.Budgets == nil {
 		return []budget.Gauge{}, nil
 	}
 
-	settings := s.Budgets.Get()
-	if !settings.Enabled {
-		return []budget.Gauge{}, nil
-	}
-
-	month, err := s.Store.SpendTotals(ctx, budget.Month(time.Now()))
-	if err != nil {
-		return nil, err
-	}
-
-	allTime, err := s.Store.SpendTotals(ctx, "")
-	if err != nil {
-		return nil, err
-	}
-
-	budgeted, err := s.budgetedWork(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return budget.Gauges(settings, month, allTime, budgeted), nil
-}
-
-// budgetedWork lists the features and tickets whose budget still matters.
-func (s *server) budgetedWork(ctx context.Context) ([]budget.Budgeted, error) {
-	features, err := s.Tickets.Store.ListFeatures(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var budgeted []budget.Budgeted
-
-	for _, f := range features {
-		if f.IsSet() && f.Status == work.FeatureStarted {
-			budgeted = append(budgeted, budget.Budgeted{
-				Scope: budget.Scope{Kind: budget.KindFeature, ID: f.ID}, LimitUSD: *f.USD, SpentUSD: f.SpentUSD, Threshold: intOr0(f.Threshold),
-			})
-		}
-	}
-
-	tickets, err := s.Tickets.Store.ListTickets(ctx, work.Filter{})
-	if err != nil {
-		return nil, err
-	}
-
-	for _, t := range tickets {
-		if t.IsSet() && (t.Status == work.StatusOpen || t.Status == work.StatusInProgress) {
-			budgeted = append(budgeted, budget.Budgeted{
-				Scope: budget.Scope{Kind: budget.KindTicket, ID: t.ID}, LimitUSD: *t.USD, SpentUSD: t.SpentUSD, Threshold: intOr0(t.Threshold),
-			})
-		}
-	}
-
-	return budgeted, nil
-}
-
-func intOr0(p *int) int {
-	if p == nil {
-		return 0
-	}
-
-	return *p
+	return budget.Evaluate(ctx, s.Budgets.Get(), s.Store, time.Now())
 }
 
 // budgetsAvailable answers 501 when the daemon has no budgets file.

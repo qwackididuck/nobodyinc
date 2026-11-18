@@ -15,6 +15,9 @@ type announcingWorkStore struct {
 	work.Store
 
 	bus *events.Bus
+	// onChange, when set, is called after every ticket or feature write
+	// (the budgets' guard reconciles, ADR-0013).
+	onChange func()
 }
 
 func (a announcingWorkStore) InsertTicket(ctx context.Context, t work.Ticket) (work.Ticket, error) {
@@ -111,8 +114,16 @@ func (a announcingWorkStore) DeleteTickets(ctx context.Context, ids []string) er
 
 func (a announcingWorkStore) ticketChanged(id string) {
 	a.bus.Publish(events.Event{Type: events.TicketsChanged, Data: events.ChangedData{ID: id}})
+	a.changed()
 }
 
 func (a announcingWorkStore) featureChanged(id string) {
 	a.bus.Publish(events.Event{Type: events.FeaturesChanged, Data: events.ChangedData{ID: id}})
+	a.changed()
+}
+
+func (a announcingWorkStore) changed() {
+	if a.onChange != nil {
+		a.onChange()
+	}
 }

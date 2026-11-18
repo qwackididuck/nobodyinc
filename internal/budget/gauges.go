@@ -22,23 +22,24 @@ type Budgeted struct {
 }
 
 // Gauges says where every budget that is set stands: the staff, team and
-// agent caps over their own period (month for a monthly cap, allTime for a
-// cumulative one), then the features and tickets given. None while budgets
-// are turned off.
-func Gauges(s Settings, month, allTime Totals, budgeted []Budgeted) []Gauge {
+// agent caps over their own period (month for a monthly cap, raised by its
+// extensions of the month; allTime for a cumulative one), then the features
+// and tickets given. A gauge at its threshold holds its agents. None while
+// budgets are turned off.
+func Gauges(s Settings, month, allTime Totals, extensions map[Scope]float64, budgeted []Budgeted) []Gauge {
 	gauges := []Gauge{}
 	if !s.Enabled {
 		return gauges
 	}
 
 	capGauge := func(scope Scope, c Cap, spent func(Totals) float64) Gauge {
-		period := allTime
+		period, limit := allTime, c.LimitUSD
 		if c.Monthly {
-			period = month
+			period, limit = month, limit+extensions[scope]
 		}
 
 		return Gauge{
-			Scope: scope, LimitUSD: c.LimitUSD, SpentUSD: spent(period),
+			Scope: scope, LimitUSD: limit, SpentUSD: spent(period),
 			Threshold: s.ThresholdOf(c.Threshold), Monthly: c.Monthly,
 		}
 	}
@@ -58,6 +59,10 @@ func Gauges(s Settings, month, allTime Totals, budgeted []Budgeted) []Gauge {
 
 	for _, b := range budgeted {
 		gauges = append(gauges, Gauge{Scope: b.Scope, LimitUSD: b.LimitUSD, SpentUSD: b.SpentUSD, Threshold: s.ThresholdOf(b.Threshold)})
+	}
+
+	for i := range gauges {
+		gauges[i].Held = gauges[i].Reached()
 	}
 
 	return gauges

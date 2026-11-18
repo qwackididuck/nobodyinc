@@ -27,6 +27,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/budget"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
+	"github.com/qwackididuck/nobodyinc/internal/hook"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
@@ -87,6 +88,10 @@ type Deps struct {
 	// Budgets holds .nobody/budgets.yaml; nil answers 501 on /api/budgets
 	// and leaves the gauges of /api/spend empty.
 	Budgets *budget.Book
+	// BudgetStop decides the Stop of an agent a budget may hold: the
+	// response to give it, and whether it is held (hooks.go); nil holds
+	// nobody.
+	BudgetStop func(ctx context.Context, address string) (*hook.Response, bool, error)
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits

@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
-	"github.com/qwackididuck/nobodyinc/internal/budget"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
@@ -109,6 +108,8 @@ type Daemon struct {
 	// (schedulerDone) before closing the database.
 	stopScheduler context.CancelFunc
 	schedulerDone chan struct{}
+	// budgets' guard reconciles in the background until Close stops it.
+	budgets *budgets
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
@@ -187,15 +188,14 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	messages.OnSent = onSent(ctx, bus, staff, forker, supervisor)
 
-	budgets, err := budget.OpenBook(opts.Org.Current().ProjectDir, opts.Org, func(budget.Settings) {
-		bus.Publish(events.Event{Type: events.BudgetsChanged, Data: events.Empty{}})
-	})
+	budgets, err := wireBudgets(ctx, opts, st, statuses, bus)
 	if err != nil {
 		return nil, err
 	}
 
 	tickets := &work.Service{
-		Store: announcingWorkStore{Store: st, bus: bus}, Org: opts.Org, Workspace: git, BudgetsEnabled: budgets.Enabled,
+		Store: announcingWorkStore{Store: st, bus: bus, onChange: budgets.guard.trigger}, Org: opts.Org, Workspace: git,
+		BudgetsEnabled: budgets.book.Enabled, CheckClaim: budgets.guard.checkClaim,
 	}
 	// A new feature moves every agent into its team's worktree.
 	tickets.OnFeatureStarted = func(f work.Feature) {
@@ -258,8 +258,9 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		BuiltinSkills: builtinSkills,
 		Schedules:     schedules,
 		// What the agents spend; wired to the supervisor and the forker.
-		Spend:   wireSpend(st, opts, bus, supervisor, forker),
-		Budgets: budgets,
+		Spend:      wireSpend(st, opts, bus, supervisor, forker, budgets.guard),
+		Budgets:    budgets.book,
+		BudgetStop: budgets.guard.atStop,
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,
@@ -293,6 +294,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 		stopScheduler: stopScheduler,
 		schedulerDone: schedulerDone,
+		budgets:       budgets,
 	}, nil
 }
 
@@ -432,6 +434,8 @@ func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, appr
 func (d *Daemon) Close() error {
 	d.stopScheduler()
 	<-d.schedulerDone
+	d.budgets.stop()
+	<-d.budgets.done
 	d.background.Wait()
 	d.Supervisor.StopAll()
 

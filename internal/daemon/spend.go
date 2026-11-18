@@ -22,21 +22,22 @@ const spendEventInterval = time.Second
 // and plugs it into the supervisor, which forgets a session's running total
 // whenever it starts an agent, and into the forker, which charges a fork's
 // cost to the asker.
-func wireSpend(st *store.Store, opts Options, bus *events.Bus, supervisor *runtime.Supervisor, forker *runtime.Forker) *budget.Meter {
-	clock := opts.Clock
-	if clock == nil {
-		clock = schedule.RealClock{}
-	}
-
+func wireSpend(
+	st *store.Store, opts Options, bus *events.Bus, supervisor *runtime.Supervisor, forker *runtime.Forker, guard *budgetGuard,
+) *budget.Meter {
 	announce := throttle(spendEventInterval, func() {
 		bus.Publish(events.Event{Type: events.SpendChanged, Data: events.Empty{}})
 	})
 
 	meter := &budget.Meter{
-		Store:      st,
-		Attribute:  spendAttribution(st),
-		Now:        clock.Now,
-		OnRecorded: func(budget.Record) { announce() },
+		Store:     st,
+		Attribute: spendAttribution(st),
+		Now:       clockOf(opts).Now,
+		// Spend may bring a budget to its threshold.
+		OnRecorded: func(budget.Record) {
+			announce()
+			guard.trigger()
+		},
 	}
 
 	supervisor.OnStart = meter.Forget

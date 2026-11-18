@@ -47,6 +47,10 @@ func (s *server) handleHookEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if ev.Name == hook.EventStop && s.holdAtStop(w, r, address, ev) {
+		return
+	}
+
 	delivery, err := hook.Handle(r.Context(), ev, s.Store.Tray(address))
 	if err != nil {
 		s.Logger.Error("handle hook event", "agent", address, "event", ev.Name, "err", err)
@@ -64,6 +68,38 @@ func (s *server) handleHookEvent(w http.ResponseWriter, r *http.Request) {
 
 	s.Logger.Info("hook event", "agent", address, "event", ev.Name, "delivered", len(decision.MessageIDs))
 	s.writeJSON(w, http.StatusOK, decision)
+}
+
+// holdAtStop handles the Stop of an agent a budget holds (ADR-0013): it is
+// asked once to justify an extension, or ends its turn on budget hold, its
+// mail left waiting. It reports whether it answered.
+func (s *server) holdAtStop(w http.ResponseWriter, r *http.Request, address string, ev hook.Event) bool {
+	if s.BudgetStop == nil {
+		return false
+	}
+
+	response, held, err := s.BudgetStop(r.Context(), address)
+	if err != nil {
+		// Never block an agent on a failure of ours: it stops as usual.
+		s.Logger.Error("check the budgets at the end of a turn", "agent", address, "err", err)
+
+		return false
+	}
+
+	if !held {
+		return false
+	}
+
+	if response != nil {
+		s.Statuses.ObserveHook(address, ev, 1) // still working: it must answer first
+	} else {
+		s.Statuses.ObserveHeldStop(address, ev)
+	}
+
+	s.Logger.Info("hook event", "agent", address, "event", ev.Name, "budget_hold", true, "asked", response != nil)
+	s.writeJSON(w, http.StatusOK, hookDecision{Response: response, MessageIDs: []string{}})
+
+	return true
 }
 
 // acknowledgeHookDelivery marks messages delivered once nobody-hook has handed

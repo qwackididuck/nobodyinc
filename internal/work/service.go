@@ -131,7 +131,10 @@ type Service struct {
 	// BudgetsEnabled reports whether budgets are on for the project
 	// (budget.Book.Enabled); nil means on.
 	BudgetsEnabled func() bool
-	Now            func() time.Time
+	// CheckClaim, when set, may refuse a claim for budget reasons: an agent
+	// on budget hold, a ticket or feature whose budget is reached (ADR-0013).
+	CheckClaim func(ctx context.Context, agent string, t Ticket) error
+	Now        func() time.Time
 
 	// budgetMu keeps two tickets from taking the same part of a feature's
 	// budget at once.
@@ -495,6 +498,12 @@ func (s *Service) activeFeatureID(ctx context.Context) (string, error) {
 
 // beforeClaim brings the latest validated work into the claimer's worktree.
 func (s *Service) beforeClaim(ctx context.Context, t Ticket, agent string) error {
+	if s.CheckClaim != nil {
+		if err := s.CheckClaim(ctx, agent, t); err != nil {
+			return err
+		}
+	}
+
 	if s.Workspace == nil || t.Feature == "" {
 		return nil
 	}

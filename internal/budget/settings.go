@@ -13,8 +13,15 @@ import (
 // the project sets none (ADR-0013, point 4).
 const DefaultThreshold = 80
 
-// ErrInvalid is returned for settings or a budget that cannot be used.
-var ErrInvalid = errors.New("invalid budget")
+// Errors of the budget package.
+var (
+	// ErrInvalid is returned for settings or a budget that cannot be used.
+	ErrInvalid = errors.New("invalid budget")
+	// ErrNotFound is returned for an unknown request or proposal.
+	ErrNotFound = errors.New("not found")
+	// ErrConflict is returned for a decision that no longer applies.
+	ErrConflict = errors.New("conflict")
+)
 
 // Settings are the project's budget settings and caps, the content of
 // .nobody/budgets.yaml (ADR-0013, point 3). Ticket and feature budgets live
