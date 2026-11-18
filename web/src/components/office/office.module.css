@@ -188,12 +188,49 @@
 
 .clock {
   position: absolute;
+  z-index: 3;
   top: 18px;
   left: 470px;
   width: 30px;
   height: 30px;
+  padding: 0;
+  border: 0;
   background: var(--paper);
   box-shadow: inset 0 0 0 3px var(--ink-px);
+}
+
+/* The clock opens the scheduled tasks done or skipped (ClockPanel); it
+   lights up and rattles under the pointer, like the wastebasket. */
+.clock:hover,
+.clock:focus-visible {
+  outline: none;
+  filter: brightness(1.15);
+  animation: rattle 0.32s steps(4);
+}
+
+/* A scheduled task is done: the clock rings like an alarm clock. */
+.clock[data-ringing="true"] {
+  animation: ring 0.12s steps(2) 12;
+  box-shadow:
+    inset 0 0 0 3px var(--ink-px),
+    0 0 0 3px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clock:hover,
+  .clock:focus-visible,
+  .clock[data-ringing="true"] {
+    animation: none;
+  }
+}
+
+@keyframes ring {
+  0% {
+    transform: rotate(-14deg) translateY(-1px);
+  }
+  100% {
+    transform: rotate(14deg) translateY(1px);
+  }
 }
 
 .clock::before {

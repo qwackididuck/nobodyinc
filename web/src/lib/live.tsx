@@ -17,6 +17,9 @@ import {
   type Approval,
   type Feature,
   type Message,
+  type ScheduleProposal,
+  type ScheduleRun,
+  type ScheduleView,
   type Settings,
   type Team,
   type Template,
@@ -26,6 +29,9 @@ import {
   listApprovals,
   listFeatures,
   listMessages,
+  listScheduleProposals,
+  listScheduleRuns,
+  listSchedules,
   listTeams,
   listTemplates,
   listTickets,
@@ -34,6 +40,8 @@ import { connectEvents, type DaemonEvent } from "./events";
 
 // How many recent messages of the whole organisation are kept (badges, office).
 const RECENT_MESSAGES = 500;
+// How many recent occurrences of scheduled tasks are kept (office clock).
+const RECENT_RUNS = 100;
 // Events arriving within this delay cause a single reload.
 const RELOAD_DELAY_MS = 120;
 
@@ -46,11 +54,26 @@ interface Resources {
   templates: Template[];
   messages: Message[];
   settings: Settings | null;
+  schedules: ScheduleView[];
+  scheduleRuns: ScheduleRun[]; // newest first
+  scheduleProposals: ScheduleProposal[];
 }
 
 export type Resource = keyof Resources;
 
-const EMPTY: Resources = { agents: [], teams: [], approvals: [], features: [], tickets: [], templates: [], messages: [], settings: null };
+const EMPTY: Resources = {
+  agents: [],
+  teams: [],
+  approvals: [],
+  features: [],
+  tickets: [],
+  templates: [],
+  messages: [],
+  settings: null,
+  schedules: [],
+  scheduleRuns: [],
+  scheduleProposals: [],
+};
 
 const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
   agents: listAgents,
@@ -61,6 +84,9 @@ const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
   templates: listTemplates,
   messages: () => listMessages(RECENT_MESSAGES),
   settings: getSettings,
+  schedules: listSchedules,
+  scheduleRuns: () => listScheduleRuns("", RECENT_RUNS),
+  scheduleProposals: listScheduleProposals,
 };
 
 // What each invalidation event makes stale.
@@ -68,8 +94,10 @@ const STALE: Partial<Record<DaemonEvent["type"], Resource[]>> = {
   "approvals.changed": ["approvals"],
   "tickets.changed": ["tickets"],
   "features.changed": ["features"],
-  "org.changed": ["agents", "teams"],
   "catalog.changed": ["templates"],
+  // A schedule's warning depends on its target's profile.
+  "org.changed": ["agents", "teams", "schedules"],
+  "schedules.changed": ["schedules", "scheduleRuns", "scheduleProposals"],
 };
 
 export interface Live extends Resources {

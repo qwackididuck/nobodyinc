@@ -10,6 +10,7 @@
 //   - settings.go:  /api/settings    how the daemon runs;
 //   - mcp.go:       /api/mcp*        MCP servers (ADR-0010);
 //   - skills.go:    /api/skills*     skills (ADR-0011);
+//   - schedules.go: /api/schedule*   scheduled tasks (ADR-0012);
 //   - hooks.go:     /internal/*      for nobody-hook, called by Claude Code hooks.
 package server
 
@@ -75,6 +76,8 @@ type Deps struct {
 	// BuiltinSkills is the daemon's list of Claude Code's built-in skills
 	// (GET /api/skills); nil lists none.
 	BuiltinSkills *skills.Builtin
+	// Schedules backs the scheduled tasks (schedules.go); nil answers 501.
+	Schedules Schedules
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits
@@ -139,6 +142,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("PUT /api/settings", s.updateSettings)
 	s.routeMCP(mux)
 	s.routeSkills(mux)
+	s.routeSchedules(mux)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.decideApproval)
 

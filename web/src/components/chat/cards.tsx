@@ -3,15 +3,20 @@
 import { type FormEvent, useState } from "react";
 
 import {
+  acceptScheduleProposal,
   type Agent,
   type Approval,
   decideApproval,
   type Feature,
   type Message,
   refuseProposedFeature,
+  refuseScheduleProposal,
+  type ScheduleProposal,
   sendMessage,
   startProposedFeature,
 } from "@/lib/api";
+import { useOpenSchedules } from "../schedules/nav";
+import { recurrenceText } from "../schedules/scheduling";
 import styles from "./chat.module.css";
 
 // Cards are what waits for the human in a chat. Each one handles its own
@@ -168,6 +173,70 @@ export function FeatureProposal({ feature, onDecided }: { feature: Feature; onDe
           <div className={styles.actions}>
             <button type="button" className={styles.btnPrimary} disabled={busy} onClick={() => void run(() => startProposedFeature(feature.id), onDecided)}>
               Start
+            </button>
+            <button type="button" className={styles.btn} disabled={busy} onClick={() => setRefusing(true)}>
+              Refuse…
+            </button>
+          </div>
+        ))}
+      {error && <p className={styles.error}>{error}</p>}
+    </article>
+  );
+}
+
+// ScheduleProposalCard is a scheduled task the director proposed (ADR-0012):
+// Accept writes it as it is, Edit opens it in the Schedules tab to change it
+// before accepting, Refuse sends the reason back. Once decided, it shows the
+// decision.
+export function ScheduleProposalCard({ proposal: p, onDecided }: { proposal: ScheduleProposal; onDecided: () => void }) {
+  const { busy, error, run } = useAction();
+  const openSchedules = useOpenSchedules();
+  const [refusing, setRefusing] = useState(false);
+  const [reason, setReason] = useState("");
+  const s = p.schedule;
+
+  return (
+    <article className={styles.card} data-kind="proposal">
+      <span className={styles.kicker}>Schedule proposal · {p.id}</span>
+      <strong className={styles.cardTitle}>{s.title}</strong>
+      <p className={styles.cardText}>
+        {recurrenceText(s)} · {s.target} · {s.mode} mode
+      </p>
+      <p className={styles.cardText}>{s.instructions}</p>
+      {p.warning && p.status === "proposed" && <p className={styles.error}>{p.warning}</p>}
+      {p.status === "accepted" && (
+        <p className={styles.done}>
+          Accepted ·{" "}
+          <button type="button" className={styles.link} onClick={() => openSchedules({ kind: "schedule", id: s.id })}>
+            see it in Schedules
+          </button>
+        </p>
+      )}
+      {p.status === "refused" && <p className={styles.refused}>Refused{p.refusal_reason ? `: ${p.refusal_reason}` : ""}</p>}
+      {p.status === "proposed" &&
+        (refusing ? (
+          <div className={styles.actions}>
+            <input
+              className={styles.input}
+              placeholder="Reason, passed on to the director"
+              aria-label="Reason for refusing"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+            <button type="button" className={styles.btn} disabled={busy} onClick={() => void run(() => refuseScheduleProposal(p.id, reason), onDecided)}>
+              Refuse
+            </button>
+            <button type="button" className={styles.link} onClick={() => setRefusing(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className={styles.actions}>
+            <button type="button" className={styles.btnPrimary} disabled={busy} onClick={() => void run(() => acceptScheduleProposal(p.id), onDecided)}>
+              Accept
+            </button>
+            <button type="button" className={styles.btn} disabled={busy} onClick={() => openSchedules({ kind: "proposal", id: p.id })}>
+              Edit…
             </button>
             <button type="button" className={styles.btn} disabled={busy} onClick={() => setRefusing(true)}>
               Refuse…

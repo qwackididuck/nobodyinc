@@ -37,6 +37,9 @@ const (
 	OrgChanged = "org.changed"
 	// CatalogChanged: a template was saved or deleted.
 	CatalogChanged = "catalog.changed"
+	// SchedulesChanged: a schedule, one of its occurrences or a director's
+	// proposal changed (ADR-0012).
+	SchedulesChanged = "schedules.changed"
 )
 
 // Event is one change. Data is encoded as JSON in the stream.

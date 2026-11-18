@@ -1,0 +1,226 @@
+/* Schedules: the scheduled tasks (ADR-0012), a table with a drawer, in the
+   pixel style of the other tabs. */
+
+.page {
+  display: grid;
+  gap: 18px;
+  max-width: 1180px;
+  padding: 22px 28px 40px;
+}
+
+.bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.kicker {
+  font: 10px var(--font-label);
+  color: var(--muted);
+}
+
+.empty {
+  margin: 0;
+  padding: 18px;
+  border: 2px dashed var(--line);
+  color: var(--muted);
+}
+
+/* ---- The director's proposals ---------------------------------------------- */
+
+.proposals {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 3px solid var(--accent);
+  background: var(--panel);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+}
+
+.proposal {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 10px 0;
+  border-top: 2px dashed var(--line);
+}
+
+.instructions {
+  margin: 4px 0 0;
+  max-width: 80ch;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.warning {
+  margin: 0;
+  padding: 8px 10px;
+  border: 2px solid var(--warn);
+  color: var(--warn);
+  font-size: 13px;
+}
+
+/* ---- The table ------------------------------------------------------------- */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 3px solid var(--ink-px);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+}
+
+.table th {
+  padding: 8px 10px;
+  border-bottom: 2px solid var(--line);
+  color: var(--muted);
+  font: 10px var(--font-label);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 10px;
+  border-bottom: 2px dashed var(--line);
+  vertical-align: top;
+}
+
+.row {
+  cursor: pointer;
+}
+
+.row:hover,
+.row[aria-selected="true"] {
+  background: var(--panel-2);
+}
+
+.row[data-paused="true"] td {
+  color: var(--muted);
+}
+
+.row[data-alert="true"] td:first-child {
+  box-shadow: inset 4px 0 0 var(--danger);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.rowSub {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.rowAlert {
+  display: block;
+  margin-top: 4px;
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  cursor: default;
+}
+
+.state {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  background: var(--off);
+  box-shadow: 0 0 0 2px var(--ink-px);
+}
+
+.state[data-on="true"] {
+  background: var(--ok);
+}
+
+/* An occurrence's status, colored by its tone (schedules.ts runTone). */
+.runStatus {
+  display: inline-block;
+  padding: 1px 6px;
+  border: 2px solid var(--line);
+  font: 10px var(--font-label);
+  white-space: nowrap;
+}
+
+.runStatus[data-tone="ok"] {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.runStatus[data-tone="busy"] {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+.runStatus[data-tone="bad"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.runLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ---- The form -------------------------------------------------------------- */
+
+.form {
+  display: grid;
+  gap: 12px;
+}
+
+.formRow {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.recurrence {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preview,
+.previewError {
+  margin: 0;
+  font: 12px var(--font-ui);
+  color: var(--muted);
+}
+
+.previewError {
+  color: var(--danger);
+}
+
+.formActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}

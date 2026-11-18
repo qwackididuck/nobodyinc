@@ -1,11 +1,13 @@
 "use client";
 
 import { useLive } from "@/lib/live";
+import { attention } from "../schedules/scheduling";
 import styles from "./shell.module.css";
 
 export const TABS = [
   { id: "office", label: "Office" },
   { id: "kanban", label: "Kanban" },
+  { id: "schedules", label: "Schedules" },
   { id: "staff", label: "Staff" },
   { id: "settings", label: "Settings" },
 ] as const;
@@ -20,7 +22,9 @@ interface Props {
 // TopBar shows the project, the tabs and whether the live connection to the
 // daemon is up.
 export function TopBar({ tab, onTab }: Props) {
-  const { settings, connected } = useLive();
+  const { settings, connected, schedules, scheduleProposals } = useLive();
+  // Schedules in alert and the director's proposals wait for the human.
+  const badges: Partial<Record<Tab, number>> = { schedules: attention(schedules, scheduleProposals) };
   const project = settings ? (settings.project_dir.split("/").filter(Boolean).pop() ?? settings.project_dir) : "…";
 
   return (
@@ -43,6 +47,11 @@ export function TopBar({ tab, onTab }: Props) {
             onClick={() => onTab(t.id)}
           >
             {t.label}
+            {badges[t.id] ? (
+              <span className={styles.tabBadge} title="Waiting for you">
+                {badges[t.id]}
+              </span>
+            ) : null}
           </button>
         ))}
       </nav>

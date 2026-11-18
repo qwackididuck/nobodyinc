@@ -86,6 +86,14 @@ func startDaemon(t *testing.T, o org.Source) *daemon.Daemon {
 func startDaemonWithDB(t *testing.T, o org.Source, dbPath string) *daemon.Daemon {
 	t.Helper()
 
+	return startDaemonWithOptions(t, o, dbPath, func(*daemon.Options) {})
+}
+
+// startDaemonWithOptions is startDaemonWithDB with options changed by change,
+// e.g. a manual clock for the scheduled tasks.
+func startDaemonWithOptions(t *testing.T, o org.Source, dbPath string, change func(*daemon.Options)) *daemon.Daemon {
+	t.Helper()
+
 	var lc net.ListenConfig
 
 	listener, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
@@ -96,7 +104,7 @@ func startDaemonWithDB(t *testing.T, o org.Source, dbPath string) *daemon.Daemon
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	d, err := daemon.New(ctx, daemon.Options{
+	opts := daemon.Options{
 		Logger:       slog.New(slog.DiscardHandler),
 		Org:          o,
 		CatalogDir:   t.TempDir(),
@@ -106,7 +114,10 @@ func startDaemonWithDB(t *testing.T, o org.Source, dbPath string) *daemon.Daemon
 		ClaudePath:   fakeClaude,
 		HookPath:     hookBinary,
 		DaemonURL:    "http://" + listener.Addr().String(),
-	})
+	}
+	change(&opts)
+
+	d, err := daemon.New(ctx, opts)
 	if err != nil {
 		t.Fatal(err)
 	}

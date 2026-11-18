@@ -70,6 +70,15 @@
   border-bottom-color: var(--accent);
 }
 
+/* What waits for the human in a tab (Schedules: alerts and proposals). */
+.tabBadge {
+  margin-left: 6px;
+  padding: 0 5px;
+  background: var(--danger);
+  color: var(--ink-px);
+  font: 9px var(--font-label);
+}
+
 .daemon {
   margin-left: auto;
   display: flex;

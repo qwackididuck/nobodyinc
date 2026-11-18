@@ -43,6 +43,7 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 | `features.changed` | `{id}` | a feature is proposed, started, refused or activated | the same wrapper |
 | `org.changed` | `{}` | the organization is reloaded after a change: an agent recruited, created, edited, put on leave, brought back or dismissed (director included); a team created, edited (goal, prompt, block list) or deleted; the project prompt changed; an MCP server added, edited or removed through the API | `staffing.Service.OnReload` |
 | `catalog.changed` | `{}` | a template is saved or deleted | `server/staff.go` |
+| `schedules.changed` | `{}` | a scheduled task is created, edited, paused, resumed, disabled or deleted; one of its occurrences starts, waits, ends or is skipped; a director's proposal is made or decided (`schedules.md`) | `daemon/schedules.go`, `daemon/scheduleoffice.go` |
 
 The wiring is in `internal/daemon/daemon.go` (`announce` and `New`); the bus is `internal/events`.
 

@@ -12,7 +12,7 @@ open ──claim──► in_progress ──done──► done
 
 - A ticket can depend on other tickets (`blocked_by`): it cannot be claimed until they are all done.
 - An agent works on **one ticket at a time**: claiming a second one is refused until the first is done or released.
-- A ticket belongs to the active **feature**, if any: claiming and closing it then move work through git (see `workspaces.md`), and the delivered commits become `commit` deliverables.
+- A ticket belongs to the active **feature**, if any: claiming and closing it then move work through git (see `workspaces.md`), and the delivered commits become `commit` deliverables. The exception is the ticket of a **scheduled task** (`schedules.md`): created by `nobody` and assigned to a free agent, it belongs to no feature, so it moves nothing through git, never blocks finishing the feature and is not archived with it.
 - IDs look like `T-12`.
 
 ## Who may do what
@@ -35,7 +35,7 @@ Ticket events become notices from `nobody` (`internal/daemon/notify.go`), which 
 | New ticket in a team's queue | **One** member of that team, preferring an idle one, so a whole team is not woken up for one piece of work. Blocked tickets are announced only once unblocked. |
 | Ticket created with an assignee | The assignee. |
 | Ticket released to the queue | Another available member of the team. |
-| Ticket done | Its creator, and one member of each team whose ticket it was blocking. |
+| Ticket done | Its creator (unless it is `nobody`, as for a scheduled task's ticket), and one member of each team whose ticket it was blocking. |
 
 ## Agent tools
 

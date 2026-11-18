@@ -40,7 +40,10 @@ type Office struct {
 	// Director backs the tools only the director gets (director.go); nil
 	// disables them.
 	Director Director
-	Version  string
+	// Schedules backs the director's scheduled-task tools (schedules.go);
+	// nil disables them.
+	Schedules Schedules
+	Version   string
 }
 
 // Handler returns the HTTP handler serving one MCP server per agent. It must be
@@ -66,13 +69,16 @@ func ToolNames() []string {
 	return append([]string{
 		"send_message", "list_contacts",
 		"ticket_list", "ticket_get", "ticket_claim", "ticket_create", "ticket_update", "ticket_comment", "deliverable_add",
-	}, directorToolNames...)
+	}, slices.Concat(directorToolNames, scheduleToolNames)...)
 }
 
 // NewServer builds the MCP server of one agent. The director also gets the
 // director's tools.
 func NewServer(o *org.Org, office Office, address string) *mcp.Server {
-	t := tools{org: o, sender: office.Sender, tickets: office.Tickets, director: office.Director, self: address}
+	t := tools{
+		org: o, sender: office.Sender, tickets: office.Tickets, director: office.Director, schedules: office.Schedules,
+		self: address,
+	}
 	version := office.Version
 	server := mcp.NewServer(&mcp.Implementation{Name: "nobody-inc", Version: version}, nil)
 
@@ -97,15 +103,20 @@ func NewServer(o *org.Org, office Office, address string) *mcp.Server {
 		t.addDirectorTools(server)
 	}
 
+	if o.IsGod(address) && t.schedules != nil {
+		t.addScheduleTools(server)
+	}
+
 	return server
 }
 
 type tools struct {
-	org      *org.Org
-	sender   Sender
-	tickets  Tickets
-	director Director
-	self     string
+	org       *org.Org
+	sender    Sender
+	tickets   Tickets
+	director  Director
+	schedules Schedules
+	self      string
 }
 
 // SendMessageInput is what an agent provides to send_message.

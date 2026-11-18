@@ -637,3 +637,118 @@ async function errorText(res: Response): Promise<string> {
     return res.statusText;
   }
 }
+
+// --- Scheduled tasks (ADR-0012, docs/schedules.md) ---
+
+export type ScheduleMode = "ticket" | "message";
+
+// A scheduled task, as written in .nobody/schedules.yaml. Exactly one of
+// every and cron is set.
+export interface Schedule {
+  id: string;
+  title: string;
+  every?: string;
+  cron?: string;
+  // An agent ("monitor@ops"), a team ("@ops") or the director.
+  target: string;
+  mode: ScheduleMode;
+  // Read-only: false when paused, or disabled because its target is gone.
+  enabled?: boolean;
+  instructions: string;
+}
+
+export type RunStatus = "waiting" | "running" | "done" | "canceled" | "skipped" | "unavailable" | "interrupted";
+
+// One occurrence of a schedule.
+export interface ScheduleRun {
+  id: number;
+  schedule_id: string;
+  schedule_title: string;
+  trigger: "schedule" | "manual";
+  status: RunStatus;
+  due_at: string;
+  started_at?: string;
+  ended_at?: string;
+  agent?: string;
+  ticket?: string;
+  message?: string;
+  note?: string;
+}
+
+export interface ScheduleView extends Schedule {
+  enabled: boolean;
+  next_run?: string;
+  last_run?: ScheduleRun;
+  warning?: string;
+}
+
+export interface ScheduleProposal {
+  id: string;
+  schedule: Schedule;
+  status: "proposed" | "accepted" | "refused";
+  proposed_by: string;
+  proposal_message?: string;
+  refusal_reason?: string;
+  warning?: string;
+  created_at: string;
+  decided_at?: string;
+}
+
+export const SCHEDULE_ID_PATTERN = "[a-z0-9][a-z0-9\\-]{0,63}";
+
+export function listSchedules(): Promise<ScheduleView[]> {
+  return getJSON<ScheduleView[]>("/api/schedules");
+}
+
+export function createSchedule(s: Schedule): Promise<ScheduleView> {
+  return postJSON<ScheduleView>("/api/schedules", withoutEnabled(s));
+}
+
+export function updateSchedule(id: string, s: Schedule): Promise<ScheduleView> {
+  return sendJSON<ScheduleView>("PUT", `/api/schedules/${encodeURIComponent(id)}`, withoutEnabled(s));
+}
+
+export function deleteSchedule(id: string): Promise<void> {
+  return send("DELETE", `/api/schedules/${encodeURIComponent(id)}`);
+}
+
+export function setScheduleEnabled(id: string, enabled: boolean): Promise<ScheduleView> {
+  return postJSON<ScheduleView>(`/api/schedules/${encodeURIComponent(id)}/${enabled ? "resume" : "pause"}`, {});
+}
+
+export function runScheduleNow(id: string): Promise<ScheduleRun> {
+  return postJSON<ScheduleRun>(`/api/schedules/${encodeURIComponent(id)}/run`, {});
+}
+
+// previewRecurrence returns the next three occurrences of every or cron, or
+// throws the daemon's explanation of what is wrong.
+export async function previewRecurrence(r: { every?: string; cron?: string }): Promise<string[]> {
+  return (await postJSON<{ next: string[] }>("/api/schedules/preview", r)).next;
+}
+
+export function listScheduleRuns(schedule = "", limit = 100): Promise<ScheduleRun[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (schedule) params.set("schedule", schedule);
+  return getJSON<ScheduleRun[]>(`/api/schedule-runs?${params}`);
+}
+
+export function listScheduleProposals(): Promise<ScheduleProposal[]> {
+  return getJSON<ScheduleProposal[]>("/api/schedule-proposals");
+}
+
+// acceptScheduleProposal writes the proposal, as edited by the human if
+// edited is given.
+export function acceptScheduleProposal(id: string, edited?: Schedule): Promise<ScheduleProposal> {
+  return postJSON<ScheduleProposal>(`/api/schedule-proposals/${encodeURIComponent(id)}/accept`, edited ? { schedule: withoutEnabled(edited) } : {});
+}
+
+export function refuseScheduleProposal(id: string, reason: string): Promise<ScheduleProposal> {
+  return postJSON<ScheduleProposal>(`/api/schedule-proposals/${encodeURIComponent(id)}/refuse`, { reason });
+}
+
+// withoutEnabled drops what the API does not accept in a schedule: enabled
+// is changed by pause and resume, and the view's extra fields are read-only.
+function withoutEnabled(s: Schedule): Schedule {
+  const { id, title, every, cron, target, mode, instructions } = s;
+  return { id, title, ...(every ? { every } : {}), ...(cron ? { cron } : {}), target, mode, instructions };
+}

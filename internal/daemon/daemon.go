@@ -20,6 +20,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
+	"github.com/qwackididuck/nobodyinc/internal/schedule"
 	"github.com/qwackididuck/nobodyinc/internal/server"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
@@ -77,6 +78,9 @@ type Options struct {
 	// Origins are the browser origins (host patterns) allowed to open
 	// terminals and to change things through the API.
 	Origins []string
+	// Clock drives the scheduled tasks (ADR-0012); nil is the machine's.
+	// End-to-end tests give a schedule.ManualClock.
+	Clock schedule.Clock
 }
 
 // Daemon is a fully wired Nobody Inc.
@@ -100,6 +104,10 @@ type Daemon struct {
 	// (agents moved, worktrees and branches removed), which Close waits for:
 	// it runs git in the project, which must be done before the daemon stops.
 	background *sync.WaitGroup
+	// stopScheduler stops the scheduled tasks' clock; Close waits for it
+	// (schedulerDone) before closing the database.
+	stopScheduler context.CancelFunc
+	schedulerDone chan struct{}
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
@@ -194,7 +202,6 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 		supervisor.NotifyMail(m.To)
 	}
-	statuses.OnIdle = supervisor.OnIdle
 
 	tickets := &work.Service{Store: announcingWorkStore{Store: st, bus: bus}, Org: opts.Org, Workspace: git}
 	// A new feature moves every agent into its team's worktree.
@@ -217,7 +224,13 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	tickets.OnTicketDeleted = onTicketDeleted(ctx, messages, opts.Logger)
 
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
-	tickets.OnEvent = notifier.onEvent
+
+	schedules, err := wireSchedules(ctx, opts, scheduleDeps{
+		statuses: statuses, tickets: tickets, messages: messages, store: st, bus: bus,
+	}, notifier, supervisor)
+	if err != nil {
+		return nil, err
+	}
 
 	// Agents on leave or dismissed hand their tickets and mail over (staff.go),
 	// including what was still waiting when the daemon last stopped.
@@ -250,6 +263,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Settings:  liveSettings,
 		// Claude Code's built-in skills, discovered in the background.
 		BuiltinSkills: builtinSkills,
+		Schedules:     schedules,
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,
@@ -259,11 +273,14 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		},
 		Extra: map[string]http.Handler{
 			"/mcp/{address}": officemcp.Handler(officemcp.Office{
-				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Version: opts.Version,
+				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules,
+				Version: opts.Version,
 			}),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),
 		},
 	})
+
+	stopScheduler, schedulerDone := startScheduler(ctx, schedules.scheduler)
 
 	return &Daemon{
 		Handler:    handler,
@@ -277,7 +294,55 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Staff:      staffService,
 		WorkDir:    git.workDir,
 		background: background,
+
+		stopScheduler: stopScheduler,
+		schedulerDone: schedulerDone,
 	}, nil
+}
+
+// wireSchedules builds the scheduled tasks (scheduleoffice.go), which follow
+// the tickets being closed and the agents going idle, after the notifier and
+// the supervisor have reacted.
+func wireSchedules(
+	ctx context.Context, opts Options, deps scheduleDeps, notifier *ticketNotifier, supervisor *runtime.Supervisor,
+) (*scheduleOffice, error) {
+	schedules, err := newScheduleOffice(ctx, opts, deps)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx = context.WithoutCancel(ctx)
+
+	deps.tickets.OnEvent = inTurn(notifier.onEvent, func(e work.Event) { schedules.work.onTicketEvent(ctx, e) })
+	deps.statuses.OnIdle = inTurn(supervisor.OnIdle, func(address string) { schedules.work.onIdle(ctx, address) })
+
+	return schedules, nil
+}
+
+// inTurn returns a callback calling first, then second: services report to
+// a single subscriber.
+func inTurn[T any](first, second func(T)) func(T) {
+	return func(v T) {
+		first(v)
+		second(v)
+	}
+}
+
+// startScheduler runs the scheduled tasks' clock until ctx ends or the
+// returned function is called; the channel is closed once it has stopped.
+func startScheduler(ctx context.Context, scheduler *schedule.Scheduler) (context.CancelFunc, chan struct{}) {
+	runCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
+	context.AfterFunc(ctx, stop)
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		scheduler.Run(runCtx)
+	}()
+
+	return stop, done
 }
 
 // onFeatureFinished sends the team agents back to the project once a feature
@@ -342,9 +407,11 @@ func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, appr
 	}
 }
 
-// Close waits for the feature work still running in the background, then
-// stops every agent and closes the database.
+// Close stops the scheduled tasks, waits for the feature work still running
+// in the background, then stops every agent and closes the database.
 func (d *Daemon) Close() error {
+	d.stopScheduler()
+	<-d.schedulerDone
 	d.background.Wait()
 	d.Supervisor.StopAll()
 

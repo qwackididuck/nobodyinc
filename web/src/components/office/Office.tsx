@@ -27,7 +27,9 @@ import { lookOf, teamColors } from "@/lib/look";
 import { betweenAgents, isDirector } from "../chat/agents";
 import { Banner } from "./Banner";
 import { Desk } from "./Desk";
+import { endedAt, isEnded } from "../schedules/scheduling";
 import { ArchivesPanel } from "./ArchivesPanel";
+import { ClockPanel } from "./ClockPanel";
 import { FeatureReview } from "./FeatureReview";
 import { TeamDialog } from "../teams/TeamDialog";
 import { addWalker, celebrate, dismantle, fileTickets, flyPlane, site, walk, works } from "./effects";
@@ -39,6 +41,10 @@ interface Props {
   binUnread: number;
   onSelectAgent: (address: string) => void;
   onOpenBin: () => void;
+  // When the human last looked at the clock (the end of the latest
+  // occurrence of a scheduled task they saw), and how to record it.
+  clockSeen: string | undefined;
+  onClockSeen: (at: string) => void;
 }
 
 type Scene =
@@ -71,8 +77,8 @@ const orgKey = (agents: Agent[], teams: Team[]) =>
 
 let nextSceneID = 1;
 
-export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props) {
-  const { agents, teams, tickets, features, loaded } = useLive();
+export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSeen, onClockSeen }: Props) {
+  const { agents, teams, tickets, features, loaded, scheduleRuns } = useLive();
   const appearance = useAppearance();
   const moving = appearance.animations === "full";
   const layer = useRef<HTMLDivElement>(null);
@@ -91,6 +97,23 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [seenFinished, setSeenFinished] = useState<string | null>(null);
+  const [clockOpen, setClockOpen] = useState(false);
+  // The occurrences already done when last rendered, and how many times the
+  // clock rang: a scheduled task newly done rings it (the alarm replays when
+  // the count changes). Nothing rings for what was done before the page
+  // loaded.
+  const [doneSeen, setDoneSeen] = useState<string | null>(null);
+  const [rings, setRings] = useState(0);
+  const doneKey = scheduleRuns
+    .filter((r) => r.status === "done")
+    .map((r) => r.id)
+    .join(",");
+  if (loaded.scheduleRuns && doneSeen !== doneKey) {
+    const before = new Set((doneSeen ?? "").split(","));
+    if (doneSeen !== null && doneKey.split(",").some((id) => id && !before.has(id))) setRings((n) => n + 1);
+    setDoneSeen(doneKey);
+  }
+  const clockUnread = scheduleRuns.filter((r) => isEnded(r) && endedAt(r) > (clockSeen ?? "")).length;
 
   // Compare with what was shown before (React's "adjust state when props
   // change" pattern: no effect, no flash of the new desk).
@@ -259,9 +282,16 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
       {editingTeam && <TeamDialog team={editingTeam} onClose={() => setEditingTeam(null)} />}
       {reviewing && <FeatureReview feature={reviewing} onClose={() => setReviewing(null)} />}
       {archivesOpen && <ArchivesPanel onClose={() => setArchivesOpen(false)} onOpenChat={onSelectAgent} />}
+      {clockOpen && <ClockPanel onClose={() => setClockOpen(false)} onSeen={onClockSeen} />}
       <div className={styles.wrap}>
         <div className={styles.scene} style={{ width: SCENE_WIDTH, height: Math.max(layout.height, full.height) }}>
-          <Wall binUnread={binUnread} onOpenBin={onOpenBin} />
+          <Wall
+            binUnread={binUnread}
+            onOpenBin={onOpenBin}
+            clockUnread={clockUnread}
+            rings={moving ? rings : 0}
+            onOpenClock={() => setClockOpen(true)}
+          />
           <div className={styles.floor} style={{ top: WALL_HEIGHT }} />
           {layout.rooms.map((room) =>
             room.kind === "plot" ? (
@@ -314,13 +344,33 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin }: Props)
   );
 }
 
-function Wall({ binUnread, onOpenBin }: { binUnread: number; onOpenBin: () => void }) {
+interface WallProps {
+  binUnread: number;
+  onOpenBin: () => void;
+  // Occurrences of scheduled tasks over since the human last looked.
+  clockUnread: number;
+  // How many times the clock rang; 0 never animates it.
+  rings: number;
+  onOpenClock: () => void;
+}
+
+function Wall({ binUnread, onOpenBin, clockUnread, rings, onOpenClock }: WallProps) {
   return (
     <div className={styles.wall} style={{ height: WALL_HEIGHT }}>
       {[60, 200, 620].map((x) => (
         <span key={x} className={styles.window} style={{ left: x }} />
       ))}
-      <span className={styles.clock} />
+      {/* Keyed by the rings: each new one replays the alarm. */}
+      <button
+        key={rings}
+        type="button"
+        className={styles.clock}
+        data-ringing={rings > 0}
+        aria-label="The clock: scheduled tasks done or skipped"
+        onClick={onOpenClock}
+      >
+        {clockUnread > 0 && <span className={styles.binBadge}>{clockUnread}</span>}
+      </button>
       <span className={styles.door} style={{ left: DOOR.x, width: DOOR.width }} />
       <button type="button" className={styles.bin} style={{ left: BIN.x, top: BIN.y }} aria-label="Wastebasket: messages between agents" onClick={onOpenBin}>
         {binUnread > 0 && <span className={styles.binBadge}>{binUnread}</span>}
