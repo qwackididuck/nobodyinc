@@ -81,7 +81,7 @@ func TestLaunchCommand(t *testing.T) {
 	m, _ := o.Member("archi@specs")
 	l := Launch{
 		ClaudePath: "/bin/claude", HookPath: "/opt/nobody-hook", DaemonURL: "http://127.0.0.1:7420",
-		WorkDir: func(string) string { return o.ProjectDir },
+		WorkDir: func(string) string { return o.ProjectDir }, MCPConfigDir: t.TempDir(),
 	}
 
 	cmd, err := l.Command(context.Background(), o, m, "")
@@ -93,11 +93,15 @@ func TestLaunchCommand(t *testing.T) {
 	for _, want := range []string{
 		"/bin/claude", "--setting-sources project,local", "--append-system-prompt", "--model sonnet",
 		`"command":"/opt/nobody-hook"`, `"UserPromptSubmit"`, `"PostToolUse"`, `"Stop"`, `"PermissionRequest"`, `"timeout":600`,
-		`"url":"http://127.0.0.1:7420/mcp/archi@specs"`, officeTools, onboardingPrompt,
+		officeTools, onboardingPrompt,
 	} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("command misses %q:\n%s", want, args)
 		}
+	}
+
+	if config := readPrivateFile(t, argValue(t, cmd.Args, "--mcp-config")); !strings.Contains(config, `"url":"http://127.0.0.1:7420/mcp/archi@specs"`) {
+		t.Fatalf("MCP configuration misses the office server: %s", config)
 	}
 
 	if strings.Contains(args, "--bare") {

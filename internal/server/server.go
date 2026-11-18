@@ -7,7 +7,8 @@
 //   - tickets.go:   /api/tickets*    tickets, as seen and handled by the human;
 //   - features.go:  /api/features    features and their git branches;
 //   - events.go:    /api/events      changes pushed to the control room (SSE);
-//   - settings.go:  /api/settings, /api/mcp  how the daemon runs, MCP servers;
+//   - settings.go:  /api/settings    how the daemon runs;
+//   - mcp.go:       /api/mcp*        MCP servers (ADR-0010);
 //   - hooks.go:     /internal/*      for nobody-hook, called by Claude Code hooks.
 package server
 
@@ -131,7 +132,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/events", s.streamEvents)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.updateSettings)
-	mux.HandleFunc("GET /api/mcp", s.listMCPServers)
+	s.routeMCP(mux)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.decideApproval)
 

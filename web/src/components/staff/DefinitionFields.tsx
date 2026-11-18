@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-
-import { type AgentDefinition, listMCPServers, PROFILES } from "@/lib/api";
+import { type AgentDefinition, PROFILES } from "@/lib/api";
 import ui from "../ui/ui.module.css";
+import { MCPExclusions } from "./MCPExclusions";
 import styles from "./staff.module.css";
 
 // The tools most agents are given; others can be typed.
@@ -18,24 +17,12 @@ interface Props {
 }
 
 // DefinitionFields edits the fields of an agent or template file: role,
-// expertise, model, permission profile and rules, tools, MCP servers, skills and the
-// instructions (docs/agents.md).
+// expertise, model, permission profile and rules, tools, the MCP servers or
+// tools it does not get (MCPExclusions), skills and the instructions
+// (docs/agents.md).
 export function DefinitionFields({ value, onChange, template = false }: Props) {
-  const [servers, setServers] = useState<string[]>([]);
   const set = (patch: Partial<AgentDefinition>) => onChange({ ...value, ...patch });
   const setPermissions = (patch: NonNullable<AgentDefinition["permissions"]>) => set({ permissions: { ...value.permissions, ...patch } });
-
-  useEffect(() => {
-    let cancelled = false;
-    listMCPServers()
-      .then((s) => !cancelled && setServers(s.map((x) => x.name)))
-      .catch(() => {
-        // Without the registry, MCP servers simply cannot be picked.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const tools = value.tools ?? [];
   const extraTools = tools.filter((t) => !COMMON_TOOLS.includes(t));
@@ -109,20 +96,7 @@ export function DefinitionFields({ value, onChange, template = false }: Props) {
           ))}
         </div>
       </div>
-      <div className={`${ui.label} ${styles.wide}`}>
-        MCP SERVERS (FROM .NOBODY/MCP.YAML)
-        <div className={styles.chips}>
-          {servers.length === 0 && <span className={styles.hint}>No server declared in this project.</span>}
-          {servers.map((s) => {
-            const on = (value.mcp ?? []).includes(s);
-            return (
-              <button key={s} type="button" className={`${ui.chip} ${on ? ui.chipOn : ""}`} aria-pressed={on} onClick={() => set({ mcp: toggle(value.mcp, s) })}>
-                {s}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <MCPExclusions value={value.mcp_exclude ?? []} onChange={(mcpExclude) => set({ mcp_exclude: mcpExclude })} />
       <label className={ui.label}>
         ALLOW RULES, ONE PER LINE
         <textarea

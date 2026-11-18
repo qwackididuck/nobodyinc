@@ -3,11 +3,13 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 )
 
@@ -18,6 +20,29 @@ type launched struct {
 	allowedTools   []string
 	allow, deny    []string
 	mcpServers     map[string]map[string]any
+	disallowed     string // "" when the flag is absent
+}
+
+// readPrivateFile reads the agent's MCP configuration, which must be
+// readable by the user only: it may hold secrets (ADR-0010).
+func readPrivateFile(t *testing.T, path string) string {
+	t.Helper()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("--mcp-config must be a file: %v", err)
+	}
+
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Fatalf("%s has mode %o, want 600", path, mode)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(data)
 }
 
 func launch(t *testing.T, o *org.Org, address string) launched {
@@ -30,7 +55,7 @@ func launch(t *testing.T, o *org.Org, address string) launched {
 
 	l := Launch{
 		ClaudePath: "/bin/claude", HookPath: "/opt/nobody-hook", DaemonURL: "http://127.0.0.1:7420",
-		WorkDir: func(string) string { return o.ProjectDir },
+		WorkDir: func(string) string { return o.ProjectDir }, MCPConfigDir: t.TempDir(),
 	}
 
 	cmd, err := l.Command(context.Background(), o, m, "")
@@ -54,8 +79,12 @@ func launch(t *testing.T, o *org.Org, address string) launched {
 	var mcp struct {
 		Servers map[string]map[string]any `json:"mcpServers"` //nolint:tagliatelle // Claude Code's format
 	}
-	decode(t, argValue(t, cmd.Args, "--mcp-config"), &mcp)
+	decode(t, readPrivateFile(t, argValue(t, cmd.Args, "--mcp-config")), &mcp)
+
 	got.mcpServers = mcp.Servers
+	if i := slices.Index(cmd.Args, "--disallowedTools"); i >= 0 {
+		got.disallowed = cmd.Args[i+1]
+	}
 
 	return got
 }
@@ -63,21 +92,23 @@ func launch(t *testing.T, o *org.Org, address string) launched {
 func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 	t.Parallel()
 
-	registry := map[string]org.MCPServer{
-		"gitlab":  {"type": "stdio", "command": "gitlab-mcp", "env": map[string]any{"GITLAB_TOKEN": "${GITLAB_TOKEN}"}}, //nolint:gosec // a ${VAR} reference, not a credential
-		"ragflow": {"type": "http", "url": "http://localhost:9380/mcp"},
+	servers := map[string]mcpservers.Server{
+		"gitlab": {Scope: mcpservers.ScopeProject, Config: mcpservers.Config{
+			"type": "stdio", "command": "gitlab-mcp", "env": map[string]any{"GITLAB_TOKEN": "${GITLAB_TOKEN}"}, //nolint:gosec // a ${VAR} reference, not a credential
+		}},
+		"ragflow": {Scope: mcpservers.ScopeUser, Config: mcpservers.Config{"type": "http", "url": "http://localhost:9380/mcp"}},
 	}
 
 	agent := func(name string, d catalog.Definition) org.Agent { return org.Agent{Name: name, Definition: d} }
 	o := &org.Org{
 		ProjectDir: "/tmp/project",
-		MCP:        registry,
+		MCP:        servers,
 		Teams: []org.Team{{ID: "dev", Agents: []org.Agent{
 			agent("plain", catalog.Definition{}),
 			agent("listed", catalog.Definition{
 				Permissions: catalog.Permissions{Profile: catalog.ProfileAllowlist, Allow: []string{"Bash(go test *)", "WebFetch"}, Deny: []string{"Read(./.env)"}},
 				Tools:       []string{"Read", "Grep"},
-				MCP:         []string{"gitlab"},
+				MCPExclude:  []string{"ragflow", "gitlab/delete_project", "ghost"},
 			}),
 			agent("auto", catalog.Definition{Permissions: catalog.Permissions{Profile: catalog.ProfileAuto}}),
 		}}},
@@ -96,8 +127,12 @@ func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 			t.Fatalf("default profile allows %v, want nothing", got.allow)
 		}
 
-		if len(got.mcpServers) != 1 || got.mcpServers[org.OfficeServer]["url"] != "http://127.0.0.1:7420/mcp/plain@dev" {
-			t.Fatalf("MCP servers = %v, want only the office", got.mcpServers)
+		if len(got.mcpServers) != 3 || got.mcpServers[org.OfficeServer]["url"] != "http://127.0.0.1:7420/mcp/plain@dev" {
+			t.Fatalf("MCP servers = %v, want the office and every server of the scopes", got.mcpServers)
+		}
+
+		if got.disallowed != "" {
+			t.Fatalf("disallowed tools = %q, want none: the agent excludes nothing", got.disallowed)
 		}
 
 		if !slices.Equal(got.allowedTools, strings.Split(officeTools, ",")) {
@@ -145,8 +180,8 @@ func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 			t.Errorf("gitlab server = %v, want the registry entry with its ${VAR} left as is", gitlab)
 		}
 
-		if _, ok := got.mcpServers["ragflow"]; ok {
-			t.Error("ragflow is in the registry but not listed by the agent: it must not be loaded")
+		if want := "mcp__ragflow,mcp__gitlab__delete_project,mcp__ghost"; got.disallowed != want {
+			t.Errorf("disallowed tools = %q, want %q (a whole server, one tool, and a server absent here)", got.disallowed, want)
 		}
 	})
 
@@ -182,17 +217,15 @@ func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 	})
 }
 
-func TestLaunchRefusesAnUndeclaredMCPServer(t *testing.T) {
+func TestLaunchNeedsADirectoryForTheMCPConfiguration(t *testing.T) {
 	t.Parallel()
 
-	o := &org.Org{Teams: []org.Team{{ID: "dev", Agents: []org.Agent{
-		{Name: "dev1", MCP: []string{"ghost"}},
-	}}}}
+	o := testOrg()
 	m, _ := o.Member("dev1@dev")
 
 	_, err := Launch{WorkDir: func(string) string { return "" }}.Command(context.Background(), o, m, "")
-	if err == nil || !strings.Contains(err.Error(), "ghost") {
-		t.Fatalf("error = %v, want one naming the undeclared server", err)
+	if err == nil || !strings.Contains(err.Error(), "MCPConfigDir") {
+		t.Fatalf("error = %v, want one about the missing directory", err)
 	}
 }
 
@@ -220,7 +253,7 @@ func TestLaunchResumesASession(t *testing.T) {
 
 	o := testOrg()
 	m, _ := o.Member("archi@specs")
-	l := Launch{WorkDir: func(string) string { return o.ProjectDir }}
+	l := Launch{WorkDir: func(string) string { return o.ProjectDir }, MCPConfigDir: t.TempDir()}
 
 	fresh, err := l.Command(context.Background(), o, m, "")
 	if err != nil {

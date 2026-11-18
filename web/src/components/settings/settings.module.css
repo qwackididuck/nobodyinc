@@ -181,6 +181,87 @@
   color: var(--text);
 }
 
+/* Where a server comes from (MCPServers). */
+.serverScope {
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font: 9px var(--font-label);
+  text-transform: uppercase;
+}
+
+.serverScope[data-scope="project"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.serverEdit {
+  margin-left: auto;
+}
+
+.serverRemove {
+  font: 12px var(--font-ui);
+}
+
+/* Arguments or a URL, hidden until revealed. */
+.hidden {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 2px dashed var(--line);
+  font: 13px var(--font-ui);
+  color: var(--muted);
+}
+
+.addServer {
+  gap: 14px;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.scopes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.scopes legend {
+  margin-bottom: 6px;
+  padding: 0;
+}
+
+.scope {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 13px;
+}
+
+.scope > span {
+  display: grid;
+}
+
+.scopeHelp {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.addActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .foot {
   margin-top: 10px;
   font-size: 12px;

@@ -4,7 +4,7 @@
 // Every change follows the same steps, one change at a time:
 //
 //  1. build the organization as it would be after the change, from the
-//     current snapshot, and validate it (unknown team, MCP server, profile...),
+//     current snapshot, and validate it (unknown team, profile, MCP exclusion...),
 //     so that nothing invalid is ever written;
 //  2. write the agent's file in the project's .nobody/ (or delete it);
 //  3. reload the organization from disk (org.Live);
@@ -55,6 +55,9 @@ type Service struct {
 	// after a change, with the snapshots before and after it, before the
 	// agents are brought in line with it.
 	OnReload func(before, after *org.Org)
+	// MCP writes MCP servers into Claude Code's scopes (mcp.go); nil refuses
+	// those changes.
+	MCP MCPWriter
 
 	mu sync.Mutex // one change at a time: each one starts from the latest snapshot
 }
@@ -320,13 +323,18 @@ func sharedPrompt(o *org.Org, m org.Member) string {
 }
 
 // changedAgents lists the agents added, removed or changed between two
-// snapshots of the organization, a change of their shared prompt included.
+// snapshots of the organization, a change of their shared prompt or of the
+// MCP servers included.
 func changedAgents(before, after *org.Org) []string {
 	var changed []string
 
+	// Every agent gets every MCP server: when they change, every agent is
+	// brought in line, resuming its session (MCP servers are launch flags).
+	newServers := !reflect.DeepEqual(before.MCP, after.MCP)
+
 	for _, m := range after.Members() {
 		old, ok := before.Member(m.Address)
-		if !ok || !reflect.DeepEqual(old.Agent, m.Agent) || sharedPrompt(before, old) != sharedPrompt(after, m) {
+		if !ok || newServers || !reflect.DeepEqual(old.Agent, m.Agent) || sharedPrompt(before, old) != sharedPrompt(after, m) {
 			changed = append(changed, m.Address)
 		}
 	}

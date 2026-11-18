@@ -18,7 +18,7 @@ task dev:daemon PROJECT=/path/to/project   # starts the agents
 task dev:web                            # control room on http://localhost:3000
 ```
 
-The organization lives in the project's `.nobody/` directory, committed with it: teams (with the teams each one blocks) and one markdown file per agent (see [`docs/agents.md`](docs/agents.md)). Your own agent templates go in `~/.nobody/catalog/`. A former `nobody.yaml` is migrated with `nobodyd -org nobody.yaml`.
+The organization lives in the project's `.nobody/` directory, committed with it: teams (with the teams each one blocks) and one markdown file per agent (see [`docs/agents.md`](docs/agents.md)). Your own agent templates go in `~/.nobody/catalog/`. Agents get the project's Claude Code configuration (`CLAUDE.md`, skills, commands, subagents) and every MCP server of the project's `.mcp.json` and of your own Claude Code configuration. A former `nobody.yaml` is migrated with `nobodyd -org nobody.yaml`.
 
 The project must be a git repository already trusted in Claude Code (open it once with `claude` and accept the trust prompt). Agents work there with the default permission mode: their permission requests show up in the control room, where you allow or deny them.
 

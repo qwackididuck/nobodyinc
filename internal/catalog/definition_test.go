@@ -25,7 +25,7 @@ permissions:
   allow: ["Bash(go test *)"]
   deny: ["Read(./.env)"]
 tools: [Read, Edit]
-mcp: [gitlab]
+mcp_exclude: [gitlab/delete_project, ragflow]
 skills: [drawio]
 from: dev@2
 on_leave: true
@@ -42,12 +42,12 @@ With tests.
 					Allow:   []string{"Bash(go test *)"},
 					Deny:    []string{"Read(./.env)"},
 				},
-				Tools:   []string{"Read", "Edit"},
-				MCP:     []string{"gitlab"},
-				Skills:  []string{"drawio"},
-				From:    "dev@2",
-				OnLeave: true,
-				Prompt:  "You write Go.\nWith tests.",
+				Tools:      []string{"Read", "Edit"},
+				MCPExclude: []string{"gitlab/delete_project", "ragflow"},
+				Skills:     []string{"drawio"},
+				From:       "dev@2",
+				OnLeave:    true,
+				Prompt:     "You write Go.\nWith tests.",
 			},
 		},
 		{
@@ -135,7 +135,7 @@ func TestFormatRoundTrip(t *testing.T) {
 			def: Definition{
 				Description: "d", Version: 2, Role: "r", Model: "opus",
 				Permissions: Permissions{Profile: ProfileAuto, Allow: []string{"Edit"}, Deny: []string{"Read(./.env)"}},
-				Tools:       []string{"Read"}, MCP: []string{"gitlab"}, Skills: []string{"drawio"},
+				Tools:       []string{"Read"}, MCPExclude: []string{"gitlab"}, Skills: []string{"drawio"},
 				From: "dev@1", OnLeave: true, Prompt: "Line 1\n\nLine 2",
 			},
 		},

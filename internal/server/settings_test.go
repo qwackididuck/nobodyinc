@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
@@ -127,11 +129,19 @@ func settingsEnv(t *testing.T, live *settings.Live) testEnv {
 
 	o := &org.Org{
 		ProjectDir: "/work/shop",
-		MCP: map[string]org.MCPServer{
-			"gitlab":  {"command": "gitlab-mcp", "args": []any{"--read-only"}, "env": map[string]any{"GITLAB_TOKEN": "${GITLAB_TOKEN}", "GITLAB_URL": "${GITLAB_URL:-https://gitlab.com}"}}, //nolint:gosec // references, not credentials
-			"ragflow": {"type": "http", "url": "http://localhost:9380/mcp", "headers": map[string]any{"Authorization": "Bearer ${RAGFLOW_KEY}"}},
+		MCP: map[string]mcpservers.Server{
+			"gitlab": {Scope: mcpservers.ScopeProject, Config: mcpservers.Config{
+				"command": "gitlab-mcp", "args": []any{"--token", "glpat-literal"},
+				"env": map[string]any{"GITLAB_TOKEN": "${GITLAB_TOKEN}", "GITLAB_URL": "${GITLAB_URL:-https://gitlab.com}"}, //nolint:gosec // references, not credentials
+			}},
+			"ragflow": {Scope: mcpservers.ScopeUser, Config: mcpservers.Config{
+				"type": "http", "url": "https://me@rag.example/mcp?key=literal",
+				"headers": map[string]any{"Authorization": "Bearer ${RAGFLOW_KEY}"},
+			}},
 		},
-		Teams: []org.Team{{ID: "dev", Agents: []org.Agent{{Name: "dev1", MCP: []string{"gitlab"}}}}},
+		Teams: []org.Team{{ID: "dev", Agents: []org.Agent{
+			{Name: "dev1", Definition: catalog.Definition{MCPExclude: []string{"gitlab", "ragflow/delete_document"}}}, //nolint:modernize // clearer with the field named
+		}}},
 	}
 	env := map[string]string{"GITLAB_TOKEN": "secret", "GITLAB_URL": ""}
 
@@ -206,8 +216,10 @@ func TestListMCPServers(t *testing.T) {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
 
-	if body := rec.Body.String(); strings.Contains(body, "secret") || strings.Contains(body, "Bearer") {
-		t.Fatalf("a secret leaked: %s", body)
+	for _, secret := range []string{"secret", "Bearer", "glpat-literal", "literal", "me@"} {
+		if body := rec.Body.String(); strings.Contains(body, secret) {
+			t.Fatalf("%q leaked: %s", secret, body)
+		}
 	}
 
 	var got []mcpServerView
@@ -216,10 +228,10 @@ func TestListMCPServers(t *testing.T) {
 	}
 
 	want := []mcpServerView{
-		{Name: "gitlab", Type: "stdio", Target: "gitlab-mcp --read-only",
-			Env: []envVarState{{Name: "GITLAB_TOKEN", Set: true}, {Name: "GITLAB_URL", Set: false}}, UsedBy: []string{"dev1@dev"}},
-		{Name: "ragflow", Type: "http", Target: "http://localhost:9380/mcp",
-			Env: []envVarState{{Name: "RAGFLOW_KEY", Set: false}}, UsedBy: []string{}},
+		{Name: "gitlab", Source: mcpservers.ScopeProject, Type: "stdio", Target: "gitlab-mcp",
+			Env: []envVarState{{Name: "GITLAB_TOKEN", Set: true}, {Name: "GITLAB_URL", Set: false}}, ExcludedBy: []string{"dev1@dev"}},
+		{Name: "ragflow", Source: mcpservers.ScopeUser, Type: "http", Target: "https://rag.example/mcp",
+			Env: []envVarState{{Name: "RAGFLOW_KEY", Set: false}}, ExcludedBy: []string{}},
 	}
 
 	gotJSON, _ := json.Marshal(got)   //nolint:errchkjson // plain structs

@@ -572,11 +572,15 @@ paths:
   /api/mcp:
     get:
       operationId: listMCPServers
-      summary: MCP servers declared in the project's .nobody/mcp.yaml
+      summary: MCP servers every agent gets, from Claude Code's three scopes
       description: |
-        Read-only. Secrets are never returned: only the names of the
-        environment variables a server refers to (`${NAME}`), and whether the
-        daemon's environment sets them. The office server `nobody` is not
+        The servers of the project (.mcp.json), of the user on this project
+        (local scope) and of the user (user scope), read from Claude Code's
+        own files and merged, the project winning on a name conflict
+        (ADR-0010). No value is ever returned in clear: only the names of the
+        environment variables a server refers to (`${NAME}`) and whether the
+        daemon's environment sets them, the command without its arguments,
+        or the URL without its query. The office server `nobody` is not
         listed: every agent gets it.
       responses:
         "200":
@@ -587,6 +591,162 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/MCPServer"
+    post:
+      operationId: addMCPServer
+      summary: Add or replace an MCP server in one of Claude Code's scopes
+      description: |
+        Written by Claude Code itself (`claude mcp add-json --scope`), in the
+        project's main checkout. Every value of env and headers must refer to
+        an environment variable (`${GITLAB_TOKEN}`, `Bearer ${TOKEN}`): a
+        secret is never written. Every agent restarts once idle, resuming
+        its session, to get the new server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPServerInput"
+      responses:
+        "201":
+          description: Server added; the list after the change
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/mcp/{name}:
+    get:
+      operationId: getMCPServer
+      summary: One MCP server, to edit it
+      description: |
+        The server every agent gets under this name (the winning scope), with
+        its command, arguments and URL in full: the control room hides them
+        until the human reveals them. Env and headers values that refer to
+        an environment variable are returned as written (`${GITLAB_TOKEN}`);
+        a value written in clear is never returned: it comes back empty and
+        is listed in `clear_values`.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPServerDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: updateMCPServer
+      summary: Change an MCP server in its scope
+      description: |
+        Replaces the server's transport (type, command, args, url) and its
+        env or headers, in the scope it comes from; its other keys (e.g. a
+        timeout) are kept. Written by Claude Code itself, like an addition.
+        Every env and headers value must refer to an environment variable:
+        a value written in clear must be replaced by one. Every agent
+        restarts once idle, resuming its session.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, server]
+              additionalProperties: false
+              properties:
+                scope:
+                  $ref: "#/components/schemas/MCPScope"
+                server:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Server changed; the list after the change
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: removeMCPServer
+      summary: Remove an MCP server from one of Claude Code's scopes
+      description: |
+        Removed by Claude Code itself (`claude mcp remove --scope`). Every
+        agent restarts once idle, resuming its session.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/MCPScope"
+      responses:
+        "204":
+          description: Server removed
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/mcp/{name}/tools:
+    get:
+      operationId: listMCPTools
+      summary: The tools an MCP server offers
+      description: |
+        The daemon starts the server (or reaches it), with its environment
+        variables expanded from the daemon's environment, asks for its tools
+        and stops it. Used to choose the tools an agent does not get
+        (mcp_exclude). Fails when a variable it needs is not set, or when the
+        server does not answer in time.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tools, by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+        "404":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
 
   /api/features:
     get:
@@ -1187,9 +1347,13 @@ components:
         tools:
           type: array
           items: {type: string}
-        mcp:
+        mcp_exclude:
           type: array
-          description: Servers of the project's .nobody/mcp.yaml.
+          description: |
+            MCP servers ("gitlab") or single tools ("gitlab/delete_project")
+            the agent does not get. Every agent gets every server of the
+            project, of the user on this project and of the user (ADR-0010);
+            an exclusion naming a server absent from this machine is ignored.
           items: {type: string}
         skills:
           type: array
@@ -1349,18 +1513,67 @@ components:
           type: string
           enum: [block, warn]
 
-    MCPServer:
+    MCPScope:
+      type: string
+      enum: [project, local, user]
+      description: |
+        Claude Code's MCP scopes (ADR-0010): project is .mcp.json, committed
+        with the project; local is the user on this project only; user is
+        the user on all their projects (both in ~/.claude.json).
+
+    MCPServerInput:
       type: object
-      required: [name, type, target, env, used_by]
+      required: [name, scope, server]
+      additionalProperties: false
       properties:
         name:
           type: string
+          pattern: "^[A-Za-z0-9_-]+$"
+          description: The server's name; nobody is reserved for the office server.
+        scope:
+          $ref: "#/components/schemas/MCPScope"
+        server:
+          type: object
+          description: |
+            The server in Claude Code's format: type (stdio, http or sse),
+            command and args, or url, and env or headers whose values refer
+            to environment variables.
+          additionalProperties: true
+
+    MCPServerDetail:
+      type: object
+      required: [name, source, server, clear_values]
+      properties:
+        name:
+          type: string
+        source:
+          $ref: "#/components/schemas/MCPScope"
+        server:
+          type: object
+          description: |
+            type, command, args, url, and env and headers whose values in
+            clear are emptied.
+          additionalProperties: true
+        clear_values:
+          type: array
+          description: The env and headers values written in clear, as "env.NAME" or "headers.NAME".
+          items:
+            type: string
+
+    MCPServer:
+      type: object
+      required: [name, source, type, target, env, excluded_by]
+      properties:
+        name:
+          type: string
+        source:
+          $ref: "#/components/schemas/MCPScope"
         type:
           type: string
           description: stdio, http or sse.
         target:
           type: string
-          description: The command and its arguments (stdio), or the URL.
+          description: The command without its arguments (stdio), or the URL without its query (http, sse).
         env:
           type: array
           description: Environment variables the server refers to as ${NAME}.
@@ -1372,9 +1585,9 @@ components:
                 type: string
               set:
                 type: boolean
-        used_by:
+        excluded_by:
           type: array
-          description: Addresses of the agents given this server.
+          description: Addresses of the agents that exclude the whole server (mcp_exclude).
           items:
             type: string
 

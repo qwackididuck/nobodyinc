@@ -41,7 +41,7 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 | `approvals.changed` | `{}` | a permission request is added or answered | `approval.Queue.OnChange` |
 | `tickets.changed` | `{id}` | a ticket is created or changed, commented, or gets a deliverable | the ticket service's store, wrapped in `daemon/events.go` |
 | `features.changed` | `{id}` | a feature is proposed, started, refused or activated | the same wrapper |
-| `org.changed` | `{}` | the organization is reloaded after a change: an agent recruited, created, edited, put on leave, brought back or dismissed (director included); a team created, edited (goal, prompt, block list) or deleted; the project prompt changed | `staffing.Service.OnReload` |
+| `org.changed` | `{}` | the organization is reloaded after a change: an agent recruited, created, edited, put on leave, brought back or dismissed (director included); a team created, edited (goal, prompt, block list) or deleted; the project prompt changed; an MCP server added, edited or removed through the API | `staffing.Service.OnReload` |
 | `catalog.changed` | `{}` | a template is saved or deleted | `server/staff.go` |
 
 The wiring is in `internal/daemon/daemon.go` (`announce` and `New`); the bus is `internal/events`.

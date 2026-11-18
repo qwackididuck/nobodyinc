@@ -481,3 +481,39 @@
     position: static;
   }
 }
+
+/* The MCP servers an agent gets or not (MCPExclusions). */
+.mcpServers {
+  display: grid;
+  gap: 8px;
+}
+
+.mcpServer {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 2px solid var(--line);
+}
+
+.mcpServerHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  font: 13px var(--font-ui);
+  color: var(--text);
+}
+
+.mcpTools {
+  display: grid;
+  gap: 4px;
+  padding-left: 22px;
+}
+
+.mcpTool {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font: 12px var(--font-ui);
+  color: var(--text);
+}

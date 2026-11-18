@@ -25,7 +25,7 @@ you ──── request ──────────────────�
                                                 assigns them, follows the progress
 ```
 
-1. **The need.** It clarifies your request until the need and its acceptance criteria are clear and testable, reading the project and the documentation MCP servers it was given (add them to its definition, e.g. `mcp: [ragflow, gitlab]`, once declared in `.nobody/mcp.yaml`).
+1. **The need.** It clarifies your request until the need and its acceptance criteria are clear and testable, reading the project and the documentation MCP servers every agent gets (the project's `.mcp.json` and your own Claude Code servers, `docs/agents.md`, "MCP servers").
 2. **The proposal.** It proposes a feature with `feature_propose`. Nothing happens yet: the proposal shows in its chat, with **Start** and **Refuse**, and in the banner above the office.
    - **Start** creates the feature branch and the teams' worktrees, makes it the active feature, restarts the team agents there (not the director, which keeps the conversation), and answers `agree` to the director.
    - **Refuse** answers `refuse` with your reason; it can work on it with you and propose again.

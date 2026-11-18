@@ -44,7 +44,9 @@ export interface AgentDefinition {
   model?: string;
   permissions?: { profile?: PermissionProfile; allow?: string[]; deny?: string[] };
   tools?: string[];
-  mcp?: string[];
+  // MCP servers ("gitlab") or single tools ("gitlab/delete_project") the
+  // agent does not get; it gets every other server (ADR-0010).
+  mcp_exclude?: string[];
   skills?: string[];
   from?: string;
   on_leave?: boolean;
@@ -449,17 +451,83 @@ export function setConfigProtection(value: ConfigProtection): Promise<Settings> 
   return sendJSON<Settings>("PUT", "/api/settings", { config_protection: value });
 }
 
+// Claude Code's MCP scopes (ADR-0010): project is .mcp.json, committed; local
+// is the user on this project only; user is the user on all their projects.
+export type MCPScope = "project" | "local" | "user";
+
+// An MCP server every agent gets, without any value in clear.
 export interface MCPServer {
   name: string;
+  source: MCPScope;
   type: string;
+  // The command without its arguments, or the URL without its query.
   target: string;
   // Environment variables the server refers to as ${NAME}; never their value.
   env: { name: string; set: boolean }[];
-  used_by: string[];
+  // Agents that exclude the whole server.
+  excluded_by: string[];
 }
 
 export function listMCPServers(): Promise<MCPServer[]> {
   return getJSON<MCPServer[]>("/api/mcp");
+}
+
+// MCPServerInput adds a server to one scope. The server is in Claude Code's
+// format; every env and headers value must refer to an environment variable
+// (${NAME}): secrets are never written.
+export interface MCPServerInput {
+  name: string;
+  scope: MCPScope;
+  server: {
+    type: "stdio" | "http" | "sse";
+    command?: string;
+    args?: string[];
+    url?: string;
+    env?: Record<string, string>;
+    headers?: Record<string, string>;
+  };
+}
+
+// addMCPServer writes the server through Claude Code; every agent restarts
+// once idle to get it. Returns the servers after the change.
+export function addMCPServer(input: MCPServerInput): Promise<MCPServer[]> {
+  return postJSON<MCPServer[]>("/api/mcp", input);
+}
+
+// removeMCPServer removes the server from its scope; every agent restarts
+// once idle.
+export function removeMCPServer(name: string, scope: MCPScope): Promise<void> {
+  return send("DELETE", `/api/mcp/${encodeURIComponent(name)}?scope=${scope}`);
+}
+
+// MCPServerDetail is a server to edit: its command, arguments and URL (to
+// hide until revealed), and env and headers whose values written in clear
+// come back empty, listed in clear_values ("env.NAME", "headers.NAME").
+export interface MCPServerDetail {
+  name: string;
+  source: MCPScope;
+  server: MCPServerInput["server"];
+  clear_values: string[];
+}
+
+export function getMCPServer(name: string): Promise<MCPServerDetail> {
+  return getJSON<MCPServerDetail>(`/api/mcp/${encodeURIComponent(name)}`);
+}
+
+// updateMCPServer changes a server in its scope, keeping the keys the form
+// does not know; every agent restarts once idle.
+export function updateMCPServer(name: string, scope: MCPScope, server: MCPServerInput["server"]): Promise<MCPServer[]> {
+  return sendJSON<MCPServer[]>("PUT", `/api/mcp/${encodeURIComponent(name)}`, { scope, server });
+}
+
+export interface MCPTool {
+  name: string;
+  description?: string;
+}
+
+// listMCPTools has the daemon start the server and ask for its tools.
+export function listMCPTools(name: string): Promise<MCPTool[]> {
+  return getJSON<MCPTool[]>(`/api/mcp/${encodeURIComponent(name)}/tools`);
 }
 
 export async function sendMessage(draft: HumanDraft): Promise<Message> {

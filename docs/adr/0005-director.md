@@ -1,6 +1,6 @@
 # ADR-0005 — The director ("god")
 
-- Status: accepted
+- Status: accepted; "no channel is needed" predates ADR-0009: flows are open, and the director is never blocked
 - Date: 2026-11-13
 
 ## Context
