@@ -86,7 +86,13 @@ func TestFinishFeature(t *testing.T) {
 		return os.IsNotExist(err)
 	})
 
-	if branches := git(t, o.ProjectDir, "branch", "--list", "nobody/*"); strings.Contains(branches, "--dev") || !strings.Contains(branches, f.Branch) {
-		t.Fatalf("team branches should be gone and the feature branch kept:\n%s", branches)
+	// The team branches go after the worktrees, in the same background
+	// cleanup (daemon.onFeatureFinished): wait for them too.
+	eventually(t, "the team branches removed", func() bool {
+		return !strings.Contains(git(t, o.ProjectDir, "branch", "--list", "nobody/*"), "--dev")
+	})
+
+	if branches := git(t, o.ProjectDir, "branch", "--list", "nobody/*"); !strings.Contains(branches, f.Branch) {
+		t.Fatalf("the feature branch should be kept:\n%s", branches)
 	}
 }

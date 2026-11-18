@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"sync"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
@@ -86,6 +87,11 @@ type Daemon struct {
 	// WorkDir is the directory an agent works in: its team's worktree for the
 	// active feature, or the project.
 	WorkDir func(address string) string
+
+	// background tracks the work started when a feature starts or ends
+	// (agents moved, worktrees and branches removed), which Close waits for:
+	// it runs git in the project, which must be done before the daemon stops.
+	background *sync.WaitGroup
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
@@ -99,6 +105,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	bus := events.NewBus()
 	context.AfterFunc(ctx, bus.Close)
+
+	background := &sync.WaitGroup{}
 
 	userSettings := opts.Settings
 	if userSettings.ConfigProtection == "" {
@@ -182,11 +190,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	tickets.OnFeatureStarted = func(f work.Feature) {
 		git.activate(f)
 
-		go func() {
+		background.Go(func() {
 			if err := supervisor.RestartAll(context.WithoutCancel(ctx)); err != nil {
 				opts.Logger.Error("restart agents for the new feature", "feature", f.ID, "err", err)
 			}
-		}()
+		})
 	}
 
 	// The director's feature proposals travel as messages (proposals.go).
@@ -194,7 +202,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	tickets.OnFeatureProposed = featureProposals.onProposed
 	tickets.OnFeatureDecided = featureProposals.onDecided
 
-	tickets.OnFeatureFinished = onFeatureFinished(ctx, opts, git, supervisor, featureProposals)
+	tickets.OnFeatureFinished = onFeatureFinished(ctx, opts, git, supervisor, featureProposals, background)
 	tickets.OnTicketDeleted = onTicketDeleted(ctx, messages, opts.Logger)
 
 	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
@@ -253,6 +261,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Events:     bus,
 		Staff:      staffService,
 		WorkDir:    git.workDir,
+		background: background,
 	}, nil
 }
 
@@ -260,7 +269,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 // is finished, then removes its worktrees when nobody works in them any more,
 // and tells the director (ADR-0007).
 func onFeatureFinished(
-	ctx context.Context, opts Options, git *gitWorkspace, supervisor *runtime.Supervisor, p *proposals,
+	ctx context.Context, opts Options, git *gitWorkspace, supervisor *runtime.Supervisor, p *proposals, background *sync.WaitGroup,
 ) func(work.Feature) {
 	return func(f work.Feature) {
 		git.deactivate()
@@ -273,7 +282,7 @@ func onFeatureFinished(
 		ctx := context.WithoutCancel(ctx)
 		p.onFinished(ctx, director, f)
 
-		go func() {
+		background.Go(func() {
 			if err := supervisor.RestartAll(ctx); err != nil {
 				opts.Logger.Error("restart agents after the feature", "feature", f.ID, "err", err)
 			}
@@ -281,7 +290,7 @@ func onFeatureFinished(
 			if err := git.cleanup(ctx, f); err != nil {
 				opts.Logger.Error("remove the feature's worktrees", "feature", f.ID, "err", err)
 			}
-		}()
+		})
 	}
 }
 
@@ -318,8 +327,10 @@ func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, appr
 	}
 }
 
-// Close stops every agent and closes the database.
+// Close waits for the feature work still running in the background, then
+// stops every agent and closes the database.
 func (d *Daemon) Close() error {
+	d.background.Wait()
 	d.Supervisor.StopAll()
 
 	return d.Store.Close()
