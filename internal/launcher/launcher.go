@@ -69,6 +69,16 @@ type Options struct {
 	PingInterval time.Duration
 	// StartTimeout bounds a project daemon's start (DefaultStartTimeout).
 	StartTimeout time.Duration
+	// UI serves the control room at / (webui.Handler, ADR-0016); nil serves
+	// nothing there (development: next dev serves it).
+	UI http.Handler
+	// OnHeld, when set, is called when a window asks for a project another
+	// connected window holds, with that window's id: it reports whether it
+	// brought that window to the front (the desktop app, ADR-0016).
+	OnHeld func(project, holder string) bool
+	// OpenWindow, when set, opens a new window of the desktop app, on a
+	// project or on the projects page (""): POST /api/windows (windows.go).
+	OpenWindow func(project string) error
 }
 
 // Launcher runs the projects' daemons. Build it with New, serve Handler,
@@ -145,6 +155,15 @@ func (l *Launcher) Close() {
 	wg.Wait()
 }
 
+// Release lets go at once of the project a window holds, if any: the
+// desktop app closed the window (ADR-0016). Its daemon stops, without the
+// grace period a dropped connection gets.
+func (l *Launcher) Release(window string) {
+	if l.leases.releaseWindow(window) {
+		l.opts.Logger.Info("window closed: project released", "window", window)
+	}
+}
+
 func (l *Launcher) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", l.health)
@@ -155,7 +174,30 @@ func (l *Launcher) routes() http.Handler {
 	mux.HandleFunc("GET /api/fs/dirs", l.listDirs)
 	mux.HandleFunc("/p/{project}/", l.proxyToProject)
 
+	if l.opts.OpenWindow != nil {
+		mux.HandleFunc("POST /api/windows", l.openWindow)
+	}
+
+	if l.opts.UI != nil {
+		// "/" without a method: "GET /" would conflict with "/p/{project}/".
+		mux.Handle("/", readOnly(l.opts.UI))
+	}
+
 	return server.GuardCrossSite(l.opts.Origins, mux)
+}
+
+// readOnly lets only GET and HEAD requests through to h.
+func readOnly(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			writeError(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
+
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
 }
 
 // start starts the project's daemon in the background, unless it runs

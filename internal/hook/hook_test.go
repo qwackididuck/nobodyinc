@@ -192,20 +192,53 @@ func messageIDs(messages []messaging.Message) []string {
 	return ids
 }
 
-func TestPreloadResponse(t *testing.T) {
+func TestSessionStartResponse(t *testing.T) {
 	t.Parallel()
 
-	if PreloadResponse(nil) != nil {
-		t.Fatal("no preloaded skill should give no response")
+	review := []skills.Preloaded{{Name: "review", Dir: "/p/.claude/skills/review", Body: "Check the tests."}}
+	skill := "<preloaded_skill name=\"review\" dir=\"/p/.claude/skills/review\">\nCheck the tests.\n</preloaded_skill>"
+	reopen := "Nobody Inc reopened the project."
+
+	tests := []struct {
+		name      string
+		preloaded []skills.Preloaded
+		reopen    string
+		want      []string // in this order
+	}{
+		{name: "nothing to say"},
+		{name: "preloaded skills", preloaded: review, want: []string{skill}},
+		{name: "reopened project", reopen: reopen, want: []string{reopen}},
+		{name: "both: the organization first", preloaded: review, reopen: reopen, want: []string{reopen, skill}},
 	}
 
-	r := PreloadResponse([]skills.Preloaded{{Name: "review", Dir: "/p/.claude/skills/review", Body: "Check the tests."}})
-	if r == nil || r.HookSpecificOutput == nil || r.HookSpecificOutput.HookEventName != EventSessionStart {
-		t.Fatalf("response = %+v", r)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	got := r.HookSpecificOutput.AdditionalContext
-	if want := "<preloaded_skill name=\"review\" dir=\"/p/.claude/skills/review\">\nCheck the tests.\n</preloaded_skill>"; !strings.Contains(got, want) {
-		t.Errorf("context lacks %q:\n%s", want, got)
+			r := SessionStartResponse(tt.preloaded, tt.reopen)
+			if len(tt.want) == 0 {
+				if r != nil {
+					t.Fatalf("response = %+v, want none", r)
+				}
+
+				return
+			}
+
+			if r == nil || r.HookSpecificOutput == nil || r.HookSpecificOutput.HookEventName != EventSessionStart {
+				t.Fatalf("response = %+v", r)
+			}
+
+			got := r.HookSpecificOutput.AdditionalContext
+			at := 0
+
+			for _, want := range tt.want {
+				i := strings.Index(got[at:], want)
+				if i < 0 {
+					t.Fatalf("context lacks %q after position %d:\n%s", want, at, got)
+				}
+
+				at += i + len(want)
+			}
+		})
 	}
 }

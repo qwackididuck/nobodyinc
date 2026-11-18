@@ -77,21 +77,33 @@ const preloadIntro = "Skills preloaded for you (your agent file lists them under
 	"If an earlier copy of a skill appears in this conversation, this one replaces it. " +
 	"Paths in a skill are relative to its dir."
 
-// PreloadResponse builds the answer to a SessionStart event: the
-// instructions of the skills the agent preloads, as extra context; nil when
-// there are none.
-func PreloadResponse(preloaded []skills.Preloaded) *Response {
-	if len(preloaded) == 0 {
+// SessionStartResponse builds the answer to a SessionStart event, as extra
+// context: reopen, the context of a session resumed because the project
+// opened again (ADR-0015, "" for none), then the instructions of the skills
+// the agent preloads (ADR-0011); nil when there is neither.
+func SessionStartResponse(preloaded []skills.Preloaded, reopen string) *Response {
+	if len(preloaded) == 0 && reopen == "" {
 		return nil
 	}
 
 	var b strings.Builder
 
-	b.WriteString(preloadIntro)
-	b.WriteString("\n")
+	if reopen != "" {
+		b.WriteString(reopen)
+		b.WriteString("\n")
+	}
 
-	for _, p := range preloaded {
-		fmt.Fprintf(&b, "\n<preloaded_skill name=%q dir=%q>\n%s\n</preloaded_skill>\n", p.Name, p.Dir, p.Body)
+	if len(preloaded) > 0 {
+		if reopen != "" {
+			b.WriteString("\n")
+		}
+
+		b.WriteString(preloadIntro)
+		b.WriteString("\n")
+
+		for _, p := range preloaded {
+			fmt.Fprintf(&b, "\n<preloaded_skill name=%q dir=%q>\n%s\n</preloaded_skill>\n", p.Name, p.Dir, p.Body)
+		}
 	}
 
 	return &Response{HookSpecificOutput: &SpecificOutput{

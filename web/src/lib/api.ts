@@ -445,13 +445,23 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-// WebSockets (terminals, holding a project) go straight to the launcher: the
-// Next.js proxy does not carry them. The launcher passes a terminal on to the
-// project's daemon.
-export const launcherWS = process.env.NEXT_PUBLIC_NOBODY_DAEMON_WS ?? "ws://127.0.0.1:7420";
+// launcherWS is where WebSockets (terminals, holding a project) reach the
+// launcher, which passes a terminal on to the project's daemon:
+//   - the page's own origin when the launcher serves the control room (the
+//     static export, ADR-0016);
+//   - with `next dev`, straight to the launcher, ws://127.0.0.1:7420 by
+//     default: the Next.js proxy does not carry WebSockets.
+export function launcherWS(): string {
+  const configured = process.env.NEXT_PUBLIC_NOBODY_DAEMON_WS;
+  if (configured) return configured;
+  if (process.env.NEXT_PUBLIC_NOBODY_STATIC === "1") {
+    return `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`;
+  }
+  return "ws://127.0.0.1:7420";
+}
 
 export function terminalURL(address: string): string {
-  return `${launcherWS}${projectPath(`/api/agents/${encodeURIComponent(address)}/terminal`)}`;
+  return `${launcherWS()}${projectPath(`/api/agents/${encodeURIComponent(address)}/terminal`)}`;
 }
 
 export function listAgents(): Promise<Agent[]> {

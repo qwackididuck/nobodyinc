@@ -4,7 +4,7 @@ import { createContext, type ReactNode, useContext, useEffect, useState } from "
 
 import { type Agent, listAgents, setProject } from "@/lib/api";
 import { useLive } from "@/lib/live";
-import { type Hold, projectURL, useHold } from "@/lib/window";
+import { type Hold, openWindow, projectURL, useHold } from "@/lib/window";
 import { Modal } from "../ui/Modal";
 import ui from "../ui/ui.module.css";
 import { BareTopBar } from "./BareTopBar";
@@ -57,9 +57,15 @@ export function ProjectWindow({ project, takeover, children }: Props) {
     if (takeover) window.history.replaceState(null, "", projectURL(project));
   }, [takeover, project]);
 
+  // In the desktop app, a project open in another window is brought to the
+  // front instead (ADR-0016): this window goes back to the projects page.
+  useEffect(() => {
+    if (hold.status === "shownElsewhere") window.location.assign(projectURL(null));
+  }, [hold.status]);
+
   async function go(url: string, newWindow = false) {
     if (newWindow) {
-      window.open(url, "_blank");
+      openWindow(url);
       return;
     }
     const working = hold.status === "running" ? (await listAgents().catch(() => [])).filter((a) => a.status === "working") : [];

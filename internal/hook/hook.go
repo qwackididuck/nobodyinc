@@ -17,7 +17,8 @@
 // Any other event is ignored here. Two events are not about mail and are
 // handled by the daemon itself: PermissionRequest (the approval queue,
 // docs/approvals.md) and SessionStart, which hands the agent the skills it
-// preloads (PreloadResponse, ADR-0011).
+// preloads (ADR-0011) and, when a project opens again, its current
+// organization (ADR-0015); see SessionStartResponse.
 //
 // Delivery is "at least once": Handle only decides what to say. The messages
 // are marked delivered once nobody-hook confirms it printed the answer, so a
@@ -43,7 +44,7 @@ const (
 	// the approval queue (internal/approval), see PermissionResponse.
 	EventPermissionRequest = "PermissionRequest"
 	// EventSessionStart is not about mail either: the daemon hands the agent
-	// the skills it preloads, see PreloadResponse.
+	// the skills it preloads, see SessionStartResponse.
 	EventSessionStart = "SessionStart"
 )
 

@@ -116,7 +116,18 @@ export async function projectActivity(id: string): Promise<ProjectActivity> {
 export function attachURL(project: string, window: string, takeover: boolean): string {
   const params = new URLSearchParams({ window });
   if (takeover) params.set("takeover", "true");
-  return `${launcherWS}/api/projects/${encodeURIComponent(project)}/attach?${params}`;
+  return `${launcherWS()}/api/projects/${encodeURIComponent(project)}/attach?${params}`;
+}
+
+// openDesktopWindow asks the desktop app for a new window, on a project or
+// on the projects page (ADR-0016).
+export async function openDesktopWindow(project?: string): Promise<void> {
+  const res = await fetch("/api/windows", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(project ? { project } : {}),
+  });
+  if (!res.ok) throw new Error(await res.text());
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

@@ -64,8 +64,8 @@ func newApplySupervisor(t *testing.T) (*Supervisor, *mutableOrg, *launches) {
 		Org:      source,
 		Statuses: NewStatuses(),
 		Logger:   slog.New(slog.DiscardHandler),
-		NewCommand: func(ctx context.Context, _ *org.Org, _ org.Member, resume string) (*exec.Cmd, error) {
-			started.add(resume)
+		NewCommand: func(ctx context.Context, _ *org.Org, _ org.Member, resume Resume) (*exec.Cmd, error) {
+			started.add(resume.Session)
 
 			return exec.CommandContext(ctx, "cat"), nil
 		},
@@ -358,11 +358,11 @@ func TestSessionIsOnlyResumedInItsDirectory(t *testing.T) {
 		Org:      &mutableOrg{o: applyOrg(false)},
 		Statuses: NewStatuses(),
 		Logger:   slog.New(slog.DiscardHandler),
-		NewCommand: func(ctx context.Context, _ *org.Org, _ org.Member, resume string) (*exec.Cmd, error) {
+		NewCommand: func(ctx context.Context, _ *org.Org, _ org.Member, resume Resume) (*exec.Cmd, error) {
 			mu.Lock()
 			defer mu.Unlock()
 
-			resumes = append(resumes, resume)
+			resumes = append(resumes, resume.Session)
 			cmd := exec.CommandContext(ctx, "cat")
 			cmd.Dir = dir
 

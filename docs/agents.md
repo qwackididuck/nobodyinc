@@ -261,4 +261,17 @@ The control room's **Staff** tab drives these endpoints. Its first view, Staff, 
 
 If the daemon stops while a leave or dismissal still waits for the end of a turn, the hand-over happens at its next start: tickets in progress of agents on leave or no longer in the organization go back to their team's queue, and the undelivered mail of departed agents is returned.
 
+### Sessions across openings
+
+A project runs only while a window holds it (`projects.md`), so its daemon stops and starts often. Its agents keep their Claude Code sessions across these restarts (ADR-0015, `internal/runtime/sessions.go`):
+
+- **What the daemon remembers**: for each agent, in its database (`agent_sessions`), the session ID its hooks report, the directory the session started in, and whether the agent is in the middle of a turn (updated at each `working` / `idle` change; a stop with the daemon changes nothing). An agent that starts with a fresh session (recruited, edited with a new role or instructions, "new session", moved to a feature's worktree...) replaces it.
+- **Opening the project** (`Supervisor.StartAll`): an agent whose remembered session started where it works now resumes it with `claude --resume <session>`:
+  - **idle** when the daemon stopped: no prompt. Claude Code runs no turn; the agent's `SessionStart` hook hands it the current organization (it may have changed while the project was closed: Claude Code keeps the system prompt of the session's first start) with its preloaded skills, and makes it `idle`, ready for its mail. Nothing is paid until it has something to do, and that next turn would have read the conversation without the prompt cache anyway (the cache lasts minutes);
+  - **in the middle of a turn**: a short prompt tells it its session was interrupted and to carry on (with its mail, if any); it gets the current organization the same way;
+  - otherwise (no session remembered, another directory, e.g. a feature started or finished meanwhile) it starts afresh, with the onboarding turn.
+- **A lost session**: resuming a session Claude Code no longer has makes `claude` exit at once, before its `SessionStart` hook; the supervisor then starts the agent afresh.
+
+Changes made while an agent runs (Edit, MCP servers, skills...) still resume its session with a first prompt carrying the current organization (`runtime.resumeMessage`).
+
 Each change is validated against the whole organization before anything is written (unknown team, invalid profile, malformed MCP exclusion...). Files edited by hand are picked up at the next change made through the API (every agent whose file changed is then restarted or stopped accordingly), or when the daemon restarts.

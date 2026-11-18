@@ -2,7 +2,7 @@
 
 Run teams of Claude Code agents that talk to each other (normal and urgent mailboxes, open flows between teams that each team can restrict), supervised from a web control room.
 
-> Early stage project. Architecture: [`docs/architecture.md`](docs/architecture.md) · Projects: [`docs/projects.md`](docs/projects.md) · Hooks: [`docs/hooks.md`](docs/hooks.md) · Approvals: [`docs/approvals.md`](docs/approvals.md) · Tickets: [`docs/tickets.md`](docs/tickets.md) · Agents: [`docs/agents.md`](docs/agents.md) · Director: [`docs/god.md`](docs/god.md) · Workspaces: [`docs/workspaces.md`](docs/workspaces.md) · Scheduled tasks: [`docs/schedules.md`](docs/schedules.md) · Decisions: [`docs/adr/`](docs/adr/).
+> Early stage project. Architecture: [`docs/architecture.md`](docs/architecture.md) · Projects: [`docs/projects.md`](docs/projects.md) · Desktop app: [`docs/desktop.md`](docs/desktop.md) · Hooks: [`docs/hooks.md`](docs/hooks.md) · Approvals: [`docs/approvals.md`](docs/approvals.md) · Tickets: [`docs/tickets.md`](docs/tickets.md) · Agents: [`docs/agents.md`](docs/agents.md) · Director: [`docs/god.md`](docs/god.md) · Workspaces: [`docs/workspaces.md`](docs/workspaces.md) · Scheduled tasks: [`docs/schedules.md`](docs/schedules.md) · Decisions: [`docs/adr/`](docs/adr/).
 
 ## Requirements
 
@@ -10,12 +10,24 @@ Go 1.27+, Node 22+, pnpm, [Task](https://taskfile.dev), golangci-lint v2, Claude
 
 ## Getting started
 
+The desktop app (macOS for now, [`docs/desktop.md`](docs/desktop.md)): download `NobodyInc_<version>_macos_universal.dmg` from the [releases](https://github.com/qwackididuck/nobodyinc/releases) (the app is not signed by Apple: allow it once in System Settings > Privacy & Security), or build it:
+
 ```bash
-task build          # bin/nobodyd and bin/nobody-hook
 task web:install
-task dev:daemon     # the launcher, on 127.0.0.1:7420
-task dev:web        # control room on http://localhost:3000
+task desktop:build  # desktop/build/bin/Nobody Inc.app
+open "desktop/build/bin/Nobody Inc.app"
 ```
+
+Or the launcher alone, in a browser:
+
+```bash
+task web:install
+task web:export     # embeds the control room in the binaries
+task build          # bin/nobodyd and bin/nobody-hook
+bin/nobodyd         # then open http://127.0.0.1:7420
+```
+
+For development, `task dev:daemon` (the launcher, on 127.0.0.1:7420) and `task dev:web` (the control room on http://localhost:3000, reloaded as you edit).
 
 From the control room, open a folder (Nobody Inc sets it up: `.nobody/` with the director, and Claude Code's trust) or create a new project, then build the teams. Each window shows one project, which runs while the window is open: closing it stops the project's agents (see [`docs/projects.md`](docs/projects.md)).
 

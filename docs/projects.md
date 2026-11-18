@@ -72,10 +72,11 @@ Details:
 - The window reconnects on its own when the connection drops: within the grace period it keeps its hold; after it, the project was stopped, and the window opens it again (it is still that window's project).
 - Switching project while agents work asks first, naming them; closing the tab gets the browser's own "Leave site?" prompt (`LeaveGuard`).
 - The projects page holds nothing.
+- **In the desktop app** (`desktop.md`, ADR-0016): closing a window releases its project at once (no grace period); opening a project another window holds brings that window to the front instead of the "open in another window" screen; Cmd/Ctrl-click opens a native window.
 
 ## What stops with a project
 
-Stopping a project stops its daemon, and with it every agent's Claude Code session. Mail, tickets, the active feature, scheduled tasks, budgets and spend are kept, in the database and in `.nobody/`. At the next opening the agents start again, on new sessions (they find their work through their tickets, but not their conversation). Scheduled tasks run only while the project is open: an occurrence that falls while it is closed is lost (ADR-0012).
+Stopping a project stops its daemon, and with it every agent's Claude Code process. Mail, tickets, the active feature, scheduled tasks, budgets and spend are kept, in the database and in `.nobody/`; so is each agent's Claude Code session, which Claude Code keeps on disk and the daemon remembers (`agent_sessions`). At the next opening each agent **resumes its session** and keeps its memory (ADR-0015, `agents.md` "Sessions across openings"): an idle agent silently, costing nothing until it has something to do; an agent stopped in the middle of a turn with a prompt to carry on. Scheduled tasks run only while the project is open: an occurrence that falls while it is closed is lost (ADR-0012).
 
 ## Deleting a project
 

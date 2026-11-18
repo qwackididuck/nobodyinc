@@ -58,7 +58,7 @@ func launch(t *testing.T, o *org.Org, address string) launched {
 		WorkDir: func(string) string { return o.ProjectDir }, MCPConfigDir: t.TempDir(),
 	}
 
-	cmd, err := l.Command(context.Background(), o, m, "")
+	cmd, err := l.Command(context.Background(), o, m, Resume{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestLaunchNeedsADirectoryForTheMCPConfiguration(t *testing.T) {
 	o := testOrg()
 	m, _ := o.Member("dev1@dev")
 
-	_, err := Launch{WorkDir: func(string) string { return "" }}.Command(context.Background(), o, m, "")
+	_, err := Launch{WorkDir: func(string) string { return "" }}.Command(context.Background(), o, m, Resume{})
 	if err == nil || !strings.Contains(err.Error(), "MCPConfigDir") {
 		t.Fatalf("error = %v, want one about the missing directory", err)
 	}
@@ -255,7 +255,7 @@ func TestLaunchResumesASession(t *testing.T) {
 	m, _ := o.Member("archi@specs")
 	l := Launch{WorkDir: func(string) string { return o.ProjectDir }, MCPConfigDir: t.TempDir()}
 
-	fresh, err := l.Command(context.Background(), o, m, "")
+	fresh, err := l.Command(context.Background(), o, m, Resume{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +264,7 @@ func TestLaunchResumesASession(t *testing.T) {
 		t.Fatalf("a fresh start must not resume and must onboard: %v", fresh.Args)
 	}
 
-	resumed, err := l.Command(context.Background(), o, m, "s-42")
+	resumed, err := l.Command(context.Background(), o, m, Resume{Session: "s-42"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -277,5 +277,53 @@ func TestLaunchResumesASession(t *testing.T) {
 	// The current organization travels in the first message, for information.
 	if !strings.Contains(first, "<current_organization>") || !strings.Contains(first, "archi@specs") {
 		t.Fatalf("the resume message does not carry the current organization:\n%s", first)
+	}
+}
+
+// When the project opens again (ADR-0015), an idle agent resumes without a
+// prompt, and an interrupted one with a prompt to carry on.
+func TestLaunchReopensASession(t *testing.T) {
+	t.Parallel()
+
+	o := testOrg()
+	m, _ := o.Member("archi@specs")
+	l := Launch{WorkDir: func(string) string { return o.ProjectDir }, MCPConfigDir: t.TempDir()}
+
+	tests := []struct {
+		mode      ResumeMode
+		wantFirst string // "" for no prompt: --resume s-42 ends the arguments
+	}{
+		{mode: ResumeSilently},
+		{mode: ResumeInterrupted, wantFirst: interruptedPrompt},
+	}
+
+	for _, tt := range tests {
+		cmd, err := l.Command(context.Background(), o, m, Resume{Session: "s-42", Mode: tt.mode})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		args := cmd.Args
+		if tt.wantFirst == "" {
+			if args[len(args)-2] != "--resume" || args[len(args)-1] != "s-42" {
+				t.Errorf("mode %d: want --resume s-42 last, without a prompt: %v", tt.mode, args)
+			}
+
+			continue
+		}
+
+		if argValue(t, args, "--resume") != "s-42" || args[len(args)-1] != tt.wantFirst {
+			t.Errorf("mode %d: want --resume s-42 and the prompt %q: %v", tt.mode, tt.wantFirst, args)
+		}
+	}
+
+	reopen, err := l.ReopenContext(o, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.HasPrefix(reopen, reopenIntro) || !strings.Contains(reopen, "<current_organization>") ||
+		!strings.Contains(reopen, "archi@specs") {
+		t.Errorf("the reopen context must carry the current organization:\n%s", reopen)
 	}
 }

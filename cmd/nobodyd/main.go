@@ -1,8 +1,9 @@
 // Command nobodyd is the Nobody Inc daemon (ADR-0014, docs/projects.md).
 //
-// Run without arguments, it is the launcher: it serves the control room's
-// projects (create, open, delete), and runs one project daemon per open
-// project, as a child process, for as long as a window holds the project.
+// Run without arguments, it is the launcher: it serves the control room
+// (when built with its export, ADR-0016) and its projects (create, open,
+// delete), and runs one project daemon per open project, as a child
+// process, for as long as a window holds the project.
 //
 // Usage:
 //
@@ -33,6 +34,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/launcher"
 	"github.com/qwackididuck/nobodyinc/internal/projects"
+	"github.com/qwackididuck/nobodyinc/internal/webui"
 )
 
 var version = "dev"
@@ -106,6 +108,8 @@ func runLauncher(logger *slog.Logger) error {
 			"-claude", *claudePath, "-hook", hook, "-start=" + strconv.FormatBool(*start),
 		},
 		Origins: splitOrigins(*origins),
+		// The control room, when the binary was built with its export.
+		UI: webui.Handler(),
 	})
 	defer l.Close()
 

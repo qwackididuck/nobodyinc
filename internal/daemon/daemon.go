@@ -147,27 +147,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	}
 	restoreActiveFeature(ctx, st, git, opts.Logger)
 
-	supervisor := &runtime.Supervisor{
-		Org:      opts.Org,
-		Statuses: statuses,
-		Logger:   opts.Logger,
-		NewCommand: runtime.Launch{
-			ClaudePath:   opts.ClaudePath,
-			HookPath:     opts.HookPath,
-			DaemonURL:    opts.DaemonURL,
-			WorkDir:      git.workDir,
-			MCPConfigDir: opts.MCPConfigDir,
-			// Personal skills reach agents through the staging directory.
-			SkillsStagingDir:  opts.SkillsStagingDir,
-			PersonalSkillsDir: opts.PersonalSkillsDir,
-			UserInstructions: func() string {
-				return readUserInstructions(opts.Logger, opts.UserClaudeMD)
-			},
-		}.Command,
-		HasMail: func(ctx context.Context, address string) (bool, error) {
-			return hasMail(ctx, st, address)
-		},
-	}
+	// Sessions are remembered across restarts and resumed (sessions.go).
+	supervisor := newSupervisor(ctx, opts, st, statuses, git)
 
 	messages := &messaging.Service{
 		Store:  st,
@@ -273,6 +254,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Budgets:      budgets.book,
 		BudgetStop:   budgets.guard.atStop,
 		BudgetOffice: budgetOffice,
+		// Resumed sessions get the current organization (sessions.go).
+		SessionStarted: sessionStarted(supervisor.SessionStarted, budgets.guard.isHeld),
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,

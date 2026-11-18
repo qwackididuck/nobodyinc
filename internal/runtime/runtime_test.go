@@ -84,7 +84,7 @@ func TestLaunchCommand(t *testing.T) {
 		WorkDir: func(string) string { return o.ProjectDir }, MCPConfigDir: t.TempDir(),
 	}
 
-	cmd, err := l.Command(context.Background(), o, m, "")
+	cmd, err := l.Command(context.Background(), o, m, Resume{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func newCatSupervisor(t *testing.T) *Supervisor {
 		Org:      testOrg(),
 		Statuses: NewStatuses(),
 		Logger:   slog.New(slog.DiscardHandler),
-		NewCommand: func(ctx context.Context, _ *org.Org, _ org.Member, _ string) (*exec.Cmd, error) {
+		NewCommand: func(ctx context.Context, _ *org.Org, _ org.Member, _ Resume) (*exec.Cmd, error) {
 			return exec.CommandContext(ctx, "cat"), nil
 		},
 		HasMail: func(context.Context, string) (bool, error) { return true, nil },

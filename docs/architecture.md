@@ -75,7 +75,7 @@ Hook details, and how urgent questions to busy agents are answered by a fork of 
 
 ## Agent status
 
-`stopped → starting → working ⇄ idle → exited`, plus `awaiting_approval` while a permission request waits for the human, and `budget_hold` instead of `idle` while a budget at its threshold holds the agent (`budgets.md`), derived from the hooks: a `Stop` with nothing to deliver means the agent really finished its turn (`idle`); any other event means it is working. At launch, a short onboarding turn brings the agent to `idle`, the state in which mail wakes it up.
+`stopped → starting → working ⇄ idle → exited`, plus `awaiting_approval` while a permission request waits for the human, and `budget_hold` instead of `idle` while a budget at its threshold holds the agent (`budgets.md`), derived from the hooks: a `Stop` with nothing to deliver means the agent really finished its turn (`idle`); any other event means it is working. At launch, a short onboarding turn brings the agent to `idle`, the state in which mail wakes it up; a session resumed silently when the project opens again becomes `idle` at its `SessionStart` (ADR-0015, `agents.md` "Sessions across openings").
 
 ## Agent isolation
 

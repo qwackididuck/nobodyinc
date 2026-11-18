@@ -52,7 +52,7 @@ func TestLaunchGivesSkills(t *testing.T) {
 			SkillsStagingDir: staging, PersonalSkillsDir: personal,
 		}
 
-		cmd, err := l.Command(context.Background(), o, m, "")
+		cmd, err := l.Command(context.Background(), o, m, Resume{})
 		if err != nil {
 			t.Fatal(err)
 		}
