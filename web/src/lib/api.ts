@@ -1,4 +1,27 @@
 // Client for the nobodyd API (see api/openapi.yaml at the repository root).
+//
+// The control room talks to the launcher (ADR-0014): a window shows one
+// project, whose daemon answers under /p/<project>/api/... Every call below
+// goes to the project set by setProject; the launcher's own routes (projects,
+// folders, holding a project) are in launcher.ts.
+
+let projectBase = "";
+
+// setProject points every call of this module at a project's daemon. The
+// window calls it once, before rendering the project.
+export function setProject(id: string): void {
+  projectBase = `/p/${encodeURIComponent(id)}`;
+}
+
+// projectPath is path ("/api/...") on the current project's daemon.
+export function projectPath(path: string): string {
+  return projectBase + path;
+}
+
+// daemonFetch is fetch on the current project's daemon.
+function daemonFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(projectPath(path), init);
+}
 
 // budget_hold: a budget at its threshold holds the agent, its session kept (ADR-0013).
 export type AgentStatus = "stopped" | "starting" | "working" | "idle" | "exited" | "awaiting_approval" | "budget_hold";
@@ -159,7 +182,7 @@ function query(opts: ApplyOptions): string {
 }
 
 async function sendJSON<T>(method: string, path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await daemonFetch(path, {
     method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -172,7 +195,7 @@ async function sendJSON<T>(method: string, path: string, body: unknown): Promise
 
 // send makes a request whose answer has no body (202, 204).
 async function send(method: string, path: string): Promise<void> {
-  const res = await fetch(path, { method });
+  const res = await daemonFetch(path, { method });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }
@@ -223,7 +246,7 @@ export function listApprovals(): Promise<Approval[]> {
 }
 
 export async function decideApproval(id: string, allow: boolean, message = ""): Promise<void> {
-  const res = await fetch(`/api/approvals/${encodeURIComponent(id)}`, {
+  const res = await daemonFetch(`/api/approvals/${encodeURIComponent(id)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ decision: allow ? "allow" : "deny", message }),
@@ -270,7 +293,7 @@ export async function startProposedFeature(id: string, budget?: BudgetFields): P
   const path = `/api/features/${encodeURIComponent(id)}/start`;
   if (budget) return postJSON<Feature>(path, budget);
 
-  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" } });
+  const res = await daemonFetch(path, { method: "POST", headers: { "Content-Type": "application/json" } });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }
@@ -387,7 +410,7 @@ export function listArchivedTickets(): Promise<Ticket[]> {
 // depend on it (and theirs) go too, otherwise they stop waiting for it.
 // It returns the IDs of the deleted tickets.
 export async function deleteTicket(id: string, cascade: boolean): Promise<string[]> {
-  const res = await fetch(`/api/tickets/${encodeURIComponent(id)}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" });
+  const res = await daemonFetch(`/api/tickets/${encodeURIComponent(id)}${cascade ? "?cascade=true" : ""}`, { method: "DELETE" });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }
@@ -411,7 +434,7 @@ export function setTicketStatus(id: string, status: TicketStatus): Promise<Ticke
 }
 
 async function postJSON<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, {
+  const res = await daemonFetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -422,11 +445,13 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
-// Terminals connect straight to the daemon over WebSocket.
-const daemonWS = process.env.NEXT_PUBLIC_NOBODY_DAEMON_WS ?? "ws://127.0.0.1:7420";
+// WebSockets (terminals, holding a project) go straight to the launcher: the
+// Next.js proxy does not carry them. The launcher passes a terminal on to the
+// project's daemon.
+export const launcherWS = process.env.NEXT_PUBLIC_NOBODY_DAEMON_WS ?? "ws://127.0.0.1:7420";
 
 export function terminalURL(address: string): string {
-  return `${daemonWS}/api/agents/${encodeURIComponent(address)}/terminal`;
+  return `${launcherWS}${projectPath(`/api/agents/${encodeURIComponent(address)}/terminal`)}`;
 }
 
 export function listAgents(): Promise<Agent[]> {
@@ -453,7 +478,7 @@ export function listAgentExchanges(limit = 200): Promise<Message[]> {
 // agents (every message delivered, the last one expecting no answer); open
 // ones stay. It returns the IDs of the deleted messages.
 export async function emptyWastebasket(): Promise<string[]> {
-  const res = await fetch("/api/messages?scope=agents", { method: "DELETE" });
+  const res = await daemonFetch("/api/messages?scope=agents", { method: "DELETE" });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }
@@ -631,7 +656,7 @@ export function copySkillToProject(name: string): Promise<SkillList> {
 }
 
 export async function sendMessage(draft: HumanDraft): Promise<Message> {
-  const res = await fetch("/api/messages", {
+  const res = await daemonFetch("/api/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(draft),
@@ -643,14 +668,14 @@ export async function sendMessage(draft: HumanDraft): Promise<Message> {
 }
 
 export async function startAgent(address: string): Promise<void> {
-  const res = await fetch(`/api/agents/${encodeURIComponent(address)}/start`, { method: "POST" });
+  const res = await daemonFetch(`/api/agents/${encodeURIComponent(address)}/start`, { method: "POST" });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path, { cache: "no-store" });
+  const res = await daemonFetch(path, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }

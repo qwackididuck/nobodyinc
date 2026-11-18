@@ -1,6 +1,7 @@
 "use client";
 
 import { useLive } from "@/lib/live";
+import { ProjectMenu } from "../projects/ProjectMenu";
 import { attention } from "../schedules/scheduling";
 import styles from "./shell.module.css";
 
@@ -19,13 +20,12 @@ interface Props {
   onTab: (tab: Tab) => void;
 }
 
-// TopBar shows the project, the tabs and whether the live connection to the
-// daemon is up.
+// TopBar shows the project (and its menu, to switch project), the tabs and
+// whether the live connection to the project's daemon is up.
 export function TopBar({ tab, onTab }: Props) {
   const { settings, connected, schedules, scheduleProposals } = useLive();
   // Schedules in alert and the director's proposals wait for the human.
   const badges: Partial<Record<Tab, number>> = { schedules: attention(schedules, scheduleProposals) };
-  const project = settings ? (settings.project_dir.split("/").filter(Boolean).pop() ?? settings.project_dir) : "…";
 
   return (
     <header className={styles.topbar}>
@@ -33,9 +33,7 @@ export function TopBar({ tab, onTab }: Props) {
         <BrandMark />
         Nobody Inc
       </div>
-      <span className={styles.project} title={settings?.project_dir}>
-        Project <code>{project}</code>
-      </span>
+      <ProjectMenu path={settings?.project_dir} />
       <nav className={styles.tabs} role="tablist" aria-label="Views">
         {TABS.map((t) => (
           <button
@@ -56,14 +54,14 @@ export function TopBar({ tab, onTab }: Props) {
         ))}
       </nav>
       <span className={styles.daemon} data-connected={connected} title={connected ? "Live updates on" : "Reconnecting to the daemon…"}>
-        {connected ? (settings?.address ?? "Daemon") : "Reconnecting…"}
+        {connected ? "Live" : "Reconnecting…"}
       </span>
     </header>
   );
 }
 
 // BrandMark is a dotted, pixel outline of a person: nobody.
-function BrandMark() {
+export function BrandMark() {
   return (
     <svg className={styles.brandMark} viewBox="0 0 13 13" shapeRendering="crispEdges" aria-hidden="true">
       <path

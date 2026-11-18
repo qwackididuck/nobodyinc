@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import { LiveProvider, useLive } from "@/lib/live";
+import { Lobby } from "./projects/Lobby";
+import { LeaveGuard, ProjectWindow } from "./projects/ProjectWindow";
 import { unreadInBin } from "./chat/agents";
 import { BIN_KEY } from "./chat/AvatarRail";
 import { ChatPanel } from "./chat/ChatPanel";
@@ -23,14 +25,31 @@ const CLOCK_KEY = "~clock";
 
 export type ChatTarget = { kind: "agent"; address: string } | { kind: "bin" };
 
-// App is the control room: the top bar with its tabs, the chat panel on the
-// left, and the selected tab (the office by default) in the main area.
+// App shows what the window's URL says (ADR-0014): the projects page, or one
+// project (?project=<id>), held by this window, and its control room: the
+// top bar with its tabs, the chat panel on the left, and the selected tab
+// (the office by default) in the main area.
 export function App() {
+  // The URL is only known in the browser (the page is prerendered).
+  const search = useSyncExternalStore(neverChanges, () => window.location.search, () => null);
+  if (search === null) return null;
+
+  const params = new URLSearchParams(search);
+  const project = params.get("project");
+  if (!project) return <Lobby />;
+
   return (
-    <LiveProvider>
-      <ControlRoom />
-    </LiveProvider>
+    <ProjectWindow project={project} takeover={params.get("takeover") === "1"}>
+      <LiveProvider>
+        <ControlRoom />
+      </LiveProvider>
+    </ProjectWindow>
   );
+}
+
+// The window's URL changes only by loading another page.
+function neverChanges(): () => void {
+  return () => {};
 }
 
 function ControlRoom() {
@@ -50,6 +69,7 @@ function ControlRoom() {
   return (
     <ScheduleNav value={openSchedules}>
     <div className={styles.app}>
+      <LeaveGuard />
       <TopBar tab={tab} onTab={setTab} />
       <ChatPanel target={target} onTarget={setTarget} marks={marks} markSeen={markSeen} />
       <main className={styles.main}>
