@@ -47,8 +47,8 @@ func Defaults() Settings {
 	return Settings{ConfigProtection: ProtectBlock}
 }
 
-// fileTemplate is the settings file: written with the defaults by
-// `nobodyd init`, so that the settings are easy to find and to change, and
+// fileTemplate is the settings file: written with the defaults when the
+// first project is set up (projects.SetUp), so that the settings are easy to find and to change, and
 // rewritten when the control room changes a setting.
 const fileTemplate = `# Nobody Inc settings for this user, used by every project.
 # Restart the daemon after changing this file by hand.

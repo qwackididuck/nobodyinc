@@ -15,7 +15,7 @@ var (
 	errNotJSON     = errors.New("request body must be application/json")
 )
 
-// guardCrossSite protects the API routes that change something (anything but
+// GuardCrossSite protects the API routes that change something (anything but
 // GET and HEAD) from requests a web page could send on the user's behalf:
 //
 //   - a request carrying an Origin header (browsers always send one on
@@ -28,8 +28,9 @@ var (
 // Requests without an Origin header (nobody-hook, curl, the control room's
 // server-side proxy) are not browser requests and go through. This is not
 // authentication: anything running as the user can still call the API (see
-// docs/architecture.md, VPS mode).
-func guardCrossSite(allowedOrigins []string, next http.Handler) http.Handler {
+// docs/architecture.md, VPS mode). The launcher guards its own routes with it
+// too (ADR-0014).
+func GuardCrossSite(allowedOrigins []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") || r.Method == http.MethodGet || r.Method == http.MethodHead {
 			next.ServeHTTP(w, r)

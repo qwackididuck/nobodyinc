@@ -159,64 +159,6 @@ func TestLoadProjectWithoutConfigIsErrNoConfig(t *testing.T) {
 	}
 }
 
-func TestMigrateLegacy(t *testing.T) {
-	t.Parallel()
-
-	project := t.TempDir()
-	legacy := filepath.Join(t.TempDir(), "nobody.yaml")
-	writeFile(t, legacy, `
-project_dir: `+project+`
-teams:
-  - id: specs
-    goal: Write specs
-    agents:
-      - name: archi
-        role: Architect
-        model: haiku
-        prompt: |
-          Design things.
-  - id: dev
-    agents:
-      - name: dev1
-        role: Developer
-channels:
-  - from: dev
-    to: specs
-`)
-
-	dir, migrated, err := MigrateLegacy(legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if dir != project || !migrated {
-		t.Fatalf("MigrateLegacy = %q, %v", dir, migrated)
-	}
-
-	o, err := LoadProject(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	archi, ok := o.Member("archi@specs")
-	if !ok || archi.Agent.Role != "Architect" || archi.Agent.Model != "haiku" || archi.Agent.Prompt != "Design things." {
-		t.Fatalf("archi migrated as %+v", archi.Agent)
-	}
-
-	if o.Teams[0].Goal != "Write specs" || len(o.Teams) != 2 {
-		t.Fatalf("teams lost: %+v", o)
-	}
-
-	if !o.CanStart("specs", "dev") {
-		t.Fatal("the legacy channels should be dropped: flows are open (ADR-0009)")
-	}
-
-	// A second run leaves the existing configuration alone.
-	if _, migrated, err := MigrateLegacy(legacy); err != nil || migrated {
-		t.Fatalf("second migration: migrated=%v err=%v", migrated, err)
-	}
-}
-
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 

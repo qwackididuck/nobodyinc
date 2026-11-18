@@ -47,11 +47,14 @@ type Options struct {
 	// changes made through the API in memory.
 	SettingsHome string
 	// StateDir is this project's directory on this machine
-	// (~/.nobody/projects/<id>), ListenAddr where the HTTP server listens and
-	// StartAgents whether every agent starts with the daemon. They are only
-	// shown in the control room's settings.
-	StateDir    string
-	ListenAddr  string
+	// (~/.nobody/projects/<id>) and ListenAddr where the HTTP server listens;
+	// they are only shown in the control room's settings.
+	StateDir   string
+	ListenAddr string
+	// StartAgents says that the agents run: the caller starts them with the
+	// daemon (Supervisor.StartAll), and the daemon restarts them when a
+	// feature starts or ends. Without it (-start=false), agents stay stopped
+	// unless started by hand. Also shown in the control room's settings.
 	StartAgents bool
 	// DBPath is the SQLite file; ":memory:" for a throwaway database.
 	DBPath string
@@ -197,9 +200,16 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Store: announcingWorkStore{Store: st, bus: bus, onChange: budgets.guard.trigger}, Org: opts.Org, Workspace: git,
 		BudgetsEnabled: budgets.book.Enabled, CheckClaim: budgets.guard.checkClaim,
 	}
-	// A new feature moves every agent into its team's worktree.
+	// A new feature moves every agent into its team's worktree. A daemon that
+	// does not start its agents (-start=false: trying the control room, or
+	// the launcher finishing a feature before deleting a project, ADR-0014)
+	// leaves them stopped.
 	tickets.OnFeatureStarted = func(f work.Feature) {
 		git.activate(f)
+
+		if !opts.StartAgents {
+			return
+		}
 
 		background.Go(func() {
 			if err := supervisor.RestartAll(context.WithoutCancel(ctx)); err != nil {
@@ -363,8 +373,10 @@ func onFeatureFinished(
 		p.onFinished(ctx, director, f)
 
 		background.Go(func() {
-			if err := supervisor.RestartAll(ctx); err != nil {
-				opts.Logger.Error("restart agents after the feature", "feature", f.ID, "err", err)
+			if opts.StartAgents {
+				if err := supervisor.RestartAll(ctx); err != nil {
+					opts.Logger.Error("restart agents after the feature", "feature", f.ID, "err", err)
+				}
 			}
 
 			if err := git.cleanup(ctx, f); err != nil {

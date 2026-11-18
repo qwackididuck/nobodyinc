@@ -11,16 +11,17 @@ Go 1.27+, Node 22+, pnpm, [Task](https://taskfile.dev), golangci-lint v2, Claude
 ## Getting started
 
 ```bash
-task build                              # bin/nobodyd and bin/nobody-hook
-./bin/nobodyd init /path/to/project     # creates .nobody/ with the director; build the teams from the control room
+task build          # bin/nobodyd and bin/nobody-hook
 task web:install
-task dev:daemon PROJECT=/path/to/project   # starts the agents
-task dev:web                            # control room on http://localhost:3000
+task dev:daemon     # the launcher, on 127.0.0.1:7420
+task dev:web        # control room on http://localhost:3000
 ```
 
-The organization lives in the project's `.nobody/` directory, committed with it: teams (with the teams each one blocks) and one markdown file per agent (see [`docs/agents.md`](docs/agents.md)). Your own agent templates go in `~/.nobody/catalog/`. Agents get the project's Claude Code configuration (`CLAUDE.md`, skills, commands, subagents), every MCP server of the project's `.mcp.json` and of your own Claude Code configuration, and your personal skills; each agent can exclude some, and preload skills it always needs. Recurring work (watch a dashboard every 10 minutes, a daily report) is a scheduled task in `.nobody/schedules.yaml`, handed to an agent while the daemon runs (see [`docs/schedules.md`](docs/schedules.md)). A former `nobody.yaml` is migrated with `nobodyd -org nobody.yaml`.
+From the control room, open a folder (Nobody Inc sets it up: `.nobody/` with the director, and Claude Code's trust) or create a new project, then build the teams. Each window shows one project, which runs while the window is open: closing it stops the project's agents (see [`docs/projects.md`](docs/projects.md)).
 
-The project must be a git repository already trusted in Claude Code (open it once with `claude` and accept the trust prompt). Agents work there with the default permission mode: their permission requests show up in the control room, where you allow or deny them.
+The organization lives in the project's `.nobody/` directory, committed with it: teams (with the teams each one blocks) and one markdown file per agent (see [`docs/agents.md`](docs/agents.md)). Your own agent templates go in `~/.nobody/catalog/`. Agents get the project's Claude Code configuration (`CLAUDE.md`, skills, commands, subagents), every MCP server of the project's `.mcp.json` and of your own Claude Code configuration, and your personal skills; each agent can exclude some, and preload skills it always needs. Recurring work (watch a dashboard every 10 minutes, a daily report) is a scheduled task in `.nobody/schedules.yaml`, handed to an agent while the project is open (see [`docs/schedules.md`](docs/schedules.md)).
+
+Features (branches and worktrees) need the project to be a git repository. Agents work there with the default permission mode: their permission requests show up in the control room, where you allow or deny them.
 
 ## Development
 
