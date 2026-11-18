@@ -13,6 +13,7 @@ tasks:
     desc: Build the daemon binary into bin/
     cmds:
       - go build -ldflags "-X main.version={{.VERSION}}" -o bin/nobodyd ./cmd/nobodyd
+      - go build -o bin/nobody-hook ./cmd/nobody-hook
 
   test:
     desc: Run Go tests
@@ -28,15 +29,28 @@ tasks:
       - pnpm --dir web exec tsc --noEmit
       - pnpm --dir web lint
 
+  contract:
+    desc: Check Claude Code behaviours we rely on, against the real CLI (costs a few cents)
+    cmds:
+      - go test -tags contract -count=1 -timeout 15m -v ./test/contract/...
+
   web:install:
     desc: Install web dependencies
     cmds:
       - pnpm --dir web install
 
-  dev:daemon:
-    desc: Run the daemon
+  web:export:
+    desc: Export the control room as a static site and embed it in the binaries (internal/webui, ADR-0016)
     cmds:
-      - go run ./cmd/nobodyd
+      - NOBODY_WEB_EXPORT=1 pnpm --dir web exec next build
+      - find internal/webui/dist -mindepth 1 ! -name README.md -delete
+      - cp -R web/out/. internal/webui/dist/
+
+  dev:daemon:
+    desc: Build and run the launcher; projects are opened from the control room (ARGS="-start=false" starts no agent)
+    deps: [build]
+    cmds:
+      - ./bin/nobodyd {{.ARGS}}
 
   dev:web:
     desc: Run the Next.js dev server
@@ -48,3 +62,71 @@ tasks:
     cmds:
       - task: lint
       - task: test
+
+  # The desktop app (ADR-0016, docs/desktop.md): its own Go module, desktop/.
+  desktop:binaries:
+    desc: Build the desktop app and the binaries it ships with into desktop/build/bin/ (ARCHS="arm64 amd64" for a universal build)
+    vars:
+      ARCHS: '{{.ARCHS | default ARCH}}'
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      CGO_ENABLED: "1"
+    cmds:
+      - for: { var: ARCHS }
+        cmd: |
+          GOARCH={{.ITEM}} go build -ldflags "-X main.version={{.VERSION}}" -o desktop/build/bin/{{.ITEM}}/nobodyd ./cmd/nobodyd
+          GOARCH={{.ITEM}} go build -o desktop/build/bin/{{.ITEM}}/nobody-hook ./cmd/nobody-hook
+          cd desktop && GOARCH={{.ITEM}} go build -ldflags "-X main.version={{.VERSION}}" -o build/bin/{{.ITEM}}/nobody-desktop .
+      # One binary per program, holding every architecture built.
+      - for: [nobodyd, nobody-hook, nobody-desktop]
+        cmd: lipo -create {{range (splitList " " .ARCHS)}}desktop/build/bin/{{.}}/{{$.ITEM}} {{end}}-output desktop/build/bin/{{.ITEM}}
+
+  desktop:icon:
+    desc: Draw the app's icon from the brand mark (desktop/cmd/icongen; its outputs are versioned)
+    dir: desktop
+    cmds:
+      - go run ./cmd/icongen
+
+  desktop:run:
+    desc: Run the desktop app from desktop/build/bin/ (task web:export first for the control room; ARGS="-claude <built test/fakeclaude>" for free agents)
+    deps: [desktop:binaries]
+    cmds:
+      - desktop/build/bin/nobody-desktop {{.ARGS}}
+
+  desktop:build:
+    desc: Export the control room and assemble desktop/build/bin/Nobody Inc.app (macOS; ARCHS="arm64 amd64" for a universal app)
+    vars:
+      APP: desktop/build/bin/Nobody Inc.app
+    cmds:
+      - task: web:export
+      - task: desktop:binaries
+        vars: { ARCHS: "{{.ARCHS}}" }
+      - rm -rf "{{.APP}}"
+      - mkdir -p "{{.APP}}/Contents/MacOS" "{{.APP}}/Contents/Resources"
+      - cp desktop/build/bin/nobody-desktop desktop/build/bin/nobodyd desktop/build/bin/nobody-hook "{{.APP}}/Contents/MacOS/"
+      - cp desktop/build/darwin/icons.icns "{{.APP}}/Contents/Resources/"
+      - sed "s/VERSION/{{.VERSION}}/g" desktop/build/darwin/Info.plist > "{{.APP}}/Contents/Info.plist"
+      # Ad-hoc signature (no Apple identity): a consistent bundle, but
+      # Gatekeeper still asks before the first launch (docs/desktop.md).
+      - codesign --force --deep --sign - "{{.APP}}"
+
+  desktop:dmg:
+    desc: Package the built app as desktop/build/bin/NobodyInc.dmg (drag to Applications)
+    vars:
+      STAGE: desktop/build/bin/dmg
+    cmds:
+      - rm -rf "{{.STAGE}}" desktop/build/bin/NobodyInc.dmg
+      - mkdir -p "{{.STAGE}}"
+      - cp -R "desktop/build/bin/Nobody Inc.app" "{{.STAGE}}/"
+      - ln -s /Applications "{{.STAGE}}/Applications"
+      - hdiutil create -volname "Nobody Inc" -srcfolder "{{.STAGE}}" -format UDZO -ov desktop/build/bin/NobodyInc.dmg
+
+  desktop:check:
+    desc: Lint and test the desktop app's module
+    dir: desktop
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+    cmds:
+      - go vet ./...
+      - golangci-lint run --config ../.golangci.yml
+      - go test ./...

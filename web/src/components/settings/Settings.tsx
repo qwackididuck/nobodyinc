@@ -1,0 +1,305 @@
+"use client";
+
+import { type ReactNode, useEffect, useState } from "react";
+
+import { type BudgetSettings, type ConfigProtection, getProject, setConfigProtection, setProjectPrompt, updateBudgets } from "@/lib/api";
+import { type Animations, saveAppearance, useAppearance } from "@/lib/appearance";
+import { useLive } from "@/lib/live";
+import { CapEditor } from "../budgets/CapEditor";
+import ui from "../ui/ui.module.css";
+import { MCPServers } from "./MCPServers";
+import { Skills } from "./Skills";
+import styles from "./settings.module.css";
+
+const SECTIONS = [
+  { id: "project", label: "Project and daemon" },
+  { id: "mcp", label: "MCP servers" },
+  { id: "skills", label: "Skills" },
+  { id: "budgets", label: "Budgets" },
+  { id: "appearance", label: "Appearance" },
+] as const;
+
+type Section = (typeof SECTIONS)[number]["id"];
+
+// Settings is a game-like options menu: the project prompt every agent
+// reads, how the daemon runs (read-only, except what to do when a delivery
+// changes .nobody/), the MCP servers (MCPServers.tsx) and the skills
+// (Skills.tsx) every agent gets, and how the office looks on this computer.
+export function Settings() {
+  const [section, setSection] = useState<Section>("project");
+
+  return (
+    <div className={ui.scroll}>
+      <div className={styles.settings}>
+        <nav className={styles.nav} aria-label="Settings sections">
+          {SECTIONS.map((s) => (
+            <button key={s.id} type="button" aria-current={section === s.id} onClick={() => setSection(s.id)}>
+              {s.label}
+            </button>
+          ))}
+        </nav>
+        {section === "project" && <ProjectSection />}
+        {section === "mcp" && <MCPServers />}
+        {section === "skills" && <Skills />}
+        {section === "budgets" && <BudgetsSection />}
+        {section === "appearance" && <AppearanceSection />}
+      </div>
+    </div>
+  );
+}
+
+function Option({ label, help, children }: { label: string; help?: string; children: ReactNode }) {
+  return (
+    <div className={styles.option}>
+      <div className={styles.optionLabel}>
+        <strong>{label}</strong>
+        {help && <span>{help}</span>}
+      </div>
+      <div className={styles.optionValue}>{children}</div>
+    </div>
+  );
+}
+
+function Segment<T extends string>({ label, values, current, onPick }: { label: string; values: { value: T; label: string }[]; current: T; onPick: (v: T) => void }) {
+  return (
+    <div className={ui.seg} role="group" aria-label={label}>
+      {values.map((v) => (
+        <button key={v.value} type="button" aria-pressed={current === v.value} onClick={() => onPick(v.value)}>
+          {v.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ProjectSection() {
+  const { settings, reload } = useLive();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!settings) return <p className={ui.sub}>Loading…</p>;
+
+  async function protect(value: ConfigProtection) {
+    try {
+      await setConfigProtection(value);
+      setError(null);
+      reload("settings");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return (
+    <section className={styles.section}>
+      <h2 className={ui.title}>Project and daemon</h2>
+      <p className={ui.sub}>What this office runs on. Except the first two options, these are set when the daemon starts.</p>
+      <ProjectPrompt />
+      <Option
+        label="When an agent's commits change .nobody/"
+        help="Agents cannot edit their own configuration; a shell command could. Block refuses the delivery until the agent undoes it; Warn delivers and warns you. Saved in ~/.nobody/settings.yaml, applies at once."
+      >
+        <Segment
+          label="Configuration protection"
+          values={[
+            { value: "block", label: "Block" },
+            { value: "warn", label: "Warn" },
+          ]}
+          current={settings.config_protection}
+          onPick={(v) => void protect(v)}
+        />
+      </Option>
+      {error && <p className={ui.error}>{error}</p>}
+      <Option label="Project folder" help="The folder holding .nobody/. Agents work here, or in their team's worktree while a feature is active.">
+        <code>{settings.project_dir}</code>
+      </Option>
+      <Option label="Data on this machine" help="Database and worktrees of this project. Never committed, never shared.">
+        <code>{settings.state_dir}</code>
+      </Option>
+      <Option label="Daemon address" help="NOBODY_ADDR. Loopback only, unless you change it.">
+        <code>{settings.address}</code>
+      </Option>
+      <Option label="Allowed origins" help="Pages allowed to change things through the API (-origins).">
+        <span className={styles.chips}>
+          {settings.origins.map((o) => (
+            <span key={o} className={ui.chip}>
+              {o}
+            </span>
+          ))}
+        </span>
+      </Option>
+      <Option label="Start every agent with the daemon" help="-start">
+        <span className={ui.chip}>{settings.start_agents ? "Yes" : "No"}</span>
+      </Option>
+      <Option label="Claude Code executable" help="-claude">
+        <code>{settings.claude_path}</code>
+      </Option>
+    </section>
+  );
+}
+
+// BudgetsSection turns budgets on or off for the project, and sets the
+// threshold and the staff's cap, in .nobody/budgets.yaml (ADR-0013). Agent
+// and team caps are set in their editors (Staff, the team dialog).
+function BudgetsSection() {
+  const { budgets, reload } = useLive();
+  const [threshold, setThreshold] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!budgets) return <p className={ui.sub}>Loading…</p>;
+
+  async function save(change: Partial<BudgetSettings>) {
+    if (!budgets) return;
+    try {
+      await updateBudgets({ ...budgets, ...change });
+      setError(null);
+      setThreshold(null);
+      reload("budgets");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  const typed = threshold ?? String(budgets.threshold);
+  const percent = Number(typed);
+  const validThreshold = Number.isInteger(percent) && percent >= 1 && percent <= 100;
+
+  return (
+    <section className={styles.section}>
+      <h2 className={ui.title}>Budgets</h2>
+      <p className={ui.sub}>
+        Spending is Claude Code&apos;s estimate at list price, in USD: a guard against runaway agents, not an invoice. Saved in
+        .nobody/budgets.yaml, committed with the project.
+      </p>
+      <Option
+        label="Budgets"
+        help="Off: no caps, holds, extension requests or budget fields. Spending is still measured and shown on the office's spending board."
+      >
+        <Segment
+          label="Budgets"
+          values={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+          current={budgets.enabled ? "on" : "off"}
+          onPick={(v) => void save({ enabled: v === "on" })}
+        />
+      </Option>
+      {budgets.enabled && (
+        <Option label="Threshold" help="At this percent of a budget, its agents stop at the end of their turn and the director asks you for an extension. A budget may set its own.">
+          <input className={ui.input} inputMode="numeric" aria-label="Threshold in percent" value={typed} onChange={(e) => setThreshold(e.target.value)} />{" "}
+          <button type="button" className={ui.btn} disabled={!validThreshold || percent === budgets.threshold} onClick={() => void save({ threshold: percent })}>
+            Save
+          </button>
+        </Option>
+      )}
+      {error && <p className={ui.error}>{error}</p>}
+      <CapEditor scope={{ kind: "staff" }} title="Cap on the whole staff (the director included)" />
+    </section>
+  );
+}
+
+// ProjectPrompt edits .nobody/project.md: what every agent of the project
+// should know. Saving restarts every agent with a new session once idle.
+function ProjectPrompt() {
+  const [saved, setSaved] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getProject()
+      .then((p) => {
+        if (cancelled) return;
+        setSaved(p.prompt);
+        setText(p.prompt);
+      })
+      .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function save() {
+    setBusy(true);
+    try {
+      const p = await setProjectPrompt(text);
+      setSaved(p.prompt);
+      setText(p.prompt);
+      setError(null);
+      setNote("Saved. Every agent restarts with a new session once its turn is over.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className={styles.block}>
+      <div className={styles.optionLabel}>
+        <strong>Project prompt</strong>
+        <span>
+          What every agent should know about this project: the stack, the conventions, where things are. It comes after your own CLAUDE.md and before each
+          team&apos;s instructions. Saved in .nobody/project.md.
+        </span>
+      </div>
+      <textarea
+        id="project-prompt"
+        className={`${ui.textarea} ${styles.projectPrompt}`}
+        placeholder={"e.g. A Go CLI with a Taskfile. Run `task check` before closing a ticket. Conventional commits."}
+        value={text}
+        disabled={saved === null}
+        onChange={(e) => {
+          setText(e.target.value);
+          setNote(null);
+        }}
+      />
+      <div className={styles.blockActions}>
+        <button type="button" className={ui.btnPrimary} disabled={busy || saved === null || text === saved} onClick={() => void save()}>
+          Save
+        </button>
+        {saved !== null && text !== saved && (
+          <button type="button" className={ui.link} onClick={() => setText(saved)}>
+            Undo changes
+          </button>
+        )}
+        {note && <span className={ui.note}>{note}</span>}
+      </div>
+      {error && <p className={ui.error}>{error}</p>}
+    </div>
+  );
+}
+
+function AppearanceSection() {
+  const appearance = useAppearance();
+
+  return (
+    <section className={styles.section}>
+      <h2 className={ui.title}>Appearance</h2>
+      <p className={ui.sub}>How the office looks on this computer. When your system asks for less motion, Full behaves like Reduced.</p>
+      <Option label="Animations" help="Reduced keeps statuses and paper planes on straight paths, without walking, loops or confetti.">
+        <Segment<Animations>
+          label="Animations"
+          values={[
+            { value: "full", label: "Full" },
+            { value: "reduced", label: "Reduced" },
+            { value: "off", label: "Off" },
+          ]}
+          current={appearance.animations}
+          onPick={(v) => saveAppearance({ ...appearance, animations: v })}
+        />
+      </Option>
+      <Option label="Labels on paper planes" help="Who writes to whom, and the subject.">
+        <button
+          type="button"
+          role="switch"
+          className={ui.switch}
+          aria-checked={appearance.planeLabels}
+          aria-label="Labels on paper planes"
+          onClick={() => saveAppearance({ ...appearance, planeLabels: !appearance.planeLabels })}
+        />
+      </Option>
+    </section>
+  );
+}

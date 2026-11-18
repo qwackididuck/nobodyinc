@@ -1,14 +1,43 @@
 openapi: 3.1.0
 info:
   title: Nobody Inc daemon API
-  version: 0.0.1
+  version: 0.1.0
+  description: |
+    HTTP API of nobodyd (ADR-0014, docs/projects.md). `nobodyd` is a
+    **launcher**: it listens on 127.0.0.1:7420, serves the routes tagged
+    `launcher` (known projects, folders, windows holding projects) and starts
+    one **project daemon** per open project, a child process on a port of its
+    own. Every other route belongs to a project daemon: the control room
+    reaches them through the launcher, `/p/{project}/api/...` being proxied to
+    the project daemon's `/api/...` (REST, event stream and terminal
+    WebSockets alike); the launcher answers 503 while the project is not
+    running. Agents (nobody-hook, MCP) talk to their project daemon directly.
+    The launcher also serves the control room itself (its static export) at
+    `/`, so that the page and the API share one origin (ADR-0016).
+
+    The project daemon's API has these audiences:
+    - `/api/*` is used by the supervision web UI and the human operator;
+    - `/internal/*` is used by nobody-hook, the binary Claude Code runs on hook
+      events (see docs/hooks.md). It is not meant to be called by hand.
+    - `/mcp/{address}` (not described here) is the MCP endpoint (streamable
+      HTTP, stateless) of the agent with that address: tools send_message and
+      list_contacts, see internal/officemcp.
+    Changes are pushed to the UI by `GET /api/events` (Server-Sent Events,
+    docs/events.md); the UI then reads the changed resource again.
+    The daemon listens on loopback only by default.
 servers:
   - url: http://127.0.0.1:7420
+    description: The launcher; a project daemon's routes are under /p/{project}
+
+tags:
+  - name: launcher
+    description: Served by the launcher itself (ADR-0014).
+
 paths:
   /healthz:
     get:
       operationId: getHealth
-      summary: Liveness probe
+      summary: Liveness probe (the launcher's, and each project daemon's)
       responses:
         "200":
           description: Daemon is up
@@ -16,7 +45,2177 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+
+  /api/projects:
+    get:
+      operationId: listProjects
+      tags: [launcher]
+      summary: List the known projects, most recently opened first
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: openProject
+      tags: [launcher]
+      summary: Make a folder a known project, setting it up if needed
+      description: |
+        Adds the folder to the known projects. A folder without `.nobody/` is
+        set up first: `.nobody/` with its director and no team, the user's
+        catalog and settings if missing, and Claude Code's trust of the
+        folder. With `create`, the folder must not exist: it is created (its
+        parent must exist), made a git repository with an empty first commit,
+        then set up. Opening a known project changes nothing. The project
+        does not start: a window starts it by holding it (attach).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [path]
+              properties:
+                path:
+                  type: string
+                  description: Absolute path of the folder.
+                create:
+                  type: boolean
+                  description: Create a new folder rather than open an existing one.
+      responses:
+        "200":
+          description: The folder was already a Nobody Inc project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "201":
+          description: The folder was set up (and created, with `create`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/projects/{project}:
+    delete:
+      operationId: deleteProject
+      tags: [launcher]
+      summary: Remove Nobody Inc from a project, never its code
+      description: |
+        Stops the project, then removes its `.nobody/`, its state directory
+        (database, worktrees) and its registry entry. Git branches stay,
+        `nobody/*` included. Refused (409) while another window holds the
+        project; the window that holds it may delete it by giving its
+        `window` id, and loses it.
+
+        A feature that is not finished stops the deletion (409, with
+        `feature`) unless `feature` says what to do with it: `merge` finishes
+        it anyway (ADR-0007, unfinished tickets canceled, local merge into the
+        base branch; on a conflict or a refusal nothing is deleted, 409), or
+        `discard` removes the teams' worktrees, their uncommitted changes
+        lost, and keeps every branch.
+      parameters:
+        - $ref: "#/components/parameters/Project"
+        - name: window
+          in: query
+          description: The window deleting the project, when it holds it.
+          schema:
+            type: string
+        - name: feature
+          in: query
+          description: What to do with a feature that is not finished.
+          schema:
+            type: string
+            enum: [merge, discard]
+      responses:
+        "204":
+          description: Nobody Inc removed from the project
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Held by another window, a feature is not finished, or the merge failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeleteRefusal"
+
+  /api/projects/{project}/attach:
+    get:
+      operationId: attachProject
+      tags: [launcher]
+      summary: Hold a project from a window (WebSocket)
+      description: |
+        A window shows one project and holds it while this WebSocket is
+        open; holding a project starts its daemon (ADR-0014). One window
+        holds a project at most.
+
+        The launcher sends JSON messages:
+        - `{"type": "state", "state": "starting" | "running" | "stopped", "error"?: string}`:
+          the project daemon's state (`stopped` with `error` when it exited
+          unexpectedly or failed to start; the window may attach again);
+        - `{"type": "held", "focused"?: true}` then closes with code 4409:
+          another window holds the project. Attach again with
+          `takeover=true` to take it. In the desktop app, `focused` says the
+          app brought the window holding it to the front instead: the
+          window that asked goes back to the projects page (ADR-0016);
+        - `{"type": "taken"}` then closes with code 4409: another window
+          took the project over.
+        The window may send `{"type": "release"}`: the project stops at once,
+        without the grace period (switching project in the window); and
+        `{"type": "start"}` to start the project again after it stopped on
+        its own.
+
+        When the connection drops, the project keeps running for a grace
+        period (15 s): the same window attaching again within it keeps it,
+        and another window may take it without `takeover`. After it, the
+        project daemon is stopped. The launcher pings every 10 s.
+      parameters:
+        - $ref: "#/components/parameters/Project"
+        - name: window
+          in: query
+          required: true
+          description: The window's id, kept by the window across reconnections.
+          schema:
+            type: string
+        - name: takeover
+          in: query
+          description: Take the project from the window that holds it.
+          schema:
+            type: boolean
+      responses:
+        "101":
+          description: WebSocket established
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/windows:
+    post:
+      operationId: openWindow
+      tags: [launcher]
+      summary: Open a new window of the desktop app
+      description: |
+        Served only by the desktop app's launcher (ADR-0016): a web view has
+        no browser tabs, so "open in a new window" asks the app. Without
+        `project`, the window shows the projects page. Elsewhere, 404.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                project:
+                  type: string
+                  description: The project the window opens; none for the projects page.
+      responses:
+        "204":
+          description: The window is opening
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/fs/dirs:
+    get:
+      operationId: listDirectories
+      tags: [launcher]
+      summary: List the sub-folders of a folder, to choose a project
+      description: |
+        Names of the sub-folders only, hidden ones left out; nothing is read
+        inside files. Without `path`, the user's home directory.
+      parameters:
+        - name: path
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sub-folders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DirectoryListing"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/agents:
+    get:
+      operationId: listAgents
+      summary: List the agents of the organisation with their current status
+      responses:
+        "200":
+          description: Agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Agent"
+
+  /api/agents/{address}/start:
+    post:
+      operationId: startAgent
+      summary: Launch (or relaunch) an agent's Claude Code session
+      description: 409 when the agent is already running, is on leave, or the daemon is shutting down.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      responses:
+        "202":
+          description: Agent launched
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}:
+    delete:
+      operationId: dismissAgent
+      summary: Dismiss an agent
+      description: |
+        Deletes the agent's file. Once idle (or at once with now=true) the agent
+        stops; its ticket in progress goes back to its team's queue and its
+        undelivered mail is returned to the senders. History is kept. The
+        director cannot be dismissed (409): it is always present; edit it
+        instead.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Dismissal recorded; applied once the agent is idle
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}/definition:
+    get:
+      operationId: getAgentDefinition
+      summary: The agent's definition, as in its file
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      responses:
+        "200":
+          description: Definition
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDefinition"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: editAgentDefinition
+      summary: Replace the agent's definition and restart it with it
+      description: |
+        Rewrites the agent's file (from and on_leave are kept as they are). The
+        agent restarts once idle, resuming its session unless fresh=true. The
+        template it came from is never changed.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+        - $ref: "#/components/parameters/Fresh"
+        - $ref: "#/components/parameters/Now"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentDefinition"
+      responses:
+        "200":
+          description: Saved; the restart is applied once the agent is idle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentDefinition"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}/leave:
+    post:
+      operationId: putAgentOnLeave
+      summary: Put an agent on leave
+      description: |
+        The agent stops once idle; its file and session are kept. Its ticket in
+        progress goes back to its team's queue, team addressing skips it, and
+        mail sent to it waits until it returns. The director cannot go on
+        leave: it is always present (409).
+      parameters:
+        - $ref: "#/components/parameters/Address"
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Leave recorded; applied once the agent is idle
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}/return:
+    post:
+      operationId: returnAgentFromLeave
+      summary: Bring an agent back from leave
+      description: The agent starts again, resuming its session; mail that waited is delivered.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+        - $ref: "#/components/parameters/Fresh"
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Agent restarting
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/teams:
+    get:
+      operationId: listTeams
+      summary: Teams declared in the project's .nobody/org.yaml, including those without agents
+      responses:
+        "200":
+          description: Teams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Team"
+    post:
+      operationId: createTeam
+      summary: Create a team (a room of the office) with its goal and shared prompt
+      description: |
+        Adds the team to .nobody/org.yaml and writes its shared prompt to
+        .nobody/teams/<id>/TEAM.md (docs/agents.md, "Prompts"). An empty
+        prompt means the goal alone. The team has no agent yet: recruit some.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Team"
+      responses:
+        "201":
+          description: Team created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/teams/{team}:
+    put:
+      operationId: updateTeam
+      summary: Change a team's goal, shared prompt and block list
+      description: |
+        goal and prompt are replaced (absent means empty). When they change,
+        the team's agents restart with a fresh session once their current
+        turn is over: a resumed session keeps the prompt it started with.
+        block replaces the team's block list when present, and is left as it
+        is when absent; changing it restarts nobody (ADR-0009).
+      parameters:
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                goal:
+                  type: string
+                prompt:
+                  type: string
+                block:
+                  $ref: "#/components/schemas/TeamBlock"
+      responses:
+        "200":
+          description: Team after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team and dismiss its members
+      description: |
+        Removes the team from .nobody/org.yaml and from the other teams' block
+        lists, and deletes .nobody/teams/<id>/ (its agents' files and
+        TEAM.md). Every member is
+        dismissed: each stops once its current turn is over (or at once with
+        now=true), its ticket in progress goes back to open, and its
+        undelivered mail is returned to the senders. The team's tickets stay,
+        open ones included, for the human to delete or keep. History is kept.
+      parameters:
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Now"
+      responses:
+        "202":
+          description: Team deleted; its members stop once idle
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/project:
+    get:
+      operationId: getProject
+      summary: The project's shared prompt (.nobody/project.md), given to every agent
+      responses:
+        "200":
+          description: The project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    put:
+      operationId: updateProject
+      summary: Change the project's shared prompt
+      description: Every agent restarts with a fresh session once its current turn is over.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Project"
+      responses:
+        "200":
+          description: The project after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/teams/{team}/agents:
+    post:
+      operationId: recruitAgent
+      summary: Recruit an agent from a template, or create one from a definition, and start it
+      parameters:
+        - name: team
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Recruitment"
+      responses:
+        "201":
+          description: Agent recruited and starting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/catalog:
+    get:
+      operationId: listTemplates
+      summary: Agent templates, built-in and the user's (~/.nobody/catalog), by name
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Template"
+        "500":
+          $ref: "#/components/responses/Error"
+
+  /api/catalog/{name}:
+    get:
+      operationId: getTemplate
+      summary: One template
+      parameters:
+        - $ref: "#/components/parameters/TemplateName"
+      responses:
+        "200":
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: saveTemplate
+      summary: Create or replace a user template in ~/.nobody/catalog
+      description: Saving under the name of a built-in template overrides it. Agents already recruited are not changed.
+      parameters:
+        - $ref: "#/components/parameters/TemplateName"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentDefinition"
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Template"
+        "400":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteTemplate
+      summary: Delete a user template from ~/.nobody/catalog
+      description: |
+        Deleting a template that overrides a built-in one brings the built-in
+        one back. Built-in templates cannot be deleted. Agents recruited from
+        the template are not changed.
+      parameters:
+        - $ref: "#/components/parameters/TemplateName"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/agents/{address}/terminal:
+    get:
+      operationId: attachTerminal
+      summary: WebSocket streaming the agent's terminal
+      description: |
+        Upgrades to a WebSocket. Server → browser binary frames carry raw
+        terminal output (recent backlog first). Browser → server text frames
+        are JSON controls: {"type":"input","data":"..."} or
+        {"type":"resize","rows":40,"cols":120}.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      responses:
+        "101":
+          description: Switching to the WebSocket protocol
+        "404":
+          description: Agent is not running
+
+  /api/messages:
+    get:
+      operationId: listMessages
+      summary: Latest messages, oldest first
+      description: |
+        Without filter: the latest messages of the whole organisation.
+        `with` and `scope` narrow the list; they cannot be combined.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: with
+          in: query
+          description: |
+            Only the conversation between the human and this address (both
+            directions): what the control room shows as the agent's chat.
+          schema:
+            type: string
+        - name: scope
+          in: query
+          description: |
+            `agents`: only delivered messages between agents (the director
+            included), neither from nor to the human or the system address
+            `nobody`. The control room shows them in its wastebasket.
+          schema:
+            type: string
+            enum: [agents]
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+    post:
+      operationId: sendMessageAsHuman
+      summary: Send a message as the human operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HumanDraft"
+      responses:
+        "201":
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteFinishedAgentConversations
+      summary: Delete the finished conversations between agents (empty the wastebasket)
+      description: |
+        Deletes for good the conversations exchanged only between agents (the
+        director included; never one involving the human or `nobody`) that
+        are finished: every message is delivered and the last one expects no
+        answer (inform, agree, refuse, done). Open conversations stay. The
+        deleted messages also disappear from the tickets they were attached
+        to. `scope=agents` is required.
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [agents]
+      responses:
+        "200":
+          description: IDs of the deleted messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessagesDeleted"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/events:
+    get:
+      operationId: streamEvents
+      summary: Server-Sent Events announcing changes
+      description: |
+        A long-lived `text/event-stream` (docs/events.md). Each event names
+        what changed; the UI reads that resource again through the REST API,
+        which stays the source of truth. A few events carry data for the
+        office animations (`agent.status`, `message.sent`).
+
+        There is no replay: the first event of every connection is `hello`,
+        after which the client reloads everything. A comment line (`: ping`)
+        is sent every 15 seconds so that idle proxies keep the connection.
+
+        Event types and their `data` (JSON):
+        - `hello`: `{}`
+        - `agent.status`: AgentStatusEvent
+        - `message.sent`: Message
+        - `message.delivered`: MessagesDeliveredEvent
+        - `messages.deleted`: MessagesDeleted (the wastebasket was emptied)
+        - `approvals.changed`: `{}`
+        - `tickets.changed`: ChangedEvent (ticket ID)
+        - `features.changed`: ChangedEvent (feature ID)
+        - `org.changed`: `{}` (an agent was recruited, edited, put on leave, brought back or dismissed)
+        - `catalog.changed`: `{}`
+        - `schedules.changed`: `{}` (a schedule, one of its occurrences or a proposal changed)
+        - `spend.changed`: `{}` (agents spent; sent at most once a second, ADR-0013)
+        - `budgets.changed`: `{}` (the budgets file, a ticket's or feature's budget, a hold, a budget request or a cap proposal changed)
+      responses:
+        "200":
+          description: The event stream, until the client or the daemon closes it
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/settings:
+    get:
+      operationId: getSettings
+      summary: How this daemon runs, and the user's settings
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+    put:
+      operationId: updateSettings
+      summary: Change the user's settings (~/.nobody/settings.yaml)
+      description: |
+        Only `config_protection` can be changed; it applies to the next
+        deliveries at once. The other values are launch options of the daemon.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsUpdate"
+      responses:
+        "200":
+          description: Settings after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
+        "400":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+
+  /api/mcp:
+    get:
+      operationId: listMCPServers
+      summary: MCP servers every agent gets, from Claude Code's three scopes
+      description: |
+        The servers of the project (.mcp.json), of the user on this project
+        (local scope) and of the user (user scope), read from Claude Code's
+        own files and merged, the project winning on a name conflict
+        (ADR-0010). No value is ever returned in clear: only the names of the
+        environment variables a server refers to (`${NAME}`) and whether the
+        daemon's environment sets them, the command without its arguments,
+        or the URL without its query. The office server `nobody` is not
+        listed: every agent gets it.
+      responses:
+        "200":
+          description: Servers, by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
+    post:
+      operationId: addMCPServer
+      summary: Add or replace an MCP server in one of Claude Code's scopes
+      description: |
+        Written by Claude Code itself (`claude mcp add-json --scope`), in the
+        project's main checkout. Every value of env and headers must refer to
+        an environment variable (`${GITLAB_TOKEN}`, `Bearer ${TOKEN}`): a
+        secret is never written. Every agent restarts once idle, resuming
+        its session, to get the new server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MCPServerInput"
+      responses:
+        "201":
+          description: Server added; the list after the change
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/mcp/{name}:
+    get:
+      operationId: getMCPServer
+      summary: One MCP server, to edit it
+      description: |
+        The server every agent gets under this name (the winning scope), with
+        its command, arguments and URL in full: the control room hides them
+        until the human reveals them. Env and headers values that refer to
+        an environment variable are returned as written (`${GITLAB_TOKEN}`);
+        a value written in clear is never returned: it comes back empty and
+        is listed in `clear_values`.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MCPServerDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: updateMCPServer
+      summary: Change an MCP server in its scope
+      description: |
+        Replaces the server's transport (type, command, args, url) and its
+        env or headers, in the scope it comes from; its other keys (e.g. a
+        timeout) are kept. Written by Claude Code itself, like an addition.
+        Every env and headers value must refer to an environment variable:
+        a value written in clear must be replaced by one. Every agent
+        restarts once idle, resuming its session.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope, server]
+              additionalProperties: false
+              properties:
+                scope:
+                  $ref: "#/components/schemas/MCPScope"
+                server:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: Server changed; the list after the change
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MCPServer"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: removeMCPServer
+      summary: Remove an MCP server from one of Claude Code's scopes
+      description: |
+        Removed by Claude Code itself (`claude mcp remove --scope`). Every
+        agent restarts once idle, resuming its session.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: scope
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/MCPScope"
+      responses:
+        "204":
+          description: Server removed
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/mcp/{name}/tools:
+    get:
+      operationId: listMCPTools
+      summary: The tools an MCP server offers
+      description: |
+        The daemon starts the server (or reaches it), with its environment
+        variables expanded from the daemon's environment, asks for its tools
+        and stops it. Used to choose the tools an agent does not get
+        (mcp_exclude). Fails when a variable it needs is not set, or when the
+        server does not answer in time.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tools, by name
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+        "404":
+          $ref: "#/components/responses/Error"
+        "502":
+          $ref: "#/components/responses/Error"
+
+  /api/skills:
+    get:
+      operationId: listSkills
+      summary: Skills every agent gets
+      description: |
+        The project's skills (.claude/skills of its main checkout), the
+        user's personal skills (skills/ of Claude Code's configuration
+        directory) and Claude Code's built-in skills (ADR-0011). Every agent
+        gets every skill but those its file excludes (skills_exclude). A
+        personal skill named like a project skill is shadowed: agents get the
+        project's. Built-in skills are discovered by starting claude without
+        reaching the API; when that failed, builtin_error says why.
+      responses:
+        "200":
+          description: Skills, by scope then name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+
+  /api/skills/builtin/refresh:
+    post:
+      operationId: refreshBuiltinSkills
+      summary: Discover Claude Code's built-in skills again
+      description: |
+        Starts claude with the agents' flags and the API out of reach, reads
+        the skills its init event lists, and stops it. Nothing leaves the
+        machine and no model is called.
+      responses:
+        "200":
+          description: The list after the refresh
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+
+  /api/skills/{scope}/{name}:
+    parameters:
+      - name: scope
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/SkillScope"
+      - name: name
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/SkillName"
+    get:
+      operationId: getSkill
+      summary: One project or personal skill, to edit it
+      responses:
+        "200":
+          description: The skill
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: saveSkill
+      summary: Create or change a project or personal skill
+      description: |
+        Writes <dir>/<name>/SKILL.md: name and description in its header,
+        then the body. The other keys of an existing header are kept as they
+        are; the other files of the skill's directory are not touched. A
+        project skill must then be committed to reach agents working on a
+        feature. A personal skill serves every project, and the user's own
+        Claude Code. Agents restart once idle, resuming their session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SkillInput"
+      responses:
+        "200":
+          description: Skill saved; the list after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+        "400":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteSkill
+      summary: Delete a project or personal skill
+      description: |
+        Removes the skill's whole directory. Agents restart once idle,
+        resuming their session.
+      responses:
+        "204":
+          description: Skill deleted
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/skills/personal/{name}/copy-to-project:
+    post:
+      operationId: copySkillToProject
+      summary: Copy a personal skill into the project
+      description: |
+        Copies the skill's whole directory into the project's .claude/skills.
+        The copy then shadows the personal skill for this project's agents;
+        each is edited on its own. Refused when the project already has a
+        skill of that name.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/SkillName"
+      responses:
+        "201":
+          description: Skill copied; the list after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkillList"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/features:
+    get:
+      operationId: listFeatures
+      summary: Features, oldest first (proposed, started and refused); at most one is active
+      responses:
+        "200":
+          description: Features
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Feature"
+    post:
+      operationId: startFeature
+      summary: Start a feature and make it the active one
+      description: |
+        Creates the feature branch (nobody/<slug>) from the base branch and one
+        worktree per team, then restarts every agent in its team's worktree.
+        New tickets belong to the active feature. See docs/workspaces.md.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeatureDraft"
+      responses:
+        "201":
+          description: Feature started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/features/{id}/start:
+    post:
+      operationId: startProposedFeature
+      summary: Start a feature the director proposed
+      description: |
+        Prepares its branch and worktrees, makes it the active feature and
+        restarts the team agents in their worktrees (not the director). The
+        director gets an "agree" answer to its proposal.
+
+        The body may set the feature's budget (ADR-0013): it replaces the
+        budget the director proposed; without a body, the proposed budget is
+        kept. A budget is refused while budgets are turned off.
+      parameters:
+        - $ref: "#/components/parameters/FeatureID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetFields"
+      responses:
+        "200":
+          description: Feature started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/features/{id}/refuse:
+    post:
+      operationId: refuseProposedFeature
+      summary: Refuse a feature the director proposed
+      description: The director gets a "refuse" answer to its proposal, with the reason.
+      parameters:
+        - $ref: "#/components/parameters/FeatureID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Feature refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/features/{id}/review:
+    get:
+      operationId: reviewFeature
+      summary: What a started feature brings compared with its base branch
+      description: |
+        The commits of the feature branch that the base branch does not have,
+        the files they change (with lines added and deleted), the diff (cut
+        at 400 KB, then `diff_truncated` is true), and the feature's tickets
+        that are not done or canceled yet. Read-only (docs/workspaces.md).
+      parameters:
+        - $ref: "#/components/parameters/FeatureID"
+      responses:
+        "200":
+          description: The review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeatureReview"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/features/{id}/finish:
+    post:
+      operationId: finishFeature
+      summary: Merge the active feature into its base branch, locally, and end it
+      description: |
+        Only the human finishes a feature (ADR-0007). The feature branch is
+        merged into the base branch with a merge commit, in the project's
+        checkout when the base branch is checked out there (it must have no
+        uncommitted changes to tracked files), or in a temporary worktree
+        otherwise. Nothing is pushed. Then the feature is finished and no
+        longer active: team agents restart in the project directory, and the
+        teams' worktrees and branches are removed (the feature branch is
+        kept). The feature's tickets are archived: they leave the Kanban and
+        stay readable (`GET /api/tickets?archived=true`). On a conflict nothing
+        changes.
+
+        While some of its tickets are not done or canceled, the finish is
+        refused unless `force` is true: they are then canceled (and archived),
+        and the work they did not deliver is lost.
+      parameters:
+        - $ref: "#/components/parameters/FeatureID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                force:
+                  type: boolean
+                  description: Finish even though some tickets are not done.
+      responses:
+        "200":
+          description: Feature finished
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Feature"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Not active, unfinished tickets, uncommitted changes on the base branch, or a merge conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/schedules:
+    get:
+      operationId: listSchedules
+      summary: Scheduled tasks, in the order of .nobody/schedules.yaml
+      description: |
+        Recurring work the daemon hands to agents while it runs (ADR-0012,
+        docs/schedules.md). Each schedule comes with its next occurrence, its
+        last one, and a warning when its target uses the `default`
+        permission profile.
+      responses:
+        "200":
+          description: Schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleView"
+    post:
+      operationId: createSchedule
+      summary: Create a schedule (enabled)
+      description: Written to .nobody/schedules.yaml, to be committed by the human.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Schedule"
+      responses:
+        "201":
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "400":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/preview:
+    post:
+      operationId: previewScheduleRecurrence
+      summary: The next occurrences of a recurrence, while the human types it
+      description: |
+        Checks `every` or `cron` (exactly one) and returns the next three
+        occurrences from now, as a schedule created now would have them.
+        Nothing is saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                every:
+                  type: string
+                cron:
+                  type: string
+      responses:
+        "200":
+          description: The next occurrences
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [next]
+                properties:
+                  next:
+                    type: array
+                    items:
+                      type: string
+                      format: date-time
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/{id}:
+    parameters:
+      - $ref: "#/components/parameters/ScheduleID"
+    put:
+      operationId: updateSchedule
+      summary: Edit a schedule
+      description: |
+        Replaces the schedule (its id and `enabled` stay as they are; an `id`
+        in the body must match the path). The recurrence is armed again from
+        now. An occurrence still waiting for a free agent is canceled; one
+        already running goes on to its end.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Schedule"
+      responses:
+        "200":
+          description: Schedule edited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteSchedule
+      summary: Delete a schedule; its history stays
+      description: An occurrence still waiting is canceled; one already running goes on to its end.
+      responses:
+        "204":
+          description: Schedule deleted
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/{id}/pause:
+    post:
+      operationId: pauseSchedule
+      summary: Pause a schedule (enabled false)
+      description: No new occurrence; an occurrence still waiting is canceled, one already running goes on to its end.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleID"
+      responses:
+        "200":
+          description: Schedule paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/{id}/resume:
+    post:
+      operationId: resumeSchedule
+      summary: Resume a paused or disabled schedule, armed from now
+      description: Refused (400) when its target no longer exists; edit the target first.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleID"
+      responses:
+        "200":
+          description: Schedule resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleView"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/schedules/{id}/run:
+    post:
+      operationId: runSchedule
+      summary: Run one occurrence now ("Run now")
+      description: |
+        Follows the usual dispatch rules (ADR-0012, point 6): the occurrence
+        waits for a free target agent, or is recorded as `unavailable` when
+        none of them runs. Works on a paused schedule too. Refused (409)
+        while an occurrence of this schedule is waiting or running.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleID"
+      responses:
+        "202":
+          description: The occurrence, as recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleRun"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/schedule-runs:
+    get:
+      operationId: listScheduleRuns
+      summary: Occurrences of scheduled tasks, newest first
+      description: Kept after their schedule is deleted.
+      parameters:
+        - name: schedule
+          in: query
+          description: Only this schedule's occurrences.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Occurrences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleRun"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/schedule-proposals:
+    get:
+      operationId: listScheduleProposals
+      summary: The director's schedule proposals, newest first
+      responses:
+        "200":
+          description: Proposals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleProposal"
+
+  /api/schedule-proposals/{id}/accept:
+    post:
+      operationId: acceptScheduleProposal
+      summary: Accept a schedule the director proposed, possibly edited
+      description: |
+        Writes the schedule (enabled) to .nobody/schedules.yaml. The body may
+        carry the schedule as the human edited it; without it, the proposal
+        is accepted as it is. The director gets an "agree" answer.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleProposalID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                schedule:
+                  $ref: "#/components/schemas/Schedule"
+      responses:
+        "200":
+          description: Proposal accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleProposal"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Already decided, or a schedule with this id exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/schedule-proposals/{id}/refuse:
+    post:
+      operationId: refuseScheduleProposal
+      summary: Refuse a schedule the director proposed
+      description: The director gets a "refuse" answer, with the reason.
+      parameters:
+        - $ref: "#/components/parameters/ScheduleProposalID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Proposal refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleProposal"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/budgets:
+    get:
+      operationId: getBudgets
+      summary: The project's budget settings and caps (.nobody/budgets.yaml)
+      description: |
+        The file the daemon alone writes (ADR-0013, point 3): whether budgets
+        are on, the project's threshold, and the agent, team and staff caps.
+        Ticket and feature budgets live with the tickets and features.
+      responses:
+        "200":
+          description: Budget settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetSettings"
+    put:
+      operationId: updateBudgets
+      summary: Replace the budget settings and caps
+      description: |
+        Writes .nobody/budgets.yaml. Caps of agents or teams that do not exist
+        are refused. Turning budgets off lifts every hold and closes the
+        pending requests; spend is still measured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetSettings"
+      responses:
+        "200":
+          description: Settings saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetSettings"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/spend:
+    get:
+      operationId: getSpend
+      summary: What the agents spent in a month, and where each budget stands
+      description: |
+        Spend is Claude Code's estimate at list price, in USD, read from the
+        agents' statusLine and from urgent forks (ADR-0013, points 1 and 2).
+        Totals are for the month asked; each gauge is computed over its own
+        budget's period (the current month for a monthly cap, all time for a
+        cumulative one).
+      parameters:
+        - name: month
+          in: query
+          description: '"YYYY-MM", in the machine''s time zone; defaults to the current month.'
+          schema:
+            type: string
+            pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$"
+            example: 2026-11
+      responses:
+        "200":
+          description: Spend
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpendSummary"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/budget-requests:
+    get:
+      operationId: listBudgetRequests
+      summary: Budget extension requests, newest first
+      parameters:
+        - name: open
+          in: query
+          description: Only the requests not decided or closed yet.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetRequest"
+
+  /api/budget-requests/{id}/extend:
+    post:
+      operationId: extendBudget
+      summary: Grant an extension; the held agents start again
+      description: |
+        Only the human decides (ADR-0013, point 5). What the extension changes
+        depends on the budget (point 6): a ticket's or feature's budget grows;
+        a monthly cap is raised for the current month only; a cumulative cap
+        is written to .nobody/budgets.yaml. A ticket extension inside a
+        feature with a budget comes out of what is left to allocate, and
+        raises the feature's budget by the shortfall. The held agents are
+        woken up with a notice from `nobody`; the director is told.
+      parameters:
+        - $ref: "#/components/parameters/BudgetRequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_usd]
+              additionalProperties: false
+              properties:
+                amount_usd:
+                  type: number
+                  exclusiveMinimum: 0
+      responses:
+        "200":
+          description: Extension granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetRequest"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Already decided or closed, or still waiting for its justification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/budget-requests/{id}/refuse:
+    post:
+      operationId: refuseBudget
+      summary: Refuse an extension and choose what happens to each held agent
+      description: |
+        Every held agent needs an outcome: `cancel` its ticket, `release` the
+        ticket to its team's queue, or `hold` (stay on budget hold). An agent
+        with no ticket can only be held. With `commit_first`, every held
+        agent with a ticket in progress is first released for one short turn,
+        with a notice from `nobody` asking it to commit its work in progress,
+        comment its ticket and stop; its outcome applies at the end of that
+        turn, and what the turn spends is shown, never stopped (ADR-0013,
+        point 5). The director is told.
+      parameters:
+        - $ref: "#/components/parameters/BudgetRequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetRefusal"
+      responses:
+        "200":
+          description: Extension refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetRequest"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/budget-proposals:
+    get:
+      operationId: listBudgetProposals
+      summary: The director's cap proposals, newest first
+      responses:
+        "200":
+          description: Proposals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetProposal"
+
+  /api/budget-proposals/{id}/accept:
+    post:
+      operationId: acceptBudgetProposal
+      summary: Accept a cap the director proposed, possibly edited
+      description: |
+        Writes the cap to .nobody/budgets.yaml (ADR-0013, point 8). The body
+        may carry the cap as the human edited it; without it, the proposal is
+        accepted as it is. The director gets an "agree" answer.
+      parameters:
+        - $ref: "#/components/parameters/BudgetProposalID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                cap:
+                  $ref: "#/components/schemas/BudgetCap"
+      responses:
+        "200":
+          description: Proposal accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetProposal"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Already decided, its agent or team is gone, or budgets are turned off
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/budget-proposals/{id}/refuse:
+    post:
+      operationId: refuseBudgetProposal
+      summary: Refuse a cap the director proposed
+      description: The director gets a "refuse" answer, with the reason.
+      parameters:
+        - $ref: "#/components/parameters/BudgetProposalID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Proposal refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetProposal"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets:
+    get:
+      operationId: listTickets
+      summary: Tickets, oldest first, optionally filtered
+      description: |
+        Archived tickets (those of finished features, ADR-0007) are left out,
+        unless `archived=true`, which lists only them.
+      parameters:
+        - name: team
+          in: query
+          schema:
+            type: string
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/TicketStatus"
+      responses:
+        "200":
+          description: Tickets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Ticket"
+    post:
+      operationId: createTicketAsHuman
+      summary: Create a ticket as the human operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TicketDraft"
+      responses:
+        "201":
+          description: Ticket created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets/{id}:
+    get:
+      operationId: getTicket
+      summary: A ticket with its deliverables, comments and messages
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+      responses:
+        "200":
+          description: Ticket details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketDetails"
+        "404":
+          $ref: "#/components/responses/Error"
+    patch:
+      operationId: updateTicketBudget
+      summary: Change a ticket's budget (the human only)
+      description: |
+        After creation, a ticket's budget changes only through the human or
+        an extension (ADR-0013, point 3). `budget_usd: null` removes it,
+        which is refused inside a feature that has a budget; a budget larger
+        than the feature has left to allocate (plus this ticket's current
+        budget) is refused. Refused while budgets are turned off.
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetFields"
+      responses:
+        "200":
+          description: Ticket updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Archived, or the feature has not enough left to allocate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      operationId: deleteTicket
+      summary: Delete a ticket for good (the Kanban's shredder)
+      description: |
+        Only the human deletes tickets. The ticket, its comments and its
+        deliverables are deleted; messages about it stay, without the link.
+        If an agent is working on it, it gets an urgent notice from `nobody`
+        to stop. With `cascade=true`, the tickets that depend on it, and the
+        ones that depend on those, are deleted too; otherwise they no longer
+        wait for it. Archived tickets cannot be deleted.
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+        - name: cascade
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: IDs of the deleted tickets
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ids]
+                properties:
+                  ids:
+                    type: array
+                    items:
+                      type: string
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets/{id}/comments:
+    post:
+      operationId: commentTicketAsHuman
+      summary: Comment on a ticket as the human operator
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              additionalProperties: false
+              properties:
+                body:
+                  type: string
+      responses:
+        "201":
+          description: Comment added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TicketComment"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets/{id}/status:
+    post:
+      operationId: setTicketStatusAsHuman
+      summary: Change a ticket's status as the human operator (done, open, canceled)
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              additionalProperties: false
+              properties:
+                status:
+                  $ref: "#/components/schemas/TicketStatus"
+      responses:
+        "200":
+          description: Updated ticket
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/approvals:
+    get:
+      operationId: listApprovals
+      summary: Permission requests of agents waiting for the human, oldest first
+      responses:
+        "200":
+          description: Pending approvals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Approval"
+
+  /api/approvals/{id}:
+    post:
+      operationId: decideApproval
+      summary: Allow or deny a pending permission request
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecision"
+      responses:
+        "204":
+          description: Decision sent to the agent
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /internal/agents/{address}/hook:
+    post:
+      operationId: handleHookEvent
+      summary: Decide what to tell an agent on a Claude Code hook event
+      description: |
+        Called by nobody-hook with the event JSON received from Claude Code.
+        Returns the hook response to print (if any) and the IDs of the messages
+        it carries, to acknowledge once printed. For a PermissionRequest event,
+        the call blocks until the human decides (up to 9 minutes) and carries
+        no message; without a decision, no response is returned and Claude
+        Code shows its own prompt in the agent's terminal.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HookEvent"
+      responses:
+        "200":
+          description: What to tell the agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HookDecision"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /internal/agents/{address}/hook/ack:
+    post:
+      operationId: acknowledgeHookDelivery
+      summary: Confirm that a hook response was handed to the agent
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HookAck"
+      responses:
+        "204":
+          description: Messages marked delivered
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /internal/agents/{address}/statusline:
+    post:
+      operationId: reportStatusLine
+      summary: Record an agent's running cost, as Claude Code's statusLine reports it
+      description: |
+        Called by `nobody-hook statusline` with the JSON Claude Code hands its
+        statusLine (ADR-0013, point 1). The daemon turns the session's running
+        total into a spend record: the delta since the previous report of the
+        same agent and session, or the total itself when it is lower (a
+        resumed or cleared session starts again from 0). Crossing a budget's
+        threshold puts the agents it covers on hold.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusLineReport"
+      responses:
+        "204":
+          description: Recorded
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
 components:
+  parameters:
+    Project:
+      name: project
+      in: path
+      required: true
+      description: Project id, "<folder>-<hash of its path>"
+      schema:
+        type: string
+        example: shop-6e403867
+
+    Address:
+      name: address
+      in: path
+      required: true
+      description: Agent address, "<agent>@<team>"
+      schema:
+        type: string
+        example: archi@specs
+
+    TemplateName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*$"
+        example: dev
+
+    Fresh:
+      name: fresh
+      in: query
+      description: Restart with a new Claude Code session instead of resuming the current one.
+      schema:
+        type: boolean
+        default: false
+
+    Now:
+      name: now
+      in: query
+      description: Apply at once instead of waiting for the end of the agent's current turn.
+      schema:
+        type: boolean
+        default: false
+
+    FeatureID:
+      name: id
+      in: path
+      required: true
+      description: Feature ID, "F-<number>"
+      schema:
+        type: string
+        example: F-3
+
+    TicketID:
+      name: id
+      in: path
+      required: true
+      description: Ticket ID, "T-<number>"
+      schema:
+        type: string
+        example: T-12
+
+    ScheduleID:
+      name: id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/ScheduleIDValue"
+
+    ScheduleProposalID:
+      name: id
+      in: path
+      required: true
+      description: Proposal ID, "SP-<number>"
+      schema:
+        type: string
+        example: SP-2
+
+    BudgetRequestID:
+      name: id
+      in: path
+      required: true
+      description: Request ID, "BR-<number>"
+      schema:
+        type: string
+        example: BR-4
+
+    BudgetProposalID:
+      name: id
+      in: path
+      required: true
+      description: Proposal ID, "BP-<number>"
+      schema:
+        type: string
+        example: BP-1
+
+  responses:
+    Error:
+      description: |
+        Request refused. On every route that changes something (anything but
+        GET), a browser request from another origin than the control room is
+        refused with 403, and a body that is not application/json with 415.
+        Agent and catalog routes answer 501 when the organization cannot be
+        changed by this daemon, and 500 when a change was saved but could not
+        be reloaded or applied (the message says which).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
   schemas:
     Health:
       type: object
@@ -27,3 +2226,1270 @@ components:
           enum: [ok]
         version:
           type: string
+
+    Project:
+      type: object
+      required: [id, name, path, missing, git, trusted, held, state]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          description: The folder's name.
+        path:
+          type: string
+        missing:
+          type: boolean
+          description: The folder disappeared (moved or deleted outside Nobody Inc).
+        git:
+          type: boolean
+          description: The folder is a git repository (features need one).
+        trusted:
+          type: boolean
+          description: Claude Code trusts the folder (otherwise agents wait on its trust question).
+        held:
+          type: boolean
+          description: A window holds the project, or held it less than the grace period ago.
+        state:
+          type: string
+          enum: [stopped, starting, running, stopping]
+          description: The project daemon's state.
+        last_opened:
+          type: string
+          format: date-time
+
+    DeleteRefusal:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        feature:
+          description: The feature that is not finished, when that is the reason.
+          type: object
+          required: [id, title, branch]
+          properties:
+            id:
+              type: string
+            title:
+              type: string
+            branch:
+              type: string
+
+    DirectoryListing:
+      type: object
+      required: [path, home, dirs]
+      properties:
+        path:
+          type: string
+        parent:
+          type: string
+          description: The parent folder; absent at the root.
+        home:
+          type: string
+          description: The user's home directory.
+        dirs:
+          type: array
+          items:
+            type: object
+            required: [name, path, git, nobody]
+            properties:
+              name:
+                type: string
+              path:
+                type: string
+              git:
+                type: boolean
+                description: A git repository.
+              nobody:
+                type: boolean
+                description: Has a .nobody/ directory.
+              project:
+                type: string
+                description: The id of the known project in this folder.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    Agent:
+      type: object
+      required: [address, team, name, role, status, on_leave, pending_change]
+      properties:
+        address:
+          type: string
+          description: '"<agent>@<team>", or the name alone for the director.'
+        team:
+          type: string
+          description: Empty for the director, who has no team.
+        name:
+          type: string
+        role:
+          type: string
+        expertise:
+          type: string
+          description: What to ask this agent about, and what it decides.
+        status:
+          type: string
+          enum: [stopped, starting, working, idle, exited, awaiting_approval, budget_hold]
+          description: "`budget_hold`: held by a budget at its threshold, session kept, never woken up (ADR-0013, point 4)."
+        on_leave:
+          type: boolean
+        from:
+          type: string
+          description: Template it was recruited from, "<template>@<version>" (information only).
+        pending_change:
+          type: boolean
+          description: A change waits for the agent to end its turn before it restarts or stops.
+
+    Team:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        goal:
+          type: string
+        prompt:
+          type: string
+          description: Instructions shared by the team's agents (.nobody/teams/<id>/TEAM.md); empty means the goal alone.
+        block:
+          $ref: "#/components/schemas/TeamBlock"
+
+    TeamBlock:
+      type: array
+      uniqueItems: true
+      items:
+        type: string
+      description: |
+        Teams this team's members may not start a conversation with, "@team"
+        included (ADR-0009). Flows are open by default; a block is one-way,
+        never stops an answer nor a ticket, and never applies to the human,
+        nobody or the director. Each entry is another existing team. Changing
+        it does not restart anyone: the members of both teams get a notice.
+
+    Project:
+      type: object
+      required: [prompt]
+      additionalProperties: false
+      properties:
+        prompt:
+          type: string
+          description: Context shared by every agent of the project (.nobody/project.md).
+
+    PermissionProfile:
+      type: string
+      enum: [default, allowlist, auto]
+      description: See docs/agents.md. auto is not available with Haiku models.
+
+    AgentDefinition:
+      type: object
+      additionalProperties: false
+      description: |
+        Content of an agent or template file (docs/agents.md). description and
+        version are used by templates; from and on_leave by recruited agents,
+        and are read-only through the agent endpoints.
+      properties:
+        description:
+          type: string
+        version:
+          type: integer
+          minimum: 0
+        role:
+          type: string
+        expertise:
+          type: string
+          description: |
+            Public, short: what colleagues should ask this agent about, and
+            what it decides. Shown to every colleague in the organization chart.
+        model:
+          type: string
+          description: Claude model; empty for Claude Code's default.
+        permissions:
+          type: object
+          additionalProperties: false
+          properties:
+            profile:
+              $ref: "#/components/schemas/PermissionProfile"
+            allow:
+              type: array
+              items: {type: string}
+            deny:
+              type: array
+              items: {type: string}
+        tools:
+          type: array
+          items: {type: string}
+        mcp_exclude:
+          type: array
+          description: |
+            MCP servers ("gitlab") or single tools ("gitlab/delete_project")
+            the agent does not get. Every agent gets every server of the
+            project, of the user on this project and of the user (ADR-0010);
+            an exclusion naming a server absent from this machine is ignored.
+          items: {type: string}
+        skills:
+          type: array
+          description: |
+            Skills preloaded: their content is handed to the agent at every
+            session start, by its SessionStart hook (ADR-0011). The agent gets
+            every other skill too, to invoke when it needs one.
+          items:
+            $ref: "#/components/schemas/SkillName"
+        skills_exclude:
+          type: array
+          description: |
+            Skills the agent does not get, built-in ones included. An exclusion
+            naming a skill absent from this machine is ignored. A skill cannot
+            be both preloaded and excluded.
+          items:
+            $ref: "#/components/schemas/SkillName"
+        from:
+          type: string
+        on_leave:
+          type: boolean
+        prompt:
+          type: string
+          description: The agent's own instructions (the markdown body of the file).
+
+    Template:
+      allOf:
+        - $ref: "#/components/schemas/AgentDefinition"
+        - type: object
+          required: [name, builtin]
+          properties:
+            name:
+              type: string
+            builtin:
+              type: boolean
+              description: Shipped with Nobody Inc and not overridden by a template in ~/.nobody/catalog.
+            overrides_builtin:
+              type: boolean
+              description: A user template replacing a built-in one; deleting it brings the built-in one back.
+
+    Recruitment:
+      type: object
+      additionalProperties: false
+      required: [name]
+      description: Exactly one of template (recruit) and definition (create directly).
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z][a-z0-9-]*$"
+        template:
+          type: string
+          description: Template to copy from the catalog.
+        definition:
+          $ref: "#/components/schemas/AgentDefinition"
+
+    Act:
+      type: string
+      enum: [request, query, propose, inform, agree, refuse, done]
+
+    Priority:
+      type: string
+      enum: [normal, urgent]
+
+    Message:
+      type: object
+      required: [id, conversation, from, to, act, priority, subject, body, hops, sent_at]
+      properties:
+        id:
+          type: string
+        conversation:
+          type: string
+        in_reply_to:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        act:
+          $ref: "#/components/schemas/Act"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        subject:
+          type: string
+        body:
+          type: string
+        hops:
+          type: integer
+        ticket:
+          type: string
+        sent_at:
+          type: string
+          format: date-time
+        delivered_at:
+          type: string
+          format: date-time
+
+    AgentStatusEvent:
+      type: object
+      required: [address, status]
+      properties:
+        address:
+          type: string
+        status:
+          type: string
+          enum: [stopped, starting, working, idle, exited, awaiting_approval, budget_hold]
+          description: "`budget_hold`: held by a budget at its threshold, session kept, never woken up (ADR-0013, point 4)."
+
+    MessagesDeliveredEvent:
+      type: object
+      required: [recipient, ids]
+      properties:
+        recipient:
+          type: string
+        ids:
+          type: array
+          items:
+            type: string
+
+    MessagesDeleted:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items:
+            type: string
+
+    ChangedEvent:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+
+    Settings:
+      type: object
+      required: [project_dir, project_id, state_dir, address, origins, claude_path, start_agents, config_protection]
+      properties:
+        project_dir:
+          type: string
+          description: The project, the directory holding .nobody/.
+        project_id:
+          type: string
+        state_dir:
+          type: string
+          description: This project's data on this machine (database, worktrees); never committed.
+        address:
+          type: string
+          description: Where the daemon listens (NOBODY_ADDR).
+        origins:
+          type: array
+          items:
+            type: string
+          description: Browser origins allowed to change things through the API (-origins).
+        claude_path:
+          type: string
+        start_agents:
+          type: boolean
+          description: Whether every agent starts with the daemon (-start).
+        config_protection:
+          type: string
+          enum: [block, warn]
+          description: What happens when a delivery changes the project's .nobody/.
+
+    SettingsUpdate:
+      type: object
+      required: [config_protection]
+      additionalProperties: false
+      properties:
+        config_protection:
+          type: string
+          enum: [block, warn]
+
+    MCPScope:
+      type: string
+      enum: [project, local, user]
+      description: |
+        Claude Code's MCP scopes (ADR-0010): project is .mcp.json, committed
+        with the project; local is the user on this project only; user is
+        the user on all their projects (both in ~/.claude.json).
+
+    MCPServerInput:
+      type: object
+      required: [name, scope, server]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          pattern: "^[A-Za-z0-9_-]+$"
+          description: The server's name; nobody is reserved for the office server.
+        scope:
+          $ref: "#/components/schemas/MCPScope"
+        server:
+          type: object
+          description: |
+            The server in Claude Code's format: type (stdio, http or sse),
+            command and args, or url, and env or headers whose values refer
+            to environment variables.
+          additionalProperties: true
+
+    MCPServerDetail:
+      type: object
+      required: [name, source, server, clear_values]
+      properties:
+        name:
+          type: string
+        source:
+          $ref: "#/components/schemas/MCPScope"
+        server:
+          type: object
+          description: |
+            type, command, args, url, and env and headers whose values in
+            clear are emptied.
+          additionalProperties: true
+        clear_values:
+          type: array
+          description: The env and headers values written in clear, as "env.NAME" or "headers.NAME".
+          items:
+            type: string
+
+    MCPServer:
+      type: object
+      required: [name, source, type, target, env, excluded_by]
+      properties:
+        name:
+          type: string
+        source:
+          $ref: "#/components/schemas/MCPScope"
+        type:
+          type: string
+          description: stdio, http or sse.
+        target:
+          type: string
+          description: The command without its arguments (stdio), or the URL without its query (http, sse).
+        env:
+          type: array
+          description: Environment variables the server refers to as ${NAME}.
+          items:
+            type: object
+            required: [name, set]
+            properties:
+              name:
+                type: string
+              set:
+                type: boolean
+        excluded_by:
+          type: array
+          description: Addresses of the agents that exclude the whole server (mcp_exclude).
+          items:
+            type: string
+
+    SkillName:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+      description: A skill's name, also the name of its directory.
+
+    SkillScope:
+      type: string
+      enum: [project, personal]
+      description: |
+        Where a skill the control room can change lives: project is
+        .claude/skills of the project (committed with it); personal is
+        skills/ of Claude Code's configuration directory, for all the user's
+        projects and their own Claude Code.
+
+    Skill:
+      type: object
+      required: [name, description, scope, has_hooks]
+      properties:
+        name:
+          $ref: "#/components/schemas/SkillName"
+        description:
+          type: string
+        scope:
+          type: string
+          enum: [project, personal, builtin]
+        has_hooks:
+          type: boolean
+          description: |
+            The skill declares hooks: invoking it asks for permission, so it
+            goes to the human's approval queue.
+        committed:
+          type: boolean
+          description: |
+            Project skills only: the skill is committed and unchanged. Agents
+            working on a feature only see committed skills.
+        shadowed:
+          type: boolean
+          description: "Personal skills only: a project skill has the same name and wins."
+
+    SkillList:
+      type: object
+      required: [skills]
+      properties:
+        skills:
+          type: array
+          items:
+            $ref: "#/components/schemas/Skill"
+        builtin_error:
+          type: string
+          description: Why the built-in skills could not be discovered; absent when they were.
+
+    SkillInput:
+      type: object
+      required: [description, body]
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+          minLength: 1
+          description: What the skill does and when to use it; the model chooses skills from it.
+        body:
+          type: string
+          description: The skill's instructions (the markdown after the header).
+
+    SkillDetail:
+      type: object
+      required: [name, scope, description, body, other_keys]
+      properties:
+        name:
+          $ref: "#/components/schemas/SkillName"
+        scope:
+          $ref: "#/components/schemas/SkillScope"
+        description:
+          type: string
+        body:
+          type: string
+        other_keys:
+          type: string
+          description: |
+            The rest of the header (allowed-tools, hooks...), as YAML, read-only:
+            kept as it is when the skill is saved.
+        has_hooks:
+          type: boolean
+
+    HumanDraft:
+      type: object
+      required: [to, act, priority]
+      additionalProperties: false
+      properties:
+        to:
+          type: string
+        act:
+          $ref: "#/components/schemas/Act"
+        priority:
+          $ref: "#/components/schemas/Priority"
+        subject:
+          type: string
+        body:
+          type: string
+        in_reply_to:
+          type: string
+        ticket:
+          type: string
+
+    FeatureReview:
+      type: object
+      required: [feature, commits, files, diff, diff_truncated, unfinished_tickets]
+      properties:
+        feature:
+          $ref: "#/components/schemas/Feature"
+        commits:
+          type: array
+          items:
+            type: object
+            required: [hash, author, date, subject]
+            properties:
+              hash:
+                type: string
+              author:
+                type: string
+              date:
+                type: string
+                format: date-time
+              subject:
+                type: string
+        files:
+          type: array
+          items:
+            type: object
+            required: [path, status, added, deleted]
+            properties:
+              path:
+                type: string
+              status:
+                type: string
+                description: A added, M modified, D deleted, R renamed.
+              added:
+                type: integer
+                description: Lines added; -1 for a binary file.
+              deleted:
+                type: integer
+        diff:
+          type: string
+          description: Unified diff of the feature branch against the base branch (since they diverged).
+        diff_truncated:
+          type: boolean
+        unfinished_tickets:
+          type: array
+          items:
+            $ref: "#/components/schemas/Ticket"
+
+    Feature:
+      type: object
+      required: [id, title, slug, base_branch, branch, active, status, created_by, created_at]
+      properties:
+        id:
+          type: string
+          example: F-1
+        title:
+          type: string
+        description:
+          type: string
+          description: The need, what is wanted and why.
+        acceptance_criteria:
+          type: string
+        status:
+          type: string
+          enum: [proposed, started, refused, finished]
+          description: The director proposes, the human starts or refuses; a feature the human creates starts at once; the human finishes it by merging it into its base branch.
+        merge_commit:
+          type: string
+          description: The merge commit on the base branch, once finished ("" when there was nothing to merge).
+        proposal_message:
+          type: string
+          description: ID of the "propose" message the director's proposal sent to the human.
+        refusal_reason:
+          type: string
+        slug:
+          type: string
+        base_branch:
+          type: string
+        branch:
+          type: string
+          example: nobody/add-order-api
+        active:
+          type: boolean
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        budget_usd:
+          type: number
+          description: The feature's budget; for a proposed feature, the budget the director proposed. Absent when it has none.
+        threshold:
+          type: integer
+          description: Percent of the budget at which its agents stop; absent means the project's threshold.
+        spent_usd:
+          type: number
+          description: What its tickets spent, all time.
+        allocated_usd:
+          type: number
+          description: The budgets of its tickets that are not canceled, plus what its canceled tickets spent. What is left to allocate is budget_usd minus this.
+
+    FeatureDraft:
+      type: object
+      required: [title]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        base_branch:
+          description: Branch the feature starts from; defaults to the project's current branch.
+          type: string
+        budget_usd:
+          type: number
+          exclusiveMinimum: 0
+        threshold:
+          $ref: "#/components/schemas/Threshold"
+
+    ScheduleIDValue:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+      example: grafana-watch
+
+    Schedule:
+      type: object
+      description: |
+        A scheduled task, as written in .nobody/schedules.yaml. Exactly one
+        of `every` and `cron` is set.
+      required: [title, target, mode, instructions]
+      additionalProperties: false
+      properties:
+        id:
+          $ref: "#/components/schemas/ScheduleIDValue"
+        title:
+          type: string
+        every:
+          type: string
+          description: A Go duration of one minute or more, counted from when the schedule is armed.
+          example: 10m
+        cron:
+          type: string
+          description: Five standard fields or a descriptor (`@daily`), in the machine's time zone.
+          example: "0 9 * * 1-5"
+        target:
+          type: string
+          description: An agent ("monitor@ops"), a team ("@ops", its first free member) or the director (message mode only).
+        mode:
+          type: string
+          enum: [ticket, message]
+          description: "`ticket`: a ticket assigned to the agent, outside any feature; `message`: mail from nobody."
+        enabled:
+          type: boolean
+          readOnly: true
+          description: False when paused, or disabled by the daemon because its target is gone.
+        instructions:
+          type: string
+
+    ScheduleView:
+      allOf:
+        - $ref: "#/components/schemas/Schedule"
+        - type: object
+          required: [id, enabled]
+          properties:
+            next_run:
+              type: string
+              format: date-time
+              description: The next occurrence; absent when not enabled.
+            last_run:
+              $ref: "#/components/schemas/ScheduleRun"
+            warning:
+              type: string
+              description: E.g. the target uses the `default` permission profile, so its work waits for approvals.
+
+    ScheduleRun:
+      type: object
+      description: One occurrence of a schedule (ADR-0012, point 8).
+      required: [id, schedule_id, schedule_title, trigger, status, due_at]
+      properties:
+        id:
+          type: integer
+        schedule_id:
+          type: string
+        schedule_title:
+          type: string
+        trigger:
+          type: string
+          enum: [schedule, manual]
+        status:
+          type: string
+          enum: [waiting, running, done, canceled, skipped, unavailable, interrupted]
+        due_at:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+        agent:
+          type: string
+        ticket:
+          type: string
+        message:
+          type: string
+        note:
+          type: string
+          description: Why it was skipped, canceled, unavailable or interrupted.
+        spent_usd:
+          type: number
+          description: What its agent spent while running it (ADR-0013, point 2).
+
+    ScheduleProposal:
+      type: object
+      required: [id, schedule, status, proposed_by, created_at]
+      properties:
+        id:
+          type: string
+          example: SP-2
+        schedule:
+          $ref: "#/components/schemas/Schedule"
+        status:
+          type: string
+          enum: [proposed, accepted, refused]
+        proposed_by:
+          type: string
+        proposal_message:
+          type: string
+          description: ID of the "propose" message sent to the human.
+        refusal_reason:
+          type: string
+        warning:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+
+    TicketStatus:
+      type: string
+      enum: [open, in_progress, done, canceled]
+
+    Ticket:
+      type: object
+      required: [id, title, team, status, created_by, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        acceptance_criteria:
+          type: string
+        team:
+          type: string
+        feature:
+          type: string
+        assignee:
+          type: string
+        status:
+          $ref: "#/components/schemas/TicketStatus"
+        blocked_by:
+          type: array
+          items:
+            type: string
+        created_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        archived:
+          type: boolean
+          description: The ticket of a finished feature, kept in the archives (read-only).
+        budget_usd:
+          type: number
+          description: Absent when it has none.
+        threshold:
+          type: integer
+          description: Percent of the budget at which its agent stops; absent means the project's threshold.
+        spent_usd:
+          type: number
+          description: What was spent on it, all time, its askers' urgent forks included (ADR-0013, point 2).
+
+    TicketDraft:
+      type: object
+      required: [title, team]
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        team:
+          type: string
+        description:
+          type: string
+        acceptance_criteria:
+          type: string
+        blocked_by:
+          type: array
+          items:
+            type: string
+        assignee:
+          type: string
+        budget_usd:
+          type: number
+          exclusiveMinimum: 0
+          description: Mandatory inside a feature that has a budget, and at most what it has left to allocate. Refused while budgets are turned off.
+        threshold:
+          $ref: "#/components/schemas/Threshold"
+
+    TicketComment:
+      type: object
+      required: [id, ticket, author, body, created_at]
+      properties:
+        id:
+          type: integer
+        ticket:
+          type: string
+        author:
+          type: string
+        body:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    Deliverable:
+      type: object
+      required: [id, ticket, author, kind, summary, created_at]
+      properties:
+        id:
+          type: integer
+        ticket:
+          type: string
+        author:
+          type: string
+        kind:
+          type: string
+          enum: [file, commit, report, note]
+        reference:
+          type: string
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    TicketDetails:
+      type: object
+      required: [ticket, deliverables, comments, messages]
+      properties:
+        ticket:
+          $ref: "#/components/schemas/Ticket"
+        deliverables:
+          type: array
+          items:
+            $ref: "#/components/schemas/Deliverable"
+        comments:
+          type: array
+          items:
+            $ref: "#/components/schemas/TicketComment"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+
+    Approval:
+      type: object
+      required: [id, agent, tool_name, created_at]
+      properties:
+        id:
+          type: string
+        agent:
+          type: string
+        tool_name:
+          type: string
+        tool_input:
+          description: The tool's arguments, as sent by Claude Code.
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    ApprovalDecision:
+      type: object
+      required: [decision]
+      additionalProperties: false
+      properties:
+        decision:
+          type: string
+          enum: [allow, deny]
+        message:
+          description: Shown to the agent, typically to explain a refusal.
+          type: string
+
+    Threshold:
+      type: integer
+      minimum: 1
+      maximum: 100
+      description: Percent of a budget at which the agents it covers stop at the end of their turn.
+
+    BudgetFields:
+      type: object
+      additionalProperties: false
+      description: A ticket's or feature's budget; `budget_usd` null removes it.
+      properties:
+        budget_usd:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        threshold:
+          oneOf:
+            - $ref: "#/components/schemas/Threshold"
+            - type: "null"
+
+    BudgetCap:
+      type: object
+      required: [limit_usd]
+      additionalProperties: false
+      description: An agent, team or staff cap in .nobody/budgets.yaml.
+      properties:
+        limit_usd:
+          type: number
+          exclusiveMinimum: 0
+        monthly:
+          type: boolean
+          description: Starts again from 0 on the first day of each month; otherwise a cumulative cap.
+        threshold:
+          $ref: "#/components/schemas/Threshold"
+
+    BudgetSettings:
+      type: object
+      required: [enabled, threshold]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+          description: false turns caps, thresholds, holds, requests and budget fields off; spend is still measured.
+        threshold:
+          $ref: "#/components/schemas/Threshold"
+        staff:
+          $ref: "#/components/schemas/BudgetCap"
+        teams:
+          type: object
+          description: Caps by team id.
+          additionalProperties:
+            $ref: "#/components/schemas/BudgetCap"
+        agents:
+          type: object
+          description: Caps by agent address; the director has none.
+          additionalProperties:
+            $ref: "#/components/schemas/BudgetCap"
+
+    BudgetScope:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [ticket, feature, agent, team, staff]
+        id:
+          type: string
+          description: The ticket, feature, agent address or team id; empty for the staff.
+
+    BudgetGauge:
+      type: object
+      required: [scope, limit_usd, spent_usd, threshold]
+      description: Where one budget stands, over its own period.
+      properties:
+        scope:
+          $ref: "#/components/schemas/BudgetScope"
+        limit_usd:
+          type: number
+          description: The budget, extensions of the month included for a monthly cap.
+        spent_usd:
+          type: number
+        threshold:
+          type: integer
+          description: The threshold that applies, the project's or the budget's own.
+        monthly:
+          type: boolean
+        held:
+          type: boolean
+          description: The budget reached its threshold and holds its agents.
+
+    SpendLine:
+      type: object
+      required: [key, spent_usd]
+      properties:
+        key:
+          type: string
+          description: Agent address, team id, feature id or schedule id.
+        label:
+          type: string
+          description: The feature's or schedule's title.
+        spent_usd:
+          type: number
+
+    SpendSummary:
+      type: object
+      required: [month, total_usd, agents, teams, features, schedules, gauges]
+      properties:
+        month:
+          type: string
+          example: 2026-11
+        total_usd:
+          type: number
+          description: Everything spent in the month (the staff's spend).
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendLine"
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendLine"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendLine"
+        schedules:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendLine"
+        gauges:
+          type: array
+          description: Every budget that is set, with where it stands now (empty when budgets are turned off).
+          items:
+            $ref: "#/components/schemas/BudgetGauge"
+
+    BudgetRequest:
+      type: object
+      required: [id, scope, status, active, held_agents, limit_usd, spent_usd, created_at]
+      description: |
+        One request per budget at its threshold (ADR-0013, point 5), active
+        while the budget stays reached.
+        `awaiting_agent`: the first agent to stop is asked to justify it
+        (ticket, agent, team budgets); `awaiting_director`: the director is to
+        give its opinion, or for a staff or feature budget its justification;
+        `awaiting_human`: the director submitted it, a card waits in its
+        chat; then `extended`, `refused`, or `closed` (monthly reset, budgets
+        turned off, the budget removed).
+      properties:
+        id:
+          type: string
+          example: BR-4
+        scope:
+          $ref: "#/components/schemas/BudgetScope"
+        status:
+          type: string
+          enum: [awaiting_agent, awaiting_director, awaiting_human, extended, refused, closed]
+        active:
+          type: boolean
+          description: Its budget is still reached; at most one request per budget is active.
+        held_agents:
+          type: array
+          description: The agents its budget holds now (empty once it is no longer active).
+          items:
+            type: string
+        asked_agent:
+          type: string
+          description: The agent asked to justify it, the first to stop.
+        requested_by:
+          type: string
+          description: The agent that justified it, or the director for a staff or feature budget.
+        amount_usd:
+          type: number
+          description: The amount asked.
+        justification:
+          type: string
+          description: Empty when the agent stopped without calling budget_request.
+        director_opinion:
+          type: string
+        recommended_usd:
+          type: number
+          description: The amount the director recommends.
+        limit_usd:
+          type: number
+        spent_usd:
+          type: number
+        feature_remaining_usd:
+          type: number
+          description: For a ticket inside a feature with a budget, what the feature has left to allocate.
+        card_message:
+          type: string
+          description: ID of the director's message to the human that carries the card.
+        extended_usd:
+          type: number
+        refusal:
+          $ref: "#/components/schemas/BudgetRefusal"
+        closed_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        submitted_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+
+    BudgetRefusal:
+      type: object
+      required: [outcomes]
+      additionalProperties: false
+      properties:
+        outcomes:
+          type: object
+          description: An outcome for every held agent, by address.
+          additionalProperties:
+            type: string
+            enum: [cancel, release, hold]
+        commit_first:
+          type: boolean
+        reason:
+          type: string
+
+    BudgetProposal:
+      type: object
+      required: [id, scope, cap, status, proposed_by, created_at]
+      properties:
+        id:
+          type: string
+          example: BP-1
+        scope:
+          $ref: "#/components/schemas/BudgetScope"
+        cap:
+          $ref: "#/components/schemas/BudgetCap"
+        reason:
+          type: string
+          description: Why the director proposes it.
+        status:
+          type: string
+          enum: [proposed, accepted, refused]
+        proposed_by:
+          type: string
+        proposal_message:
+          type: string
+        refusal_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+
+    StatusLineReport:
+      type: object
+      description: The JSON Claude Code hands its statusLine; only these fields are used.
+      required: [session_id, cost]
+      properties:
+        session_id:
+          type: string
+        cost:
+          type: object
+          required: [total_cost_usd]
+          properties:
+            total_cost_usd:
+              type: number
+              description: The session's running total, Claude Code's estimate at list price.
+
+    HookEvent:
+      description: Event JSON as sent by Claude Code; only these fields are used.
+      type: object
+      required: [hook_event_name]
+      properties:
+        hook_event_name:
+          type: string
+        session_id:
+          type: string
+        cwd:
+          type: string
+        tool_name:
+          type: string
+        tool_input:
+          type: object
+        stop_hook_active:
+          type: boolean
+        source:
+          type: string
+          description: SessionStart only (startup, resume, clear or compact).
+
+    HookDecision:
+      type: object
+      required: [message_ids]
+      properties:
+        response:
+          description: JSON to print on stdout for Claude Code; absent when there is nothing to say.
+          type: object
+        message_ids:
+          type: array
+          items:
+            type: string
+
+    HookAck:
+      type: object
+      required: [message_ids]
+      properties:
+        message_ids:
+          type: array
+          items:
+            type: string
