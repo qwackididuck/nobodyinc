@@ -381,6 +381,7 @@ func (s *Supervisor) watch(address string, p *agentProcess) {
 
 	p.terminal.Close()
 	_, _ = fmt.Fprintf(p.output, "\r\n[nobody inc] agent process exited: %v\r\n", err) // Output.Write never fails
+	p.output.Close()                                                                   // its terminal viewers reconnect to the next session
 
 	s.Statuses.Set(address, StatusExited)
 	s.Logger.Info("agent exited", "agent", address, "err", err)
