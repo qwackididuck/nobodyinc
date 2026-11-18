@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -100,6 +101,8 @@ type Draft struct {
 	// it never blocks finishing the feature and is not archived with it.
 	// Scheduled work is filed this way (ADR-0012).
 	NoFeature bool
+	// Budget is optional, except inside a feature with a budget (ADR-0013).
+	Budget Budget
 }
 
 // Service applies the ticket rules described in the package documentation.
@@ -125,7 +128,14 @@ type Service struct {
 	// OnTicketDeleted, when set, is called for each deleted ticket an agent
 	// was working on, e.g. to tell it to stop.
 	OnTicketDeleted func(Ticket)
-	Now             func() time.Time
+	// BudgetsEnabled reports whether budgets are on for the project
+	// (budget.Book.Enabled); nil means on.
+	BudgetsEnabled func() bool
+	Now            func() time.Time
+
+	// budgetMu keeps two tickets from taking the same part of a feature's
+	// budget at once.
+	budgetMu sync.Mutex
 }
 
 // Create files a new ticket in a team's queue, or assigns it directly.
@@ -146,6 +156,13 @@ func (s *Service) Create(ctx context.Context, by string, d Draft) (Ticket, error
 		}
 	}
 
+	s.budgetMu.Lock()
+	defer s.budgetMu.Unlock()
+
+	if err := s.checkFeatureBudget(ctx, feature, d.Budget, 0); err != nil {
+		return Ticket{}, err
+	}
+
 	now := s.now()
 
 	t := Ticket{
@@ -157,6 +174,7 @@ func (s *Service) Create(ctx context.Context, by string, d Draft) (Ticket, error
 		Assignee:           d.Assignee,
 		Status:             StatusOpen,
 		BlockedBy:          blockedBy,
+		Budget:             d.Budget,
 		CreatedBy:          by,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -418,6 +436,10 @@ func (s *Service) validateDraft(ctx context.Context, d Draft) error {
 
 	if d.Assignee != "" && org.TeamOf(d.Assignee) != d.Team {
 		return fmt.Errorf("%w: the assignee must belong to team %q", ErrInvalid, d.Team)
+	}
+
+	if err := s.checkBudget(d.Budget); err != nil {
+		return err
 	}
 
 	return s.checkFree(ctx, d.Assignee, "")

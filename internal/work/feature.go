@@ -14,6 +14,10 @@ import (
 // has its own git branch in the project, where every team's work ends up;
 // merging it anywhere is the user's decision (see docs/workspaces.md).
 type Feature struct {
+	// Budget is optional: for a proposed feature, the one the director
+	// proposes; the human sets it when starting the feature (ADR-0013).
+	Budget
+
 	ID    string `json:"id"` // "F-3"
 	Title string `json:"title"`
 	// Description is the need: what is wanted and why.
@@ -34,9 +38,11 @@ type Feature struct {
 	MergeCommit string    `json:"merge_commit,omitempty"`
 	CreatedBy   string    `json:"created_by"`
 	CreatedAt   time.Time `json:"created_at"`
-	// SpentUSD is what its tickets spent, all time (ADR-0013); read-only,
+	// SpentUSD is what its tickets spent, all time, and AllocatedUSD what
+	// its tickets take out of its budget (Ticket.allocation): read-only,
 	// computed by the store.
-	SpentUSD float64 `json:"spent_usd"`
+	SpentUSD     float64 `json:"spent_usd"`
+	AllocatedUSD float64 `json:"allocated_usd"`
 }
 
 // FeatureStatus is where a feature stands.
@@ -62,6 +68,8 @@ type FeatureDraft struct {
 	// BaseBranch is where the feature branch starts; empty means the branch
 	// the project is currently on.
 	BaseBranch string
+	// Budget is the feature's budget, optional (ADR-0013).
+	Budget Budget
 }
 
 // Workspace ties tickets to the project's git repository (implemented in
@@ -91,6 +99,10 @@ func (s *Service) StartFeature(ctx context.Context, by string, d FeatureDraft) (
 		return Feature{}, fmt.Errorf("%w: only the human starts features", ErrForbidden)
 	}
 
+	if err := s.checkBudget(d.Budget); err != nil {
+		return Feature{}, err
+	}
+
 	f, err := newFeature(by, d, s.now())
 	if err != nil {
 		return Feature{}, err
@@ -114,6 +126,10 @@ func (s *Service) StartFeature(ctx context.Context, by string, d FeatureDraft) (
 func (s *Service) ProposeFeature(ctx context.Context, by string, d FeatureDraft) (Feature, error) {
 	if !s.Org.Current().IsGod(by) {
 		return Feature{}, fmt.Errorf("%w: only the director proposes features", ErrForbidden)
+	}
+
+	if err := s.checkBudget(d.Budget); err != nil {
+		return Feature{}, err
 	}
 
 	f, err := newFeature(by, d, s.now())
@@ -140,9 +156,18 @@ func (s *Service) ProposeFeature(ctx context.Context, by string, d FeatureDraft)
 
 // StartProposedFeature starts a feature the director proposed: its branches
 // are prepared and it becomes the active one. Only the human decides.
-func (s *Service) StartProposedFeature(ctx context.Context, by, id string) (Feature, error) {
+// A non-nil budget replaces the one the director proposed.
+func (s *Service) StartProposedFeature(ctx context.Context, by, id string, budget *Budget) (Feature, error) {
 	f, err := s.proposal(ctx, by, id)
 	if err != nil {
+		return Feature{}, err
+	}
+
+	if budget != nil {
+		f.Budget = *budget
+	}
+
+	if err := s.checkBudget(f.Budget); err != nil {
 		return Feature{}, err
 	}
 
@@ -212,6 +237,7 @@ func newFeature(by string, d FeatureDraft, now time.Time) (Feature, error) {
 		Description:        d.Description,
 		AcceptanceCriteria: d.AcceptanceCriteria,
 		BaseBranch:         d.BaseBranch,
+		Budget:             d.Budget,
 		Status:             FeatureStarted,
 		CreatedBy:          by,
 		CreatedAt:          now,

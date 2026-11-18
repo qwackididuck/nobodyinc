@@ -102,3 +102,71 @@ func TestStatusLineErrors(t *testing.T) {
 		})
 	}
 }
+
+// The budget settings are read and replaced through /api/budgets, and every
+// cap shows as a gauge in /api/spend.
+func TestBudgetsAPI(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	var settings budget.Settings
+	decode(t, env.do(t, http.MethodGet, "/api/budgets", ""), &settings)
+
+	if !settings.Enabled || settings.Threshold != budget.DefaultThreshold {
+		t.Fatalf("defaults = %+v", settings)
+	}
+
+	if rec := env.do(t, http.MethodPut, "/api/budgets", `{"enabled":true,"threshold":80,"teams":{"ops":{"limit_usd":5}}}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("a cap on an unknown team: %d %s, want 400", rec.Code, rec.Body)
+	}
+
+	rec := env.do(t, http.MethodPut, "/api/budgets", `{"enabled":true,"threshold":75,"teams":{"dev":{"limit_usd":5,"monthly":true}}}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PUT /api/budgets: %d %s", rec.Code, rec.Body)
+	}
+
+	if rec := env.do(t, http.MethodPost, "/internal/agents/dev1@dev/statusline", `{"session_id":"s1","cost":{"total_cost_usd":4}}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("statusline: %d %s", rec.Code, rec.Body)
+	}
+
+	var summary budget.Summary
+	decode(t, env.do(t, http.MethodGet, "/api/spend", ""), &summary)
+
+	if len(summary.Gauges) != 1 {
+		t.Fatalf("gauges = %+v, want the dev team's", summary.Gauges)
+	}
+
+	g := summary.Gauges[0]
+	if g.Scope != (budget.Scope{Kind: budget.KindTeam, ID: "dev"}) || g.SpentUSD != 4 || g.Threshold != 75 || !g.Reached() {
+		t.Fatalf("dev's gauge = %+v, want 4 of 5 at 75 %%, reached", g)
+	}
+}
+
+func TestUpdateTicketBudget(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	var ticket work.Ticket
+	decode(t, env.do(t, http.MethodPost, "/api/tickets", `{"title":"Build it","team":"dev","budget_usd":2}`), &ticket)
+
+	if ticket.USD == nil || *ticket.USD != 2 {
+		t.Fatalf("created ticket budget = %v, want 2", ticket.USD)
+	}
+
+	rec := env.do(t, http.MethodPatch, "/api/tickets/"+ticket.ID, `{"budget_usd":3,"threshold":50}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("PATCH: %d %s", rec.Code, rec.Body)
+	}
+
+	decode(t, rec, &ticket)
+
+	if ticket.USD == nil || *ticket.USD != 3 || ticket.Threshold == nil || *ticket.Threshold != 50 {
+		t.Fatalf("ticket after PATCH = %+v", ticket)
+	}
+
+	if rec := env.do(t, http.MethodPatch, "/api/tickets/"+ticket.ID, `{"budget":3}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("an unknown field: %d, want 400", rec.Code)
+	}
+}

@@ -89,10 +89,60 @@ func (s *Store) spendLines(ctx context.Context, query, month string) ([]budget.L
 	return lines, rows.Err()
 }
 
+// SpendTotals returns what the staff, each agent and each team spent in a
+// month ("YYYY-MM"), or all time when month is "".
+func (s *Store) SpendTotals(ctx context.Context, month string) (budget.Totals, error) {
+	t := budget.Totals{Agents: map[string]float64{}, Teams: map[string]float64{}}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT agent, team, SUM(amount_usd) FROM spend
+		WHERE ? = '' OR month = ? GROUP BY agent, team`, month, month)
+	if err != nil {
+		return budget.Totals{}, fmt.Errorf("spend totals: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			agent, team string
+			usd         float64
+		)
+		if err := rows.Scan(&agent, &team, &usd); err != nil {
+			return budget.Totals{}, fmt.Errorf("read spend totals: %w", err)
+		}
+
+		t.StaffUSD += usd
+
+		if agent != "" {
+			t.Agents[agent] += usd
+		}
+
+		if team != "" {
+			t.Teams[team] += usd
+		}
+	}
+
+	return t, rows.Err()
+}
+
 // The spend of a ticket, a feature and a schedule occurrence, all time,
 // added to their SELECT (selectTickets, selectFeatures, selectRuns).
 const (
 	ticketSpent  = `(SELECT COALESCE(SUM(amount_usd), 0) FROM spend WHERE spend.ticket = 'T-' || tickets.id)`
 	featureSpent = `(SELECT COALESCE(SUM(amount_usd), 0) FROM spend WHERE spend.feature = 'F-' || features.id)`
 	runSpent     = `(SELECT COALESCE(SUM(amount_usd), 0) FROM spend WHERE spend.schedule_run = schedule_runs.id)`
+
+	// featureAllocated is what a feature's tickets take out of its budget
+	// (work.Ticket.allocation): each ticket that is not canceled takes its
+	// budget, or what it spent when that is more; everything else spent on
+	// the feature (canceled and deleted tickets) is gone for good.
+	featureAllocated = `(
+		SELECT COALESCE(SUM(MAX(COALESCE(t.budget_usd, 0),
+			(SELECT COALESCE(SUM(amount_usd), 0) FROM spend WHERE spend.ticket = 'T-' || t.id))), 0)
+		FROM tickets t WHERE t.feature = 'F-' || features.id AND t.status != 'canceled'
+	) + (
+		SELECT COALESCE(SUM(amount_usd), 0) FROM spend
+		WHERE spend.feature = 'F-' || features.id AND spend.ticket NOT IN (
+			SELECT 'T-' || t.id FROM tickets t WHERE t.feature = 'F-' || features.id AND t.status != 'canceled')
+	)`
 )

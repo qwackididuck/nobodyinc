@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/budget"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
@@ -184,26 +185,18 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Requeue:       st.Requeue,
 	}
 
-	// What happens when mail is sent (see docs/hooks.md):
-	//   - an urgent question to a busy agent is answered by a fork of its
-	//     session, without disturbing it;
-	//   - otherwise an idle recipient is woken up, and a busy one gets the mail
-	//     from its hooks.
-	// An agent going idle also checks for mail that arrived as its turn ended.
-	messages.OnSent = func(m messaging.Message) {
-		bus.Publish(events.Event{Type: events.MessageSent, Data: m})
-		staff.onSent(context.WithoutCancel(ctx), m)
+	messages.OnSent = onSent(ctx, bus, staff, forker, supervisor)
 
-		if forker.ShouldAnswer(m) {
-			go forker.Answer(context.WithoutCancel(ctx), m)
-
-			return
-		}
-
-		supervisor.NotifyMail(m.To)
+	budgets, err := budget.OpenBook(opts.Org.Current().ProjectDir, opts.Org, func(budget.Settings) {
+		bus.Publish(events.Event{Type: events.BudgetsChanged, Data: events.Empty{}})
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	tickets := &work.Service{Store: announcingWorkStore{Store: st, bus: bus}, Org: opts.Org, Workspace: git}
+	tickets := &work.Service{
+		Store: announcingWorkStore{Store: st, bus: bus}, Org: opts.Org, Workspace: git, BudgetsEnabled: budgets.Enabled,
+	}
 	// A new feature moves every agent into its team's worktree.
 	tickets.OnFeatureStarted = func(f work.Feature) {
 		git.activate(f)
@@ -265,7 +258,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		BuiltinSkills: builtinSkills,
 		Schedules:     schedules,
 		// What the agents spend; wired to the supervisor and the forker.
-		Spend: wireSpend(st, opts, bus, supervisor, forker),
+		Spend:   wireSpend(st, opts, bus, supervisor, forker),
+		Budgets: budgets,
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,
@@ -390,6 +384,30 @@ func onTicketDeleted(ctx context.Context, messages *messaging.Service, logger *s
 		if err != nil {
 			logger.Error("tell an agent its ticket was deleted", "ticket", t.ID, "agent", t.Assignee, "err", err)
 		}
+	}
+}
+
+// onSent is what happens when mail is sent (see docs/hooks.md):
+//   - an urgent question to a busy agent is answered by a fork of its
+//     session, without disturbing it;
+//   - otherwise an idle recipient is woken up, and a busy one gets the mail
+//     from its hooks.
+//
+// An agent going idle also checks for mail that arrived as its turn ended.
+func onSent(
+	ctx context.Context, bus *events.Bus, staff *staff, forker *runtime.Forker, supervisor *runtime.Supervisor,
+) func(messaging.Message) {
+	return func(m messaging.Message) {
+		bus.Publish(events.Event{Type: events.MessageSent, Data: m})
+		staff.onSent(context.WithoutCancel(ctx), m)
+
+		if forker.ShouldAnswer(m) {
+			go forker.Answer(context.WithoutCancel(ctx), m)
+
+			return
+		}
+
+		supervisor.NotifyMail(m.To)
 	}
 }
 

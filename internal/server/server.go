@@ -84,6 +84,9 @@ type Deps struct {
 	// Spend turns the agents' statusLine reports into spend records
 	// (budgets.go, ADR-0013); nil records nothing.
 	Spend *budget.Meter
+	// Budgets holds .nobody/budgets.yaml; nil answers 501 on /api/budgets
+	// and leaves the gauges of /api/spend empty.
+	Budgets *budget.Book
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits

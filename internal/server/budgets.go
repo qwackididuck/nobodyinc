@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,11 +9,15 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/budget"
+	"github.com/qwackididuck/nobodyinc/internal/work"
 )
 
 // routeBudgets registers the costs and budgets endpoints.
 func (s *server) routeBudgets(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/budgets", s.getBudgets)
+	mux.HandleFunc("PUT /api/budgets", s.updateBudgets)
 	mux.HandleFunc("GET /api/spend", s.getSpend)
+	mux.HandleFunc("PATCH /api/tickets/{id}", s.updateTicketBudget)
 	mux.HandleFunc("POST /internal/agents/{address}/statusline", s.reportStatusLine)
 }
 
@@ -75,6 +80,10 @@ func (s *server) getSpend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	summary, err := s.Store.SpendSummary(r.Context(), month)
+	if err == nil {
+		summary.Gauges, err = s.gauges(r.Context())
+	}
+
 	if err != nil {
 		s.Logger.Error("read spend", "month", month, "err", err)
 		s.writeError(w, http.StatusInternalServerError, errors.New("cannot read the spend"))
@@ -83,4 +92,118 @@ func (s *server) getSpend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, http.StatusOK, summary)
+}
+
+// gauges says where every budget stands now: the caps of budgets.yaml, the
+// features started and not finished, and the tickets not archived, done or
+// canceled that have a budget.
+func (s *server) gauges(ctx context.Context) ([]budget.Gauge, error) {
+	if s.Budgets == nil {
+		return []budget.Gauge{}, nil
+	}
+
+	settings := s.Budgets.Get()
+	if !settings.Enabled {
+		return []budget.Gauge{}, nil
+	}
+
+	month, err := s.Store.SpendTotals(ctx, budget.Month(time.Now()))
+	if err != nil {
+		return nil, err
+	}
+
+	allTime, err := s.Store.SpendTotals(ctx, "")
+	if err != nil {
+		return nil, err
+	}
+
+	budgeted, err := s.budgetedWork(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return budget.Gauges(settings, month, allTime, budgeted), nil
+}
+
+// budgetedWork lists the features and tickets whose budget still matters.
+func (s *server) budgetedWork(ctx context.Context) ([]budget.Budgeted, error) {
+	features, err := s.Tickets.Store.ListFeatures(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var budgeted []budget.Budgeted
+
+	for _, f := range features {
+		if f.IsSet() && f.Status == work.FeatureStarted {
+			budgeted = append(budgeted, budget.Budgeted{
+				Scope: budget.Scope{Kind: budget.KindFeature, ID: f.ID}, LimitUSD: *f.USD, SpentUSD: f.SpentUSD, Threshold: intOr0(f.Threshold),
+			})
+		}
+	}
+
+	tickets, err := s.Tickets.Store.ListTickets(ctx, work.Filter{})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, t := range tickets {
+		if t.IsSet() && (t.Status == work.StatusOpen || t.Status == work.StatusInProgress) {
+			budgeted = append(budgeted, budget.Budgeted{
+				Scope: budget.Scope{Kind: budget.KindTicket, ID: t.ID}, LimitUSD: *t.USD, SpentUSD: t.SpentUSD, Threshold: intOr0(t.Threshold),
+			})
+		}
+	}
+
+	return budgeted, nil
+}
+
+func intOr0(p *int) int {
+	if p == nil {
+		return 0
+	}
+
+	return *p
+}
+
+// budgetsAvailable answers 501 when the daemon has no budgets file.
+func (s *server) budgetsAvailable(w http.ResponseWriter) bool {
+	if s.Budgets == nil {
+		s.writeError(w, http.StatusNotImplemented, errors.New("budgets are not available"))
+
+		return false
+	}
+
+	return true
+}
+
+func (s *server) getBudgets(w http.ResponseWriter, _ *http.Request) {
+	if s.budgetsAvailable(w) {
+		s.writeJSON(w, http.StatusOK, s.Budgets.Get())
+	}
+}
+
+// updateBudgets replaces .nobody/budgets.yaml (ADR-0013, point 3).
+func (s *server) updateBudgets(w http.ResponseWriter, r *http.Request) {
+	if !s.budgetsAvailable(w) {
+		return
+	}
+
+	var settings budget.Settings
+	if err := decodeJSON(w, r, &settings, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	saved, err := s.Budgets.Replace(settings)
+	switch {
+	case errors.Is(err, budget.ErrInvalid):
+		s.writeError(w, http.StatusBadRequest, err)
+	case err != nil:
+		s.Logger.Error("write budgets", "err", err)
+		s.writeError(w, http.StatusInternalServerError, errors.New("cannot write the budgets"))
+	default:
+		s.writeJSON(w, http.StatusOK, saved)
+	}
 }

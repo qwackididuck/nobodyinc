@@ -21,10 +21,11 @@ func (s *Store) InsertTicket(ctx context.Context, t work.Ticket) (work.Ticket, e
 	defer tx.Rollback() //nolint:errcheck // no-op after a successful commit
 
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO tickets (title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO tickets (title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at,
+			budget_usd, threshold)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t.Title, t.Description, t.AcceptanceCriteria, t.Team, t.Feature, t.Assignee, t.Status, t.CreatedBy,
-		formatTime(t.CreatedAt), formatTime(t.UpdatedAt))
+		formatTime(t.CreatedAt), formatTime(t.UpdatedAt), t.USD, t.Threshold)
 	if err != nil {
 		return work.Ticket{}, fmt.Errorf("insert ticket: %w", err)
 	}
@@ -79,9 +80,10 @@ func (s *Store) UpdateTicket(ctx context.Context, t work.Ticket) error {
 	}
 
 	_, err = s.db.ExecContext(ctx, `
-		UPDATE tickets SET title = ?, description = ?, acceptance_criteria = ?, assignee = ?, status = ?, updated_at = ?
+		UPDATE tickets SET title = ?, description = ?, acceptance_criteria = ?, assignee = ?, status = ?, updated_at = ?,
+			budget_usd = ?, threshold = ?
 		WHERE id = ?`,
-		t.Title, t.Description, t.AcceptanceCriteria, t.Assignee, t.Status, formatTime(t.UpdatedAt), n)
+		t.Title, t.Description, t.AcceptanceCriteria, t.Assignee, t.Status, formatTime(t.UpdatedAt), t.USD, t.Threshold, n)
 	if err != nil {
 		return fmt.Errorf("update ticket %s: %w", t.ID, err)
 	}
@@ -327,7 +329,7 @@ func (s *Store) DeleteTickets(ctx context.Context, ids []string) error {
 
 const selectTickets = `
 	SELECT id, title, description, acceptance_criteria, team, feature, assignee, status, created_by, created_at, updated_at, archived,
-		` + ticketSpent + `
+		budget_usd, threshold, ` + ticketSpent + `
 	FROM tickets`
 
 func scanTicket(row scanner) (work.Ticket, error) {
@@ -337,7 +339,7 @@ func scanTicket(row scanner) (work.Ticket, error) {
 		createdAt, updatedAt string
 	)
 	if err := row.Scan(&n, &t.Title, &t.Description, &t.AcceptanceCriteria, &t.Team, &t.Feature, &t.Assignee,
-		&t.Status, &t.CreatedBy, &createdAt, &updatedAt, &t.Archived, &t.SpentUSD); err != nil {
+		&t.Status, &t.CreatedBy, &createdAt, &updatedAt, &t.Archived, &t.USD, &t.Threshold, &t.SpentUSD); err != nil {
 		return work.Ticket{}, err
 	}
 

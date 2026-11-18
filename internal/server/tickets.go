@@ -24,6 +24,26 @@ func (s *server) listTickets(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, append([]work.Ticket{}, tickets...))
 }
 
+// updateTicketBudget changes a ticket's budget; only the human does
+// (ADR-0013, point 3).
+func (s *server) updateTicketBudget(w http.ResponseWriter, r *http.Request) {
+	var b work.Budget
+	if err := decodeJSON(w, r, &b, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	t, err := s.Tickets.SetBudget(r.Context(), org.HumanAddress, r.PathValue("id"), b)
+	if err != nil {
+		s.ticketError(w, err)
+
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, t)
+}
+
 // deletedTickets is the body answered by DELETE /api/tickets/{id}.
 type deletedTickets struct {
 	IDs []string `json:"ids"`
@@ -44,6 +64,8 @@ func (s *server) deleteTicket(w http.ResponseWriter, r *http.Request) {
 
 // ticketDraft is the body of POST /api/tickets.
 type ticketDraft struct {
+	work.Budget
+
 	Title              string   `json:"title"`
 	Team               string   `json:"team"`
 	Description        string   `json:"description"`
@@ -62,7 +84,7 @@ func (s *server) createTicketAsHuman(w http.ResponseWriter, r *http.Request) {
 
 	t, err := s.Tickets.Create(r.Context(), org.HumanAddress, work.Draft{
 		Title: d.Title, Team: d.Team, Description: d.Description,
-		AcceptanceCriteria: d.AcceptanceCriteria, BlockedBy: d.BlockedBy, Assignee: d.Assignee,
+		AcceptanceCriteria: d.AcceptanceCriteria, BlockedBy: d.BlockedBy, Assignee: d.Assignee, Budget: d.Budget,
 	})
 	if err != nil {
 		s.ticketError(w, err)

@@ -45,6 +45,7 @@ func newTestEnvWithWait(t *testing.T, approvalWait time.Duration) testEnv {
 	t.Cleanup(func() { st.Close() })
 
 	o := &org.Org{
+		ProjectDir: t.TempDir(),
 		Teams: []org.Team{
 			{ID: "specs", Agents: []org.Agent{{Name: "archi", Role: "Architect"}}, Block: []string{"dev"}},
 			{ID: "dev", Agents: []org.Agent{{Name: "dev1", Role: "Developer"}}},
@@ -53,6 +54,12 @@ func newTestEnvWithWait(t *testing.T, approvalWait time.Duration) testEnv {
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
 	tickets := &work.Service{Store: st, Org: o}
+
+	budgets, err := budget.OpenBook(o.ProjectDir, o, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	h := New(Deps{
 		Version:      "test",
 		Logger:       slog.New(slog.DiscardHandler),
@@ -64,6 +71,7 @@ func newTestEnvWithWait(t *testing.T, approvalWait time.Duration) testEnv {
 		Tickets:      tickets,
 		ApprovalWait: approvalWait,
 		Spend:        &budget.Meter{Store: st, Attribute: ticketInProgress(st)},
+		Budgets:      budgets,
 	})
 
 	return testEnv{handler: h, store: st, statuses: statuses, approvals: approvals}

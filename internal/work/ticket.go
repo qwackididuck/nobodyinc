@@ -43,6 +43,10 @@ func (s Status) Closed() bool {
 
 // Ticket is a unit of work owned by a team.
 type Ticket struct {
+	// Budget is optional; inside a feature with a budget, every ticket has
+	// one (ADR-0013, point 3).
+	Budget
+
 	ID                 string    `json:"id"` // "T-12"
 	Title              string    `json:"title"`
 	Description        string    `json:"description,omitempty"`
