@@ -1,6 +1,6 @@
 # Nobody Inc
 
-Orchestration of teams of Claude Code agents: teams, inter-agent messaging (normal/urgent mailboxes), tickets with deliverables, no-code blueprint, web supervision. Decisions: `docs/adr/`. The roadmap (`docs/roadmap.md`) is a local, unversioned file.
+Orchestration of teams of Claude Code agents: teams, inter-agent messaging (normal/urgent mailboxes), tickets with deliverables, scheduled tasks, web supervision. Decisions: `docs/adr/`. The roadmap (`docs/roadmap.md`) is a local, unversioned file.
 
 ## Stack
 Overview and the journey of a message: `docs/architecture.md`.

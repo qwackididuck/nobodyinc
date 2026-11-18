@@ -130,7 +130,7 @@ Some details:
 - A schedule whose last occurrence found no agent is shown in alert in the tab, whose badge counts alerts and pending proposals. The notices of point 7 are not shown as chat messages.
 - The office clock rings, as an animation, when an occurrence is done; it lists the latest occurrences that are over (`docs/schedules.md`).
 - At creation and edit, when the target agent uses the `default` permission profile, the control room warns the human: every sensitive action will wait in the approval queue.
-- **No spending guard in V1.** Costs are not measured yet; budgets come with "Budgets and observability".
+- **No spending guard in V1.** Costs are not measured yet; budgets come with "Costs and budgets".
 
 ## Not decided here
 
