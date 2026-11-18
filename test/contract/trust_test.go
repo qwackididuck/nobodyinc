@@ -59,8 +59,53 @@ func TestTrustRules(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if shown := !trustQuestionShown(t, configDir, child); shown != tt.want || predicted != tt.want {
+			if shown := !questionShown(t, configDir, child, trustQuestion); shown != tt.want || predicted != tt.want {
 				t.Fatalf("Claude Code trusts the folder: %v; ProjectTrusted says %v; want %v", shown, predicted, tt.want)
+			}
+		})
+	}
+}
+
+// A directory given with --add-dir asks again at every session start unless
+// Claude Code trusts it, or one of its parents: that is why the daemon trusts
+// ~/.nobody, where the staging directory of the personal skills lives
+// (runtime.Trust, ADR-0011).
+func TestAddedDirectoryNeedsTrust(t *testing.T) {
+	t.Parallel()
+
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	project := filepath.Join(base, "project")
+	home := filepath.Join(base, "nobody")
+	staging := filepath.Join(home, "projects", "p", "skills")
+
+	for _, dir := range []string{project, staging} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name         string
+		trustHome    bool
+		wantQuestion bool
+	}{
+		{name: "untrusted: asked", wantQuestion: true},
+		{name: "a parent trusted: not asked", trustHome: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			configDir := t.TempDir()
+			writeClaudeConfig(t, configDir, map[string]bool{project: true, home: tt.trustHome})
+
+			if got := questionShown(t, configDir, project, addDirQuestion, "--add-dir", staging); got != tt.wantQuestion {
+				t.Fatalf("asked about the added directory: %v, want %v", got, tt.wantQuestion)
 			}
 		})
 	}
@@ -87,15 +132,25 @@ func writeClaudeConfig(t *testing.T, dir string, projects map[string]bool) {
 	}
 }
 
-// trustQuestionShown starts claude in dir and reports whether its first
-// screen is the trust question ("Quick safety check") rather than the prompt.
-func trustQuestionShown(t *testing.T, configDir, dir string) bool {
+// The questions Claude Code asks before its prompt.
+const (
+	// trustQuestion is asked in a folder Claude Code does not trust.
+	trustQuestion = "Quick safety check"
+	// addDirQuestion is asked for an untrusted directory given with
+	// --add-dir; the answer only holds for the session.
+	addDirQuestion = "Adding a new directory"
+)
+
+// questionShown starts claude in dir, with extraArgs, and reports whether its
+// first screen is the given question rather than the prompt.
+func questionShown(t *testing.T, configDir, dir, question string, extraArgs ...string) bool {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "claude", "--model", "haiku", "--setting-sources", "local")
+	args := append([]string{"--model", "haiku", "--setting-sources", "local"}, extraArgs...)
+	cmd := exec.CommandContext(ctx, "claude", args...)
 	cmd.Dir = dir
 
 	cmd.Env = append(cleanEnv(), "CLAUDE_CONFIG_DIR="+configDir)
@@ -118,7 +173,7 @@ func trustQuestionShown(t *testing.T, configDir, dir string) bool {
 		screen.Write(buf[:n])
 
 		switch text := visibleText(screen.String()); {
-		case strings.Contains(text, "Quick safety check"):
+		case strings.Contains(text, question):
 			return true
 		case strings.Contains(text, "❯") && strings.Contains(text, "Claude Code"):
 			return false // the prompt is ready: no question was asked
@@ -129,7 +184,7 @@ func trustQuestionShown(t *testing.T, configDir, dir string) bool {
 		}
 	}
 
-	t.Fatalf("claude showed neither its trust question nor its prompt:\n%s", visibleText(screen.String()))
+	t.Fatalf("claude showed neither %q nor its prompt:\n%s", question, visibleText(screen.String()))
 
 	return false
 }

@@ -27,6 +27,8 @@ Claude Code asks whether to trust a new folder before it starts, and an agent wa
 
 `nobodyd` checks this when it starts (`runtime.ProjectTrusted`, which reads the trust flags of Claude Code's `~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`) and logs a warning if the project is not trusted yet; `nobodyd init` says so too. The rules it applies are checked against the real CLI by `task contract` (`TestTrustRules`).
 
+The daemon's own directory, `~/.nobody`, needs no such step: `nobodyd` marks it trusted itself when it starts, before any agent, because every agent gets a directory inside it with `--add-dir` (the personal skills, ADR-0011), which Claude Code would otherwise ask about at each session start (`TestAddedDirectoryNeedsTrust`).
+
 ## Moving work between teams
 
 Each team works in its own worktree, and the feature branch carries the work from one team to the next:
