@@ -10,6 +10,7 @@ import {
   type ScheduleView,
   setScheduleEnabled,
   updateSchedule,
+  usd,
 } from "@/lib/api";
 import { useDaemonEvents } from "@/lib/live";
 import kanban from "../kanban/kanban.module.css";
@@ -50,8 +51,9 @@ export function ScheduleDrawer({ view, onClose, onOpenChat, onOpenTicket }: Prop
     };
   }, [view.id, version]);
 
+  // Occurrences change, and what a running one costs grows (ADR-0013).
   useDaemonEvents((e) => {
-    if (e.type === "schedules.changed") setVersion((v) => v + 1);
+    if (e.type === "schedules.changed" || e.type === "spend.changed") setVersion((v) => v + 1);
   });
 
   async function act(action: () => Promise<unknown>, after?: () => void) {
@@ -141,6 +143,7 @@ export function ScheduleDrawer({ view, onClose, onOpenChat, onOpenTicket }: Prop
                     )}
                     {r.message && "mail"}
                     {r.ended_at && <> · ended {when(r.ended_at)}</>}
+                    {r.spent_usd > 0 && <> · cost {usd(r.spent_usd)}</>}
                   </span>
                   {r.note && <span className={kanban.by}>{r.note}</span>}
                 </li>

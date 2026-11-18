@@ -2,9 +2,10 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 
-import { type ConfigProtection, getProject, setConfigProtection, setProjectPrompt } from "@/lib/api";
+import { type BudgetSettings, type ConfigProtection, getProject, setConfigProtection, setProjectPrompt, updateBudgets } from "@/lib/api";
 import { type Animations, saveAppearance, useAppearance } from "@/lib/appearance";
 import { useLive } from "@/lib/live";
+import { CapEditor } from "../budgets/CapEditor";
 import ui from "../ui/ui.module.css";
 import { MCPServers } from "./MCPServers";
 import { Skills } from "./Skills";
@@ -14,6 +15,7 @@ const SECTIONS = [
   { id: "project", label: "Project and daemon" },
   { id: "mcp", label: "MCP servers" },
   { id: "skills", label: "Skills" },
+  { id: "budgets", label: "Budgets" },
   { id: "appearance", label: "Appearance" },
 ] as const;
 
@@ -39,6 +41,7 @@ export function Settings() {
         {section === "project" && <ProjectSection />}
         {section === "mcp" && <MCPServers />}
         {section === "skills" && <Skills />}
+        {section === "budgets" && <BudgetsSection />}
         {section === "appearance" && <AppearanceSection />}
       </div>
     </div>
@@ -129,6 +132,67 @@ function ProjectSection() {
       <Option label="Claude Code executable" help="-claude">
         <code>{settings.claude_path}</code>
       </Option>
+    </section>
+  );
+}
+
+// BudgetsSection turns budgets on or off for the project, and sets the
+// threshold and the staff's cap, in .nobody/budgets.yaml (ADR-0013). Agent
+// and team caps are set in their editors (Staff, the team dialog).
+function BudgetsSection() {
+  const { budgets, reload } = useLive();
+  const [threshold, setThreshold] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!budgets) return <p className={ui.sub}>Loading…</p>;
+
+  async function save(change: Partial<BudgetSettings>) {
+    if (!budgets) return;
+    try {
+      await updateBudgets({ ...budgets, ...change });
+      setError(null);
+      setThreshold(null);
+      reload("budgets");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  const typed = threshold ?? String(budgets.threshold);
+  const percent = Number(typed);
+  const validThreshold = Number.isInteger(percent) && percent >= 1 && percent <= 100;
+
+  return (
+    <section className={styles.section}>
+      <h2 className={ui.title}>Budgets</h2>
+      <p className={ui.sub}>
+        Spending is Claude Code&apos;s estimate at list price, in USD: a guard against runaway agents, not an invoice. Saved in
+        .nobody/budgets.yaml, committed with the project.
+      </p>
+      <Option
+        label="Budgets"
+        help="Off: no caps, holds, extension requests or budget fields. Spending is still measured and shown on the office's spending board."
+      >
+        <Segment
+          label="Budgets"
+          values={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+          current={budgets.enabled ? "on" : "off"}
+          onPick={(v) => void save({ enabled: v === "on" })}
+        />
+      </Option>
+      {budgets.enabled && (
+        <Option label="Threshold" help="At this percent of a budget, its agents stop at the end of their turn and the director asks you for an extension. A budget may set its own.">
+          <input className={ui.input} inputMode="numeric" aria-label="Threshold in percent" value={typed} onChange={(e) => setThreshold(e.target.value)} />{" "}
+          <button type="button" className={ui.btn} disabled={!validThreshold || percent === budgets.threshold} onClick={() => void save({ threshold: percent })}>
+            Save
+          </button>
+        </Option>
+      )}
+      {error && <p className={ui.error}>{error}</p>}
+      <CapEditor scope={{ kind: "staff" }} title="Cap on the whole staff (the director included)" />
     </section>
   );
 }

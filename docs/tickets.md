@@ -20,7 +20,8 @@ open ──claim──► in_progress ──done──► done
 | Action | Allowed for |
 |---|---|
 | Create | Anyone, for any team: the human, the director (`docs/god.md`, who may also assign it) and every agent. A team's block list only limits who its members start conversations with, never tickets (ADR-0009). |
-| Claim | A member of the owning team, once the ticket is open and unblocked. |
+| Claim | A member of the owning team, once the ticket is open and unblocked, unless the agent is on budget hold or the ticket's budget (or its feature's) is reached. |
+| Change its budget | The human (`PATCH /api/tickets/{id}`), or an extension (`docs/budgets.md`). |
 | Done / release / cancel | The assignee, the human or the director. |
 | Comment, attach a deliverable | Anyone in the organisation. |
 
@@ -46,7 +47,7 @@ On the office MCP server (`internal/officemcp/tickets.go`):
 | `ticket_list` | My tickets in progress and my team's queue. |
 | `ticket_get` | A ticket with its description, acceptance criteria, deliverables and comments. |
 | `ticket_claim` | Take a ticket (or, without an id, the oldest available one). |
-| `ticket_create` | Create a ticket (optionally assigned, optionally blocked by others). |
+| `ticket_create` | Create a ticket (optionally assigned, optionally blocked by others, optionally with a budget: required inside a feature with a budget). |
 | `ticket_update` | Done, release (`open`) or cancel, with an optional comment. |
 | `ticket_comment` | Progress, questions, decisions. |
 | `deliverable_add` | A file, a commit, a report or a note. |
@@ -57,13 +58,15 @@ On the office MCP server (`internal/officemcp/tickets.go`):
 
 A message to `@<team>` (e.g. `@specs`) goes to one member of that team, chosen the same way as for queued tickets: idle first, then any running member. Use it when any member can answer.
 
-Agents on leave are never chosen, neither for a queued ticket nor for `@<team>`. When an agent goes on leave or is dismissed, its ticket in progress goes back to its team's queue once it has stopped, with a comment from `nobody` (`docs/agents.md`, "Lifecycle").
+Agents on leave are never chosen, neither for a queued ticket nor for `@<team>`; agents on budget hold only when nobody else runs. When an agent goes on leave or is dismissed, its ticket in progress goes back to its team's queue once it has stopped, with a comment from `nobody` (`docs/agents.md`, "Lifecycle").
 
 ## API and UI
 
 `/api/tickets*` (see `api/openapi.yaml`) lets the human list, create, comment and change the status of tickets. The control room has a **Kanban** tab: tickets as cards in one column per status (dragging a card changes its status), a creation form, and a drawer with a ticket's deliverables, comments and messages.
 
 **Deleting a ticket** (`DELETE /api/tickets/{id}`): the human drags its card onto the Kanban's shredder. The ticket, its comments and its deliverables are deleted for good; messages about it stay, without the link. If an agent was working on it, it gets an urgent notice from `nobody` to stop. With `cascade=true` (a box in the shredder's confirmation), the tickets that depend on it, and theirs, are deleted too; otherwise they no longer wait for it.
+
+**Budgets** (`docs/budgets.md`, ADR-0013): a ticket may have a budget, in list-price USD; inside a feature with a budget every ticket needs one, at most what the feature has left to allocate. Cards and the drawer show what a ticket spent against its budget; the drawer changes the budget. At the budget's threshold, its agent stops at the end of its turn and asks for an extension.
 
 **Archived tickets**: finishing a feature archives its tickets (ADR-0007). They leave the Kanban and every queue, and stay readable: `GET /api/tickets?archived=true`, and the archives room of the office. They cannot be deleted.
 

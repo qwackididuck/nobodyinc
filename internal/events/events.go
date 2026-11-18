@@ -40,6 +40,11 @@ const (
 	// SchedulesChanged: a schedule, one of its occurrences or a director's
 	// proposal changed (ADR-0012).
 	SchedulesChanged = "schedules.changed"
+	// SpendChanged: agents spent; published at most once a second (ADR-0013).
+	SpendChanged = "spend.changed"
+	// BudgetsChanged: the budgets file, a ticket's or feature's budget, a
+	// hold, a budget request or a cap proposal changed (ADR-0013).
+	BudgetsChanged = "budgets.changed"
 )
 
 // Event is one change. Data is encoded as JSON in the stream.

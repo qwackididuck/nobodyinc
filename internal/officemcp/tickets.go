@@ -99,12 +99,14 @@ type TicketCreateInput struct {
 	AcceptanceCriteria string   `json:"acceptance_criteria,omitempty" jsonschema:"how to know it is done"`
 	BlockedBy          []string `json:"blocked_by,omitempty"          jsonschema:"IDs of tickets that must be done first"`
 	Assignee           string   `json:"assignee,omitempty"            jsonschema:"address of a team member to assign it to; omit to queue it"`
+	BudgetUSD          *float64 `json:"budget_usd,omitempty"          jsonschema:"USD; required in a feature with a budget"`
 }
 
 func (t tools) ticketCreate(ctx context.Context, _ *mcp.CallToolRequest, in TicketCreateInput) (*mcp.CallToolResult, work.Ticket, error) {
 	tk, err := t.tickets.Create(ctx, t.self, work.Draft{
 		Title: in.Title, Team: in.Team, Description: in.Description,
 		AcceptanceCriteria: in.AcceptanceCriteria, BlockedBy: in.BlockedBy, Assignee: in.Assignee,
+		Budget: work.Budget{USD: in.BudgetUSD},
 	})
 
 	return nil, tk, err

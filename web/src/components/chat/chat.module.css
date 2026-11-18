@@ -118,6 +118,11 @@
 .pill[data-status="awaiting_approval"] {
   --status: var(--warn);
 }
+/* Held by a budget at its threshold (ADR-0013). */
+.railDot[data-status="budget_hold"],
+.pill[data-status="budget_hold"] {
+  --status: var(--danger);
+}
 .railDot[data-status="idle"],
 .pill[data-status="idle"] {
   --status: var(--idle);
@@ -440,6 +445,15 @@
 
 .card[data-kind="proposal"] {
   border-color: var(--accent);
+}
+
+/* A budget extension request passed on by the director (ADR-0013). */
+.card[data-kind="budget"] {
+  border-color: var(--danger);
+}
+
+.card[data-kind="budget"] > .kicker:first-child {
+  color: var(--danger);
 }
 
 .kicker {

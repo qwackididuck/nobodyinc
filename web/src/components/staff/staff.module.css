@@ -389,6 +389,12 @@
   --status: var(--warn);
 }
 
+/* Held by a budget at its threshold (ADR-0013). */
+.pill[data-status="budget_hold"] {
+  --status: var(--danger);
+  color: #fff;
+}
+
 .pill[data-status="idle"],
 .pill[data-status="stopped"],
 .pill[data-status="exited"],

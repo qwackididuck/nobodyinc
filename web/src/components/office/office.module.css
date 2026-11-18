@@ -253,6 +253,54 @@
   background: var(--ink-px);
 }
 
+/* The spending board: an easel with a bar chart and a dollar sign, which
+   opens the spending popup (SpendPanel). Its legs stand on the wall's
+   skirting, between the clock and the third window. */
+.easel {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 530px;
+  width: 46px;
+  height: 64px;
+  padding: 0;
+  border: 0;
+  background:
+    linear-gradient(var(--ink-px), var(--ink-px)) 8px 40px / 4px 24px no-repeat,
+    linear-gradient(var(--ink-px), var(--ink-px)) 34px 40px / 4px 24px no-repeat;
+}
+
+.easel:hover,
+.easel:focus-visible {
+  outline: none;
+  filter: brightness(1.15);
+  animation: rattle 0.32s steps(4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .easel:hover,
+  .easel:focus-visible {
+    animation: none;
+  }
+}
+
+/* The board: three rising bars, and the dollar sign in a corner. */
+.easelChart {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 42px;
+  padding: 2px 4px 0 0;
+  background:
+    linear-gradient(var(--accent), var(--accent)) 7px 24px / 7px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) 17px 16px / 7px 20px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) 27px 8px / 7px 28px no-repeat,
+    var(--paper);
+  box-shadow: inset 0 0 0 3px var(--ink-px);
+  color: var(--ink-px);
+  font: bold 11px/1 monospace;
+  text-align: right;
+}
+
 .door {
   position: absolute;
   bottom: 0;
@@ -753,6 +801,43 @@
   color: #5b5346;
 }
 
+/* A small budget gauge (MiniGauge, ADR-0013): under a desk's name plate,
+   the tightest budget covering the agent; under a team room's sign, the
+   team's cap. */
+.miniGauge {
+  position: absolute;
+  height: 4px;
+  background: var(--panel-2);
+  box-shadow: 0 0 0 1px var(--ink-px);
+}
+
+.miniGauge span {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+
+.miniGauge[data-tone="near"] span {
+  background: var(--warn);
+}
+
+.miniGauge[data-tone="held"] span {
+  background: var(--danger);
+}
+
+.deskGauge {
+  left: 4px;
+  right: 4px;
+  top: 114px;
+}
+
+.roomGauge {
+  z-index: 2;
+  left: 14px;
+  top: 12px;
+  width: 80px;
+}
+
 .chair {
   position: absolute;
   left: 38px;
@@ -848,6 +933,30 @@
 .sayApproval {
   background: var(--warn);
   animation: hop 0.5s steps(2) infinite;
+}
+
+/* On budget hold: an empty wallet, open, with nothing inside (ADR-0013). */
+.sayWallet {
+  background: var(--panel-2);
+}
+
+.sayWallet i {
+  position: relative;
+  width: 14px;
+  height: 10px;
+  border: 2px solid #7b5434;
+  border-top-width: 3px;
+  background: #c9a27a;
+}
+
+.sayWallet i::after {
+  content: "";
+  position: absolute;
+  right: -2px;
+  top: 2px;
+  width: 5px;
+  height: 4px;
+  background: #7b5434;
 }
 
 @keyframes hop {

@@ -20,17 +20,19 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { type Agent, type Feature, type Team } from "@/lib/api";
+import { type Agent, type BudgetGauge, type Feature, type Team } from "@/lib/api";
 import { useAppearance } from "@/lib/appearance";
+import { covering } from "@/lib/budgets";
 import { useDaemonEvents, useLive } from "@/lib/live";
 import { lookOf, teamColors } from "@/lib/look";
 import { betweenAgents, isDirector } from "../chat/agents";
 import { Banner } from "./Banner";
-import { Desk } from "./Desk";
+import { Desk, MiniGauge } from "./Desk";
 import { endedAt, isEnded } from "../schedules/scheduling";
 import { ArchivesPanel } from "./ArchivesPanel";
 import { ClockPanel } from "./ClockPanel";
 import { FeatureReview } from "./FeatureReview";
+import { SpendPanel } from "./SpendPanel";
 import { TeamDialog } from "../teams/TeamDialog";
 import { addWalker, celebrate, dismantle, fileTickets, flyPlane, site, walk, works } from "./effects";
 import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
@@ -78,7 +80,7 @@ const orgKey = (agents: Agent[], teams: Team[]) =>
 let nextSceneID = 1;
 
 export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSeen, onClockSeen }: Props) {
-  const { agents, teams, tickets, features, loaded, scheduleRuns } = useLive();
+  const { agents, teams, tickets, features, loaded, scheduleRuns, spend } = useLive();
   const appearance = useAppearance();
   const moving = appearance.animations === "full";
   const layer = useRef<HTMLDivElement>(null);
@@ -98,6 +100,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [seenFinished, setSeenFinished] = useState<string | null>(null);
   const [clockOpen, setClockOpen] = useState(false);
+  const [spendOpen, setSpendOpen] = useState(false);
   // The occurrences already done when last rendered, and how many times the
   // clock rang: a scheduled task newly done rings it (the alarm replays when
   // the count changes). Nothing rings for what was done before the page
@@ -274,6 +277,9 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
   const working = new Map(tickets.filter((t) => t.status === "in_progress" && t.assignee).map((t) => [t.assignee as string, t.id]));
   const queue = (team: string) => tickets.filter((t) => t.team === team && t.status === "open" && !t.assignee).length;
   const byAddress = new Map(agents.map((a) => [a.address, a]));
+  // Budget gauges (ADR-0013): none while budgets are off (the daemon sends none).
+  const gauges = spend?.gauges ?? [];
+  const teamGauge = (team: string) => gauges.filter((g) => g.scope.kind === "team" && g.scope.id === team);
 
   return (
     <section className={styles.office} aria-label="Office">
@@ -283,6 +289,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
       {reviewing && <FeatureReview feature={reviewing} onClose={() => setReviewing(null)} />}
       {archivesOpen && <ArchivesPanel onClose={() => setArchivesOpen(false)} onOpenChat={onSelectAgent} />}
       {clockOpen && <ClockPanel onClose={() => setClockOpen(false)} onSeen={onClockSeen} />}
+      {spendOpen && <SpendPanel onClose={() => setSpendOpen(false)} />}
       <div className={styles.wrap}>
         <div className={styles.scene} style={{ width: SCENE_WIDTH, height: Math.max(layout.height, full.height) }}>
           <Wall
@@ -291,6 +298,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
             clockUnread={clockUnread}
             rings={moving ? rings : 0}
             onOpenClock={() => setClockOpen(true)}
+            onOpenSpend={() => setSpendOpen(true)}
           />
           <div className={styles.floor} style={{ top: WALL_HEIGHT }} />
           {layout.rooms.map((room) =>
@@ -303,6 +311,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
               carpet={carpetOf(room, teams)}
               building={building.has(room.id)}
               queue={room.kind === "team" ? queue(room.id) : 0}
+              gauges={room.kind === "team" ? teamGauge(room.id) : []}
               onOpen={() => {
                 if (room.kind === "team") setEditingTeam(teams.find((t) => t.id === room.id) ?? null);
                 if (room.kind === "archives") setArchivesOpen(true);
@@ -332,6 +341,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
                   ticket={working.get(address)}
                   selected={selected === address}
                   arriving={arrivals.get(address) === "seating"}
+                  gauges={covering(agent, gauges, tickets)}
                   onSelect={() => onSelectAgent(address)}
                 />
               );
@@ -352,9 +362,11 @@ interface WallProps {
   // How many times the clock rang; 0 never animates it.
   rings: number;
   onOpenClock: () => void;
+  // The spending board (an easel with a chart) opens the spending popup.
+  onOpenSpend: () => void;
 }
 
-function Wall({ binUnread, onOpenBin, clockUnread, rings, onOpenClock }: WallProps) {
+function Wall({ binUnread, onOpenBin, clockUnread, rings, onOpenClock, onOpenSpend }: WallProps) {
   return (
     <div className={styles.wall} style={{ height: WALL_HEIGHT }}>
       {[60, 200, 620].map((x) => (
@@ -371,6 +383,11 @@ function Wall({ binUnread, onOpenBin, clockUnread, rings, onOpenClock }: WallPro
       >
         {clockUnread > 0 && <span className={styles.binBadge}>{clockUnread}</span>}
       </button>
+      <button type="button" className={styles.easel} aria-label="The spending board: what the agents spent, and the budgets" onClick={onOpenSpend}>
+        <span className={styles.easelChart} aria-hidden="true">
+          $
+        </span>
+      </button>
       <span className={styles.door} style={{ left: DOOR.x, width: DOOR.width }} />
       <button type="button" className={styles.bin} style={{ left: BIN.x, top: BIN.y }} aria-label="Wastebasket: messages between agents" onClick={onOpenBin}>
         {binUnread > 0 && <span className={styles.binBadge}>{binUnread}</span>}
@@ -384,6 +401,8 @@ interface RoomViewProps {
   carpet?: string;
   building: boolean;
   queue: number;
+  // A team's cap, if it has one.
+  gauges: BudgetGauge[];
   // Clicking the room (its floor, frame or sign; desks are above it) opens
   // what it is about.
   onOpen: () => void;
@@ -398,7 +417,7 @@ const ROOM_HINT: Record<Room["kind"], string> = {
   plot: "",
 };
 
-function RoomView({ room, carpet, building, queue, onOpen, children }: RoomViewProps) {
+function RoomView({ room, carpet, building, queue, gauges, onOpen, children }: RoomViewProps) {
   const name = room.kind === "director" ? "director" : room.kind === "archives" ? "the archives" : `team ${room.id}`;
   return (
     <div
@@ -419,6 +438,7 @@ function RoomView({ room, carpet, building, queue, onOpen, children }: RoomViewP
         {room.kind === "director" ? "DIRECTOR" : room.id.toUpperCase()}
         {room.kind === "team" && <em> Q{queue}</em>}
       </span>
+      <MiniGauge gauges={gauges} className={styles.roomGauge} />
       <span className={styles.plant} />
       {children}
       <span className={styles.roomHint} aria-hidden="true">

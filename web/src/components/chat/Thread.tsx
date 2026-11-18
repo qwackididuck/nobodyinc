@@ -7,7 +7,7 @@ import { useLive } from "@/lib/live";
 import { TerminalView } from "./TerminalView";
 import { isAnswered, isDirector, statusKey, statusLabel, teamLabel, timeOf, withHuman } from "./agents";
 import { Avatar } from "./Avatar";
-import { ApprovalCard, FeatureProposal, ScheduleProposalCard, UrgentQuestion } from "./cards";
+import { ApprovalCard, BudgetProposalCard, BudgetRequestCard, FeatureProposal, ScheduleProposalCard, UrgentQuestion } from "./cards";
 import styles from "./chat.module.css";
 import { Composer } from "./Composer";
 
@@ -128,8 +128,30 @@ interface MessageItemProps {
 // MessageItem shows one message: a bubble, or a card when it waits for the
 // human (an unanswered urgent question, a pending feature proposal).
 function MessageItem({ message: m, agent, messages, onReply }: MessageItemProps) {
-  const { features, scheduleProposals, reload } = useLive();
+  const { features, scheduleProposals, budgetRequests, budgetProposals, reload } = useLive();
   const out = m.from === HUMAN;
+
+  // The director's budget cards (ADR-0013): an extension request it passed
+  // on, or a cap it proposes.
+  const budgetRequest = m.act === "propose" ? budgetRequests.find((r) => r.card_message === m.id) : undefined;
+  if (budgetRequest) {
+    return (
+      <li className={styles.in}>
+        <BudgetRequestCard request={budgetRequest} onDecided={() => reload("budgetRequests")} />
+        <span className={styles.time}>{timeOf(m.sent_at)}</span>
+      </li>
+    );
+  }
+
+  const budgetProposal = m.act === "propose" ? budgetProposals.find((p) => p.proposal_message === m.id) : undefined;
+  if (budgetProposal) {
+    return (
+      <li className={styles.in}>
+        <BudgetProposalCard proposal={budgetProposal} onDecided={() => reload("budgetProposals")} />
+        <span className={styles.time}>{timeOf(m.sent_at)}</span>
+      </li>
+    );
+  }
 
   const scheduleProposal = m.act === "propose" ? scheduleProposals.find((p) => p.proposal_message === m.id) : undefined;
   if (scheduleProposal) {

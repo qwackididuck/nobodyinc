@@ -4,6 +4,7 @@ import { type FormEvent, type ReactNode, useState } from "react";
 
 import { createTeam, deleteTeam, type Team, updateTeam } from "@/lib/api";
 import { useLive } from "@/lib/live";
+import { CapEditor } from "../budgets/CapEditor";
 import { NAME_PATTERN } from "../staff/definition";
 import { Modal } from "../ui/Modal";
 import ui from "../ui/ui.module.css";
@@ -111,6 +112,7 @@ export function TeamDialog({ team, onClose, onDone }: Props) {
           </button>
         </div>
       </form>
+      {team && <CapEditor scope={{ kind: "team", id: team.id }} title={`Cap on team ${team.id}`} />}
       {team && <DeleteTeam team={team} onDeleted={onClose} />}
     </Modal>
   );

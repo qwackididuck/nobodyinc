@@ -5,6 +5,7 @@ import { type DragEvent, useState } from "react";
 import { setTicketStatus, type Ticket, type TicketStatus } from "@/lib/api";
 import { useLive } from "@/lib/live";
 import { lookOf, teamColors } from "@/lib/look";
+import { Spent } from "../budgets/Spent";
 import { isDirector } from "../chat/agents";
 import { Sprite } from "../office/sprite";
 import ui from "../ui/ui.module.css";
@@ -81,6 +82,7 @@ export function Kanban({ onOpenChat }: Props) {
         <div className={styles.meta}>
           {criteria > 0 && <span>{criteria} acceptance criteria</span>}
           {t.blocked_by?.length ? <span>needs {t.blocked_by.join(", ")}</span> : null}
+          {(t.budget_usd !== undefined || t.spent_usd > 0) && <Spent spent={t.spent_usd} budget={t.budget_usd} threshold={t.threshold} />}
         </div>
         <div className={styles.foot}>
           {t.assignee ? (
@@ -94,6 +96,7 @@ export function Kanban({ onOpenChat }: Props) {
             <span className={styles.queue}>In the {t.team} queue</span>
           )}
           {t.assignee && waiting.has(t.assignee) && <span className={styles.flag}>APPROVAL</span>}
+          {assignee?.status === "budget_hold" && <span className={styles.flag}>BUDGET HOLD</span>}
         </div>
       </li>
     );

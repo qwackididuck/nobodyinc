@@ -52,6 +52,10 @@ type Forker struct {
 	Requeue       func(ctx context.Context, recipient string, ids []string) error
 	// Run runs claude and returns its stdout; replaceable in tests.
 	Run func(ctx context.Context, dir string, args []string) ([]byte, error)
+	// RecordCost, when set, is told what each fork cost (its -p output's
+	// total_cost_usd), with the question's sender: the asker pays for the
+	// answer, not the agent forked (ADR-0013).
+	RecordCost func(ctx context.Context, asker, session string, costUSD float64)
 }
 
 // ShouldAnswer reports whether a message is an urgent question for a busy
@@ -114,11 +118,18 @@ func (f *Forker) ask(ctx context.Context, m org.Member, q messaging.Message) (st
 	}
 
 	var result struct {
-		Result  string `json:"result"`
-		IsError bool   `json:"is_error"`
+		Result       string  `json:"result"`
+		IsError      bool    `json:"is_error"`
+		SessionID    string  `json:"session_id"`
+		TotalCostUSD float64 `json:"total_cost_usd"`
 	}
 	if err := json.Unmarshal(out, &result); err != nil {
 		return "", fmt.Errorf("decode fork output: %w", err)
+	}
+
+	// Paid whatever the answer: an ESCALATE or an error cost money too.
+	if f.RecordCost != nil && result.TotalCostUSD > 0 {
+		f.RecordCost(ctx, q.From, result.SessionID, result.TotalCostUSD)
 	}
 
 	if result.IsError {

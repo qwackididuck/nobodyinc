@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -100,6 +101,8 @@ type Draft struct {
 	// it never blocks finishing the feature and is not archived with it.
 	// Scheduled work is filed this way (ADR-0012).
 	NoFeature bool
+	// Budget is optional, except inside a feature with a budget (ADR-0013).
+	Budget Budget
 }
 
 // Service applies the ticket rules described in the package documentation.
@@ -125,7 +128,17 @@ type Service struct {
 	// OnTicketDeleted, when set, is called for each deleted ticket an agent
 	// was working on, e.g. to tell it to stop.
 	OnTicketDeleted func(Ticket)
-	Now             func() time.Time
+	// BudgetsEnabled reports whether budgets are on for the project
+	// (budget.Book.Enabled); nil means on.
+	BudgetsEnabled func() bool
+	// CheckClaim, when set, may refuse a claim for budget reasons: an agent
+	// on budget hold, a ticket or feature whose budget is reached (ADR-0013).
+	CheckClaim func(ctx context.Context, agent string, t Ticket) error
+	Now        func() time.Time
+
+	// budgetMu keeps two tickets from taking the same part of a feature's
+	// budget at once.
+	budgetMu sync.Mutex
 }
 
 // Create files a new ticket in a team's queue, or assigns it directly.
@@ -146,6 +159,13 @@ func (s *Service) Create(ctx context.Context, by string, d Draft) (Ticket, error
 		}
 	}
 
+	s.budgetMu.Lock()
+	defer s.budgetMu.Unlock()
+
+	if err := s.checkFeatureBudget(ctx, feature, d.Budget, 0); err != nil {
+		return Ticket{}, err
+	}
+
 	now := s.now()
 
 	t := Ticket{
@@ -157,6 +177,7 @@ func (s *Service) Create(ctx context.Context, by string, d Draft) (Ticket, error
 		Assignee:           d.Assignee,
 		Status:             StatusOpen,
 		BlockedBy:          blockedBy,
+		Budget:             d.Budget,
 		CreatedBy:          by,
 		CreatedAt:          now,
 		UpdatedAt:          now,
@@ -420,6 +441,10 @@ func (s *Service) validateDraft(ctx context.Context, d Draft) error {
 		return fmt.Errorf("%w: the assignee must belong to team %q", ErrInvalid, d.Team)
 	}
 
+	if err := s.checkBudget(d.Budget); err != nil {
+		return err
+	}
+
 	return s.checkFree(ctx, d.Assignee, "")
 }
 
@@ -473,6 +498,12 @@ func (s *Service) activeFeatureID(ctx context.Context) (string, error) {
 
 // beforeClaim brings the latest validated work into the claimer's worktree.
 func (s *Service) beforeClaim(ctx context.Context, t Ticket, agent string) error {
+	if s.CheckClaim != nil {
+		if err := s.CheckClaim(ctx, agent, t); err != nil {
+			return err
+		}
+	}
+
 	if s.Workspace == nil || t.Feature == "" {
 		return nil
 	}

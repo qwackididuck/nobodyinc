@@ -31,12 +31,25 @@
 //     deliverable and close it; same for a ticket assigned to it (without the
 //     claim).
 //
+// Costs (ADR-0013): like Claude Code, it hands its statusLine (from
+// --settings) the session's running cost, once when the session starts (0)
+// and after every turn. A new process starts from 0, a resumed session too,
+// with the same session ID. It spends only when told to:
+//
+//   - a request whose body is "SPEND <usd>" costs that much;
+//   - a ticket whose title has "SPEND <usd>" costs that much, and stays in
+//     progress (the work is not over);
+//   - a Stop refused for a budget makes it call budget_request (the request
+//     named in the refusal, $1, a fixed justification);
+//   - a notice from nobody about a budget request (the director's) makes it
+//     pass the request on with budget_submit, recommending $1.
+//
 // "claude mcp add-json" and "claude mcp remove" change MCP servers in the
 // same files as the real CLI (mcpcli.go).
 //
 // Started with --fork-session (a fork answering an urgent question), it prints
 // a one-shot JSON answer like claude -p does: ESCALATE if the question
-// contains "UNKNOWN", an answer otherwise.
+// contains "UNKNOWN", an answer otherwise; either costs forkCostUSD.
 //
 // Started with stream-json output and the API out of reach, as the daemon
 // does to discover the built-in skills, it prints an init event listing the
@@ -94,6 +107,7 @@ func run(args []string) error {
 	defer a.mcp.Close()
 
 	a.startSession()
+	a.reportCost() // the session is ready: nothing spent yet
 	a.turn(opts.prompt)
 
 	// Lines typed into the terminal (the daemon's wake-up prompt, or a human)
@@ -110,10 +124,13 @@ func run(args []string) error {
 
 // options are the parts of the claude command line we use.
 type options struct {
-	hooks  map[string]string // hook event → command
-	mcpURL string
-	prompt string
-	fork   bool
+	hooks map[string]string // hook event → command
+	// statusLine is the statusLine command of --settings, run through the
+	// shell as Claude Code does ("nobody-hook statusline").
+	statusLine string
+	mcpURL     string
+	prompt     string
+	fork       bool
 	// systemPrompt is --append-system-prompt.
 	systemPrompt string
 	// discovery is the daemon reading the skills a session loads: stream-json
@@ -196,7 +213,9 @@ func (opts *options) set(name, value string) error {
 	case "-p":
 		opts.prompt = value
 	case "--settings":
-		opts.hooks, err = parseHooks(value)
+		if opts.hooks, err = parseHooks(value); err == nil {
+			opts.statusLine, err = parseStatusLine(value)
+		}
 	case "--mcp-config":
 		opts.mcpURL, err = parseMCPURL(value)
 	case "--append-system-prompt":
@@ -231,6 +250,20 @@ func parseHooks(settings string) (map[string]string, error) {
 	}
 
 	return hooks, nil
+}
+
+// parseStatusLine finds the statusLine command in the --settings value.
+func parseStatusLine(settings string) (string, error) {
+	var s struct {
+		StatusLine struct {
+			Command string `json:"command"`
+		} `json:"statusLine"` //nolint:tagliatelle // field name imposed by Claude Code
+	}
+	if err := json.Unmarshal([]byte(settings), &s); err != nil {
+		return "", fmt.Errorf("parse --settings: %w", err)
+	}
+
+	return s.StatusLine.Command, nil
 }
 
 // parseMCPURL finds the office server's URL in the --mcp-config value: a
@@ -275,6 +308,8 @@ type agent struct {
 	// preloaded is how the session started and what its SessionStart hook
 	// handed over, for the "PRELOADED SKILLS?" query.
 	preloaded string
+	// spentUSD is the session's running cost, what the statusLine is told.
+	spentUSD float64
 }
 
 func newAgent(opts options) (*agent, error) {
@@ -319,10 +354,63 @@ func (a *agent) turn(prompt string) {
 			break
 		}
 
+		if request := budgetRequestIn.FindStringSubmatch(resp.Reason); request != nil {
+			a.justify(request[1])
+
+			continue
+		}
+
 		a.react(resp.Reason)
 	}
 
+	a.reportCost()
 	sayf("turn finished")
+}
+
+// budgetRequestIn finds the request a Stop refused for a budget names
+// (daemon.budgetRequestPrompt).
+var budgetRequestIn = regexp.MustCompile(`call the budget_request tool \(request (BR-\d+)\)`)
+
+// justify answers a Stop refused for a budget, as an agent following the
+// refusal would: it asks for $1 more with budget_request.
+func (a *agent) justify(request string) {
+	sayf("budget reached: asking for an extension (%s)", request)
+	a.call("budget_request", map[string]any{
+		"request": request, "amount_usd": 1, "justification": "Half done; " + os.Getenv("NOBODY_AGENT") + " needs a little more.",
+	})
+}
+
+// spend adds to the session's running cost and tells the statusLine, as
+// Claude Code does after each message.
+func (a *agent) spend(usd float64) {
+	a.spentUSD += usd
+	sayf("spent $%.2f (session total $%.2f)", usd, a.spentUSD)
+	a.reportCost()
+}
+
+// reportCost hands the statusLine the session's running cost, in the shape
+// Claude Code gives it (only the fields Nobody Inc reads, and the model).
+func (a *agent) reportCost() {
+	if a.opts.statusLine == "" {
+		return
+	}
+
+	input, err := json.Marshal(map[string]any{
+		"session_id": "fake-session-" + os.Getenv("NOBODY_AGENT"),
+		"model":      map[string]string{"id": "fake"},
+		"cost":       map[string]float64{"total_cost_usd": a.spentUSD},
+	})
+	if err != nil {
+		return
+	}
+
+	cmd := exec.CommandContext(context.Background(), "sh", "-c", a.opts.statusLine) //nolint:gosec // the command comes from our own --settings
+	cmd.Stdin = bytes.NewReader(input)
+	cmd.Stderr = os.Stderr
+
+	if out, err := cmd.Output(); err != nil || len(bytes.TrimSpace(out)) > 0 {
+		sayf("statusLine: %v %q", err, out) // it must print nothing
+	}
 }
 
 // runHook runs the hook configured for an event, as Claude Code does: the event
@@ -402,7 +490,8 @@ func (a *agent) answer(m mail) {
 	a.send(map[string]any{"to": m.From, "act": "inform", "subject": "Re: " + m.Subject, "body": body, "in_reply_to": m.ID})
 }
 
-// reactToRequest handles "ASK <address>: <question>" and "WORK <seconds>".
+// reactToRequest handles "ASK <address>: <question>", "WORK <seconds>" and
+// "SPEND <usd>".
 func (a *agent) reactToRequest(m mail) {
 	switch {
 	case strings.HasPrefix(m.Body, "ASK "):
@@ -410,21 +499,69 @@ func (a *agent) reactToRequest(m mail) {
 	case strings.HasPrefix(m.Body, "WORK "):
 		seconds, _ := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(m.Body, "WORK ")))
 		time.Sleep(time.Duration(seconds) * time.Second)
+	case strings.HasPrefix(m.Body, "SPEND "):
+		if usd, ok := spendIn(m.Body); ok {
+			a.spend(usd)
+		}
 	}
 }
 
-// reactToNotice handles the system's ticket notices.
+// spendPattern is "SPEND <usd>" in a request's body or a ticket's title.
+var spendPattern = regexp.MustCompile(`SPEND (\d+(?:\.\d+)?)`)
+
+func spendIn(text string) (float64, bool) {
+	match := spendPattern.FindStringSubmatch(text)
+	if match == nil {
+		return 0, false
+	}
+
+	usd, err := strconv.ParseFloat(match[1], 64)
+
+	return usd, err == nil
+}
+
+// reactToNotice handles the system's notices: a budget request for the
+// director, and tickets.
 func (a *agent) reactToNotice(m mail) {
+	if strings.HasPrefix(m.Subject, "Budget request BR-") {
+		a.submit(m)
+
+		return
+	}
+
 	switch {
 	case m.Ticket == "":
 		return
 	case strings.Contains(m.Body, "waiting in your team's queue"):
 		if a.call("ticket_claim", map[string]any{"id": m.Ticket}) {
-			a.finish(m.Ticket)
+			a.work(m)
 		}
 	case strings.Contains(m.Body, "is assigned to you"):
-		a.finish(m.Ticket)
+		a.work(m)
 	}
+}
+
+// work does a ticket: one whose title says "SPEND <usd>" costs that much and
+// stays in progress; any other is finished at once.
+func (a *agent) work(m mail) {
+	if usd, ok := spendIn(m.Body); ok {
+		a.spend(usd)
+
+		return
+	}
+
+	a.finish(m.Ticket)
+}
+
+// submit passes a budget request on to the human, as the director does with
+// budget_submit: an opinion, a recommendation, and a justification and an
+// amount for a request nobody justified.
+func (a *agent) submit(m mail) {
+	request, _, _ := strings.Cut(strings.TrimPrefix(m.Subject, "Budget request "), ":")
+	a.call("budget_submit", map[string]any{
+		"request": request, "opinion": "Worth finishing.", "recommended_usd": 1,
+		"justification": "The work is not over.", "amount_usd": 1,
+	})
 }
 
 // forwardAnswer sends the answer to one of our queries back to whoever made
@@ -536,14 +673,20 @@ func (a *agent) send(args map[string]any) string {
 	return out.ID
 }
 
-// answerAsFork prints the one-shot answer of a fork, as claude -p would.
+// forkCostUSD is what a fork costs, reported in its -p output.
+const forkCostUSD = 0.01
+
+// answerAsFork prints the one-shot answer of a fork, as claude -p would,
+// with what it cost.
 func answerAsFork(prompt string) error {
 	answer := "fork answer"
 	if strings.Contains(prompt, "UNKNOWN") {
 		answer = "ESCALATE"
 	}
 
-	return json.NewEncoder(os.Stdout).Encode(map[string]any{"result": answer, "is_error": false})
+	return json.NewEncoder(os.Stdout).Encode(map[string]any{
+		"result": answer, "is_error": false, "session_id": "fake-fork", "total_cost_usd": forkCostUSD,
+	})
 }
 
 // parseMail reads the messages out of the text rendered by internal/hook:

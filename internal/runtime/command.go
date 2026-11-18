@@ -318,14 +318,16 @@ func allowedTools(tools []string) string {
 
 // agentSettings is the --settings value: the mail, permission and
 // preloaded-skills hooks wired to nobody-hook (docs/hooks.md,
-// docs/approvals.md), the agent's permission rules (permissions.go), with
+// docs/approvals.md), its statusLine mode, which reports what the session
+// spends (ADR-0013), the agent's permission rules (permissions.go), with
 // the outside directories it may not write, and the skills it excludes,
 // turned off (ADR-0011).
 func agentSettings(hookPath string, d catalog.Definition, projectDir string, outside []string) (string, error) {
-	run := []map[string]any{{"hooks": []map[string]any{{"type": "command", "command": hookPath}}}}
-	permission := []map[string]any{{"hooks": []map[string]any{{
-		"type": "command", "command": hookPath, "timeout": int(PermissionHookTimeout.Seconds()),
-	}}}}
+	run := []map[string]any{{"hooks": []map[string]any{shellCommand(hookPath)}}}
+
+	waiting := shellCommand(hookPath)
+	waiting["timeout"] = int(PermissionHookTimeout.Seconds())
+	permission := []map[string]any{{"hooks": []map[string]any{waiting}}}
 
 	allow, deny := permissionRules(d.Permissions, projectDir, outside)
 
@@ -338,6 +340,7 @@ func agentSettings(hookPath string, d catalog.Definition, projectDir string, out
 			"PermissionRequest": permission,
 		},
 		"permissions": map[string]any{"allow": allow, "deny": deny},
+		"statusLine":  shellCommand(hookPath + " statusline"),
 	}
 
 	if len(d.SkillsExclude) > 0 {
@@ -350,6 +353,12 @@ func agentSettings(hookPath string, d catalog.Definition, projectDir string, out
 	}
 
 	return toJSON(settings)
+}
+
+// shellCommand is a hook or statusLine entry of Claude Code's settings that
+// runs a command.
+func shellCommand(command string) map[string]any {
+	return map[string]any{"type": "command", "command": command}
 }
 
 // stageMu keeps agents started at the same time from staging the personal

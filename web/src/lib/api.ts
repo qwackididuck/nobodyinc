@@ -1,6 +1,7 @@
 // Client for the nobodyd API (see api/openapi.yaml at the repository root).
 
-export type AgentStatus = "stopped" | "starting" | "working" | "idle" | "exited" | "awaiting_approval";
+// budget_hold: a budget at its threshold holds the agent, its session kept (ADR-0013).
+export type AgentStatus = "stopped" | "starting" | "working" | "idle" | "exited" | "awaiting_approval" | "budget_hold";
 
 export interface Agent {
   address: string;
@@ -254,10 +255,26 @@ export interface Feature {
   merge_commit?: string;
   created_by: string;
   created_at: string;
+  // Its budget, if any (for a proposed feature, the one the director
+  // proposes); what its tickets spent, and what they take out of the budget.
+  budget_usd?: number;
+  threshold?: number;
+  spent_usd: number;
+  allocated_usd: number;
 }
 
-export function startProposedFeature(id: string): Promise<Feature> {
-  return postJSON<Feature>(`/api/features/${encodeURIComponent(id)}/start`, {});
+// startProposedFeature starts a feature the director proposed. A budget
+// replaces the one proposed (budget_usd null removes it); without one, the
+// request has no body and the proposed budget is kept.
+export async function startProposedFeature(id: string, budget?: BudgetFields): Promise<Feature> {
+  const path = `/api/features/${encodeURIComponent(id)}/start`;
+  if (budget) return postJSON<Feature>(path, budget);
+
+  const res = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" } });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+  return (await res.json()) as Feature;
 }
 
 export function refuseProposedFeature(id: string, reason: string): Promise<Feature> {
@@ -289,7 +306,13 @@ export function listFeatures(): Promise<Feature[]> {
   return getJSON<Feature[]>("/api/features");
 }
 
-export function startFeature(draft: { title: string; description: string; base_branch: string }): Promise<Feature> {
+export function startFeature(draft: {
+  title: string;
+  description: string;
+  base_branch: string;
+  budget_usd?: number;
+  threshold?: number;
+}): Promise<Feature> {
   return postJSON<Feature>("/api/features", draft);
 }
 
@@ -310,6 +333,10 @@ export interface Ticket {
   updated_at: string;
   // The ticket of a finished feature, kept in the archives (read-only).
   archived?: boolean;
+  budget_usd?: number;
+  threshold?: number;
+  // What was spent on it, all time (ADR-0013).
+  spent_usd: number;
 }
 
 export interface Deliverable {
@@ -343,6 +370,8 @@ export interface TicketDraft {
   description: string;
   acceptance_criteria: string;
   blocked_by: string[];
+  // Required inside a feature with a budget, at most what it has left.
+  budget_usd?: number;
 }
 
 export function listTickets(): Promise<Ticket[]> {
@@ -673,6 +702,8 @@ export interface ScheduleRun {
   ticket?: string;
   message?: string;
   note?: string;
+  // What its agent spent while running it (ADR-0013).
+  spent_usd: number;
 }
 
 export interface ScheduleView extends Schedule {
@@ -751,4 +782,169 @@ export function refuseScheduleProposal(id: string, reason: string): Promise<Sche
 function withoutEnabled(s: Schedule): Schedule {
   const { id, title, every, cron, target, mode, instructions } = s;
   return { id, title, ...(every ? { every } : {}), ...(cron ? { cron } : {}), target, mode, instructions };
+}
+
+// --- Costs and budgets (ADR-0013, docs/budgets.md) ---
+// Amounts are Claude Code's estimate at list price, in USD: a guard, not an invoice.
+
+// A ticket's or feature's budget; budget_usd null removes it.
+export interface BudgetFields {
+  budget_usd: number | null;
+  threshold?: number | null;
+}
+
+// An agent, team or staff cap.
+export interface BudgetCap {
+  limit_usd: number;
+  // Starts again from 0 every month; otherwise cumulative.
+  monthly?: boolean;
+  // Overrides the project's threshold.
+  threshold?: number;
+}
+
+// .nobody/budgets.yaml: whether budgets are on, the project's threshold, and
+// the agent, team and staff caps.
+export interface BudgetSettings {
+  enabled: boolean;
+  threshold: number;
+  staff?: BudgetCap;
+  teams?: Record<string, BudgetCap>;
+  agents?: Record<string, BudgetCap>;
+}
+
+export type BudgetKind = "ticket" | "feature" | "agent" | "team" | "staff";
+
+export interface BudgetScope {
+  kind: BudgetKind;
+  // The ticket, feature, agent address or team id; absent for the staff.
+  id?: string;
+}
+
+// Where one budget stands, over its own period.
+export interface BudgetGauge {
+  scope: BudgetScope;
+  limit_usd: number;
+  spent_usd: number;
+  threshold: number;
+  monthly?: boolean;
+  // At its threshold: it holds its agents.
+  held?: boolean;
+}
+
+export interface SpendLine {
+  key: string;
+  label?: string;
+  spent_usd: number;
+}
+
+export interface SpendSummary {
+  month: string;
+  total_usd: number;
+  agents: SpendLine[];
+  teams: SpendLine[];
+  features: SpendLine[];
+  schedules: SpendLine[];
+  gauges: BudgetGauge[];
+}
+
+export type BudgetOutcome = "cancel" | "release" | "hold";
+
+export interface BudgetRefusal {
+  outcomes: Record<string, BudgetOutcome>;
+  commit_first?: boolean;
+  reason?: string;
+}
+
+export type BudgetRequestStatus = "awaiting_agent" | "awaiting_director" | "awaiting_human" | "extended" | "refused" | "closed";
+
+// The one extension request of a budget at its threshold.
+export interface BudgetRequest {
+  id: string;
+  scope: BudgetScope;
+  status: BudgetRequestStatus;
+  active: boolean;
+  held_agents: string[];
+  requested_by?: string;
+  amount_usd?: number;
+  justification?: string;
+  director_opinion?: string;
+  recommended_usd?: number;
+  limit_usd: number;
+  spent_usd: number;
+  feature_remaining_usd?: number;
+  // The director's message to the human that carries the card.
+  card_message?: string;
+  extended_usd?: number;
+  refusal?: BudgetRefusal;
+  closed_reason?: string;
+  created_at: string;
+  submitted_at?: string;
+  decided_at?: string;
+}
+
+export interface BudgetProposal {
+  id: string;
+  scope: BudgetScope;
+  cap: BudgetCap;
+  reason?: string;
+  status: "proposed" | "accepted" | "refused";
+  proposed_by: string;
+  proposal_message?: string;
+  refusal_reason?: string;
+  created_at: string;
+  decided_at?: string;
+}
+
+export function getBudgets(): Promise<BudgetSettings> {
+  return getJSON<BudgetSettings>("/api/budgets");
+}
+
+export function updateBudgets(settings: BudgetSettings): Promise<BudgetSettings> {
+  return sendJSON<BudgetSettings>("PUT", "/api/budgets", settings);
+}
+
+// getSpend reads a month's spend ("YYYY-MM"), the current one by default.
+export function getSpend(month?: string): Promise<SpendSummary> {
+  return getJSON<SpendSummary>(month ? `/api/spend?month=${encodeURIComponent(month)}` : "/api/spend");
+}
+
+// updateTicketBudget changes a ticket's budget (the human only).
+export function updateTicketBudget(id: string, budget: BudgetFields): Promise<Ticket> {
+  return sendJSON<Ticket>("PATCH", `/api/tickets/${encodeURIComponent(id)}`, budget);
+}
+
+export function listBudgetRequests(): Promise<BudgetRequest[]> {
+  return getJSON<BudgetRequest[]>("/api/budget-requests");
+}
+
+export function extendBudget(id: string, amountUSD: number): Promise<BudgetRequest> {
+  return postJSON<BudgetRequest>(`/api/budget-requests/${encodeURIComponent(id)}/extend`, { amount_usd: amountUSD });
+}
+
+export function refuseBudget(id: string, refusal: BudgetRefusal): Promise<BudgetRequest> {
+  return postJSON<BudgetRequest>(`/api/budget-requests/${encodeURIComponent(id)}/refuse`, refusal);
+}
+
+export function listBudgetProposals(): Promise<BudgetProposal[]> {
+  return getJSON<BudgetProposal[]>("/api/budget-proposals");
+}
+
+// acceptBudgetProposal writes the proposed cap, as edited by the human if cap
+// is given.
+export function acceptBudgetProposal(id: string, cap?: BudgetCap): Promise<BudgetProposal> {
+  return postJSON<BudgetProposal>(`/api/budget-proposals/${encodeURIComponent(id)}/accept`, cap ? { cap } : {});
+}
+
+export function refuseBudgetProposal(id: string, reason: string): Promise<BudgetProposal> {
+  return postJSON<BudgetProposal>(`/api/budget-proposals/${encodeURIComponent(id)}/refuse`, { reason });
+}
+
+// usd formats an amount: "$0.42", "$12.50".
+export function usd(amount: number): string {
+  return `$${amount.toFixed(2)}`;
+}
+
+// scopeLabel names a budget for people: "ticket T-12", "team dev", "the staff".
+export function scopeLabel(scope: BudgetScope): string {
+  return scope.kind === "staff" ? "the staff" : `${scope.kind} ${scope.id ?? ""}`;
 }

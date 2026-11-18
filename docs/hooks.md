@@ -23,6 +23,8 @@ Two more hooks are not about mail. `PermissionRequest` sends an agent's permissi
 
 So the two trays behave like this: `normal` mail is never handed over mid-work; `urgent` mail reaches the agent right after its next tool call.
 
+**Budgets** (`docs/budgets.md`, ADR-0013) come first at `Stop`: an agent a budget at its threshold holds gets no mail. The first agent to stop on a request awaiting its justification has the end of its turn refused once, with a reason asking it to call `budget_request`; any other held agent ends its turn on budget hold (status `budget_hold`, not idle). The same relay is also every agent's **statusLine**: `nobody-hook statusline` posts the JSON Claude Code hands it, with the session's running cost, to `POST /internal/agents/{address}/statusline`, and prints nothing.
+
 > Claude Code labels a blocking `Stop` hook "Stop hook error" in its UI, even though the hook works as documented (known issue, e.g. anthropics/claude-code#84385). Waking idle agents through `UserPromptSubmit` avoids it in the most common case.
 
 ## Urgent questions to a busy agent
@@ -33,6 +35,7 @@ An urgent `query` sent to an agent that is in the middle of a turn does not wait
 - If the fork answers, the asker gets the answer at once (signed by the agent, marked as a quick answer), and the agent gets a notice from `nobody` with the question and the answer, to send a correction if needed.
 - If the fork answers `ESCALATE` (the point is not settled in the conversation) or fails, the question goes back to the tray and follows the usual path.
 - An idle agent is not forked: it is woken up and reads the question right away.
+- The fork's cost, read from its `-p` output, is charged to the asker, not to the agent forked (`docs/budgets.md`).
 
 The agent's session ID is learnt from the `session_id` field of its hook events.
 

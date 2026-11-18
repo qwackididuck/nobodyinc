@@ -42,12 +42,13 @@ you ──── request ──────────────────�
 | Create and delete teams, restrict their flows | no | yes (`team_create`; `team_delete` and `team_block` only with your agreement) |
 | Recruit, create, edit, put on leave, dismiss agents | no | yes, freely; never itself |
 | Scheduled tasks | no | reads them and proposes new ones (`schedule_propose`); you accept, edited or not, or refuse |
+| Budgets | justifies an extension with `budget_request` when a budget holds it | never held; passes extension requests on to you with its opinion (`budget_submit`), justifies the staff's and features' itself; proposes caps (`budget_propose`); grants nothing |
 
 Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `ticket_*`):
 
 | Tool | Does |
 |---|---|
-| `feature_propose` | Proposes a feature (title, need, acceptance criteria, base branch). |
+| `feature_propose` | Proposes a feature (title, need, acceptance criteria, base branch, and optionally a budget, which you change or keep when starting it). |
 | `org_overview` | The active feature, and for each team its goal and prompt, its agents (role, expertise, status, on leave) and tickets (open, in progress, done and canceled counts). |
 | `team_create` | Creates a team (id, goal, and the prompt its members share, which it writes from the goal). |
 | `team_delete` | Deletes a team and dismisses its members; its instructions ask it to get your agreement first. |
@@ -58,6 +59,9 @@ Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `tick
 | `agent_leave`, `agent_return`, `agent_dismiss` | As in the Staff tab (`docs/agents.md`, "Lifecycle"). |
 | `schedule_list` | The scheduled tasks, with their next and last occurrence (`docs/schedules.md`). |
 | `schedule_propose` | Proposes a scheduled task. Nothing runs until you accept it, as it is or edited (its card in the chat: Accept, Edit…, Refuse…); it gets `agree` or `refuse`. It has no tool to create, edit, pause or delete one itself. |
+| `budget_list` | The budgets: settings, this month's spend, every gauge, the open extension requests (`docs/budgets.md`). |
+| `budget_submit` | Passes an extension request on to you, with its opinion and the amount it recommends; for the staff's or a feature's budget, or a request no agent justified, with its own justification. Its card in the chat: Extend +$X / Refuse…. |
+| `budget_propose` | Proposes an agent, team or staff cap; you accept it, possibly with another limit, or refuse it. |
 
 It is not a source of knowledge about the project: it knows what you want, the teams know how the project works. The agents' routing rule treats a question to it like a question to you (`docs/agents.md`, "Whom to ask"), and its own prompt asks it to send questions about the project to the agent whose expertise covers them.
 
@@ -72,6 +76,7 @@ Changes to agents are written by the daemon (`internal/staffing`), as when you m
 | `internal/work/service.go`, `feature.go` | Its ticket privileges; feature proposals (`ProposeFeature`, `StartProposedFeature`, `RefuseFeature`). |
 | `internal/officemcp/director.go`, `schedules.go` | Its office tools, exposed at its address only. |
 | `internal/daemon/scheduleoffice.go` | Its schedule proposals and the human's decisions, as messages (ADR-0012). |
+| `internal/officemcp/budgets.go`, `internal/daemon/budgetoffice.go`, `budgetproposals.go` | Its budget tools; extension requests and cap proposals, as messages (ADR-0013). |
 | `internal/daemon/director.go`, `proposals.go` | The tools' backing (staffing, overview); proposals and decisions as messages. |
 | `internal/catalog/director/god.md` | Its built-in definition (`catalog.Director`), outside the catalog. |
-| `web/src/components/chat/` (`cards.tsx`) | Its chat; feature proposals with Start / Refuse, schedule proposals with Accept / Edit… / Refuse. |
+| `web/src/components/chat/` (`cards.tsx`) | Its chat; feature proposals with Start / Refuse, schedule proposals with Accept / Edit… / Refuse, budget requests with Extend / Refuse, cap proposals with Accept / Refuse. |

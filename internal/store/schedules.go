@@ -103,7 +103,8 @@ func (s *Store) ListRuns(ctx context.Context, f RunFilter) ([]schedule.Run, erro
 }
 
 const selectRuns = `
-	SELECT id, schedule_id, schedule_title, trigger, mode, status, due_at, started_at, ended_at, agent, ticket, message, note
+	SELECT id, schedule_id, schedule_title, trigger, mode, status, due_at, started_at, ended_at, agent, ticket, message, note,
+		` + runSpent + `
 	FROM schedule_runs`
 
 func scanRun(row scanner) (schedule.Run, error) {
@@ -112,7 +113,7 @@ func scanRun(row scanner) (schedule.Run, error) {
 		dueAt, started, endedAt string
 	)
 	if err := row.Scan(&r.ID, &r.ScheduleID, &r.ScheduleTitle, &r.Trigger, &r.Mode, &r.Status, &dueAt, &started, &endedAt,
-		&r.Agent, &r.Ticket, &r.Message, &r.Note); err != nil {
+		&r.Agent, &r.Ticket, &r.Message, &r.Note, &r.SpentUSD); err != nil {
 		return schedule.Run{}, fmt.Errorf("read schedule run: %w", err)
 	}
 

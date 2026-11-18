@@ -39,6 +39,9 @@ type Run struct {
 	Message string `json:"message,omitempty"`
 	// Note says why it was skipped, canceled, unavailable or interrupted.
 	Note string `json:"note,omitempty"`
+	// SpentUSD is what its agent spent while running it (ADR-0013);
+	// read-only, computed by the store.
+	SpentUSD float64 `json:"spent_usd"`
 }
 
 // Trigger says why an occurrence happened.

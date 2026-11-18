@@ -527,6 +527,8 @@ paths:
         - `org.changed`: `{}` (an agent was recruited, edited, put on leave, brought back or dismissed)
         - `catalog.changed`: `{}`
         - `schedules.changed`: `{}` (a schedule, one of its occurrences or a proposal changed)
+        - `spend.changed`: `{}` (agents spent; sent at most once a second, ADR-0013)
+        - `budgets.changed`: `{}` (the budgets file, a ticket's or feature's budget, a hold, a budget request or a cap proposal changed)
       responses:
         "200":
           description: The event stream, until the client or the daemon closes it
@@ -923,8 +925,17 @@ paths:
         Prepares its branch and worktrees, makes it the active feature and
         restarts the team agents in their worktrees (not the director). The
         director gets an "agree" answer to its proposal.
+
+        The body may set the feature's budget (ADR-0013): it replaces the
+        budget the director proposed; without a body, the proposed budget is
+        kept. A budget is refused while budgets are turned off.
       parameters:
         - $ref: "#/components/parameters/FeatureID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetFields"
       responses:
         "200":
           description: Feature started
@@ -1325,6 +1336,251 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/budgets:
+    get:
+      operationId: getBudgets
+      summary: The project's budget settings and caps (.nobody/budgets.yaml)
+      description: |
+        The file the daemon alone writes (ADR-0013, point 3): whether budgets
+        are on, the project's threshold, and the agent, team and staff caps.
+        Ticket and feature budgets live with the tickets and features.
+      responses:
+        "200":
+          description: Budget settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetSettings"
+    put:
+      operationId: updateBudgets
+      summary: Replace the budget settings and caps
+      description: |
+        Writes .nobody/budgets.yaml. Caps of agents or teams that do not exist
+        are refused. Turning budgets off lifts every hold and closes the
+        pending requests; spend is still measured.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetSettings"
+      responses:
+        "200":
+          description: Settings saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetSettings"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/spend:
+    get:
+      operationId: getSpend
+      summary: What the agents spent in a month, and where each budget stands
+      description: |
+        Spend is Claude Code's estimate at list price, in USD, read from the
+        agents' statusLine and from urgent forks (ADR-0013, points 1 and 2).
+        Totals are for the month asked; each gauge is computed over its own
+        budget's period (the current month for a monthly cap, all time for a
+        cumulative one).
+      parameters:
+        - name: month
+          in: query
+          description: '"YYYY-MM", in the machine''s time zone; defaults to the current month.'
+          schema:
+            type: string
+            pattern: "^[0-9]{4}-(0[1-9]|1[0-2])$"
+            example: 2026-11
+      responses:
+        "200":
+          description: Spend
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SpendSummary"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/budget-requests:
+    get:
+      operationId: listBudgetRequests
+      summary: Budget extension requests, newest first
+      parameters:
+        - name: open
+          in: query
+          description: Only the requests not decided or closed yet.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetRequest"
+
+  /api/budget-requests/{id}/extend:
+    post:
+      operationId: extendBudget
+      summary: Grant an extension; the held agents start again
+      description: |
+        Only the human decides (ADR-0013, point 5). What the extension changes
+        depends on the budget (point 6): a ticket's or feature's budget grows;
+        a monthly cap is raised for the current month only; a cumulative cap
+        is written to .nobody/budgets.yaml. A ticket extension inside a
+        feature with a budget comes out of what is left to allocate, and
+        raises the feature's budget by the shortfall. The held agents are
+        woken up with a notice from `nobody`; the director is told.
+      parameters:
+        - $ref: "#/components/parameters/BudgetRequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount_usd]
+              additionalProperties: false
+              properties:
+                amount_usd:
+                  type: number
+                  exclusiveMinimum: 0
+      responses:
+        "200":
+          description: Extension granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetRequest"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Already decided or closed, or still waiting for its justification
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/budget-requests/{id}/refuse:
+    post:
+      operationId: refuseBudget
+      summary: Refuse an extension and choose what happens to each held agent
+      description: |
+        Every held agent needs an outcome: `cancel` its ticket, `release` the
+        ticket to its team's queue, or `hold` (stay on budget hold). An agent
+        with no ticket can only be held. With `commit_first`, every held
+        agent with a ticket in progress is first released for one short turn,
+        with a notice from `nobody` asking it to commit its work in progress,
+        comment its ticket and stop; its outcome applies at the end of that
+        turn, and what the turn spends is shown, never stopped (ADR-0013,
+        point 5). The director is told.
+      parameters:
+        - $ref: "#/components/parameters/BudgetRequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetRefusal"
+      responses:
+        "200":
+          description: Extension refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetRequest"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/budget-proposals:
+    get:
+      operationId: listBudgetProposals
+      summary: The director's cap proposals, newest first
+      responses:
+        "200":
+          description: Proposals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetProposal"
+
+  /api/budget-proposals/{id}/accept:
+    post:
+      operationId: acceptBudgetProposal
+      summary: Accept a cap the director proposed, possibly edited
+      description: |
+        Writes the cap to .nobody/budgets.yaml (ADR-0013, point 8). The body
+        may carry the cap as the human edited it; without it, the proposal is
+        accepted as it is. The director gets an "agree" answer.
+      parameters:
+        - $ref: "#/components/parameters/BudgetProposalID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                cap:
+                  $ref: "#/components/schemas/BudgetCap"
+      responses:
+        "200":
+          description: Proposal accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetProposal"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Already decided, its agent or team is gone, or budgets are turned off
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/budget-proposals/{id}/refuse:
+    post:
+      operationId: refuseBudgetProposal
+      summary: Refuse a cap the director proposed
+      description: The director gets a "refuse" answer, with the reason.
+      parameters:
+        - $ref: "#/components/parameters/BudgetProposalID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Proposal refused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetProposal"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
   /api/tickets:
     get:
       operationId: listTickets
@@ -1388,6 +1644,40 @@ paths:
                 $ref: "#/components/schemas/TicketDetails"
         "404":
           $ref: "#/components/responses/Error"
+    patch:
+      operationId: updateTicketBudget
+      summary: Change a ticket's budget (the human only)
+      description: |
+        After creation, a ticket's budget changes only through the human or
+        an extension (ADR-0013, point 3). `budget_usd: null` removes it,
+        which is refused inside a feature that has a budget; a budget larger
+        than the feature has left to allocate (plus this ticket's current
+        budget) is refused. Refused while budgets are turned off.
+      parameters:
+        - $ref: "#/components/parameters/TicketID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetFields"
+      responses:
+        "200":
+          description: Ticket updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ticket"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Archived, or the feature has not enough left to allocate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
       operationId: deleteTicket
       summary: Delete a ticket for good (the Kanban's shredder)
@@ -1569,6 +1859,33 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /internal/agents/{address}/statusline:
+    post:
+      operationId: reportStatusLine
+      summary: Record an agent's running cost, as Claude Code's statusLine reports it
+      description: |
+        Called by `nobody-hook statusline` with the JSON Claude Code hands its
+        statusLine (ADR-0013, point 1). The daemon turns the session's running
+        total into a spend record: the delta since the previous report of the
+        same agent and session, or the total itself when it is lower (a
+        resumed or cleared session starts again from 0). Crossing a budget's
+        threshold puts the agents it covers on hold.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StatusLineReport"
+      responses:
+        "204":
+          description: Recorded
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
 components:
   parameters:
     Address:
@@ -1639,6 +1956,24 @@ components:
         type: string
         example: SP-2
 
+    BudgetRequestID:
+      name: id
+      in: path
+      required: true
+      description: Request ID, "BR-<number>"
+      schema:
+        type: string
+        example: BR-4
+
+    BudgetProposalID:
+      name: id
+      in: path
+      required: true
+      description: Proposal ID, "BP-<number>"
+      schema:
+        type: string
+        example: BP-1
+
   responses:
     Error:
       description: |
@@ -1690,7 +2025,8 @@ components:
           description: What to ask this agent about, and what it decides.
         status:
           type: string
-          enum: [stopped, starting, working, idle, exited, awaiting_approval]
+          enum: [stopped, starting, working, idle, exited, awaiting_approval, budget_hold]
+          description: "`budget_hold`: held by a budget at its threshold, session kept, never woken up (ADR-0013, point 4)."
         on_leave:
           type: boolean
         from:
@@ -1889,7 +2225,8 @@ components:
           type: string
         status:
           type: string
-          enum: [stopped, starting, working, idle, exited, awaiting_approval]
+          enum: [stopped, starting, working, idle, exited, awaiting_approval, budget_hold]
+          description: "`budget_hold`: held by a budget at its threshold, session kept, never woken up (ADR-0013, point 4)."
 
     MessagesDeliveredEvent:
       type: object
@@ -2226,6 +2563,18 @@ components:
         created_at:
           type: string
           format: date-time
+        budget_usd:
+          type: number
+          description: The feature's budget; for a proposed feature, the budget the director proposed. Absent when it has none.
+        threshold:
+          type: integer
+          description: Percent of the budget at which its agents stop; absent means the project's threshold.
+        spent_usd:
+          type: number
+          description: What its tickets spent, all time.
+        allocated_usd:
+          type: number
+          description: The budgets of its tickets that are not canceled, plus what its canceled tickets spent. What is left to allocate is budget_usd minus this.
 
     FeatureDraft:
       type: object
@@ -2239,6 +2588,11 @@ components:
         base_branch:
           description: Branch the feature starts from; defaults to the project's current branch.
           type: string
+        budget_usd:
+          type: number
+          exclusiveMinimum: 0
+        threshold:
+          $ref: "#/components/schemas/Threshold"
 
     ScheduleIDValue:
       type: string
@@ -2330,6 +2684,9 @@ components:
         note:
           type: string
           description: Why it was skipped, canceled, unavailable or interrupted.
+        spent_usd:
+          type: number
+          description: What its agent spent while running it (ADR-0013, point 2).
 
     ScheduleProposal:
       type: object
@@ -2398,6 +2755,15 @@ components:
         archived:
           type: boolean
           description: The ticket of a finished feature, kept in the archives (read-only).
+        budget_usd:
+          type: number
+          description: Absent when it has none.
+        threshold:
+          type: integer
+          description: Percent of the budget at which its agent stops; absent means the project's threshold.
+        spent_usd:
+          type: number
+          description: What was spent on it, all time, its askers' urgent forks included (ADR-0013, point 2).
 
     TicketDraft:
       type: object
@@ -2418,6 +2784,12 @@ components:
             type: string
         assignee:
           type: string
+        budget_usd:
+          type: number
+          exclusiveMinimum: 0
+          description: Mandatory inside a feature that has a budget, and at most what it has left to allocate. Refused while budgets are turned off.
+        threshold:
+          $ref: "#/components/schemas/Threshold"
 
     TicketComment:
       type: object
@@ -2503,6 +2875,273 @@ components:
         message:
           description: Shown to the agent, typically to explain a refusal.
           type: string
+
+    Threshold:
+      type: integer
+      minimum: 1
+      maximum: 100
+      description: Percent of a budget at which the agents it covers stop at the end of their turn.
+
+    BudgetFields:
+      type: object
+      additionalProperties: false
+      description: A ticket's or feature's budget; `budget_usd` null removes it.
+      properties:
+        budget_usd:
+          type: [number, "null"]
+          exclusiveMinimum: 0
+        threshold:
+          oneOf:
+            - $ref: "#/components/schemas/Threshold"
+            - type: "null"
+
+    BudgetCap:
+      type: object
+      required: [limit_usd]
+      additionalProperties: false
+      description: An agent, team or staff cap in .nobody/budgets.yaml.
+      properties:
+        limit_usd:
+          type: number
+          exclusiveMinimum: 0
+        monthly:
+          type: boolean
+          description: Starts again from 0 on the first day of each month; otherwise a cumulative cap.
+        threshold:
+          $ref: "#/components/schemas/Threshold"
+
+    BudgetSettings:
+      type: object
+      required: [enabled, threshold]
+      additionalProperties: false
+      properties:
+        enabled:
+          type: boolean
+          description: false turns caps, thresholds, holds, requests and budget fields off; spend is still measured.
+        threshold:
+          $ref: "#/components/schemas/Threshold"
+        staff:
+          $ref: "#/components/schemas/BudgetCap"
+        teams:
+          type: object
+          description: Caps by team id.
+          additionalProperties:
+            $ref: "#/components/schemas/BudgetCap"
+        agents:
+          type: object
+          description: Caps by agent address; the director has none.
+          additionalProperties:
+            $ref: "#/components/schemas/BudgetCap"
+
+    BudgetScope:
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [ticket, feature, agent, team, staff]
+        id:
+          type: string
+          description: The ticket, feature, agent address or team id; empty for the staff.
+
+    BudgetGauge:
+      type: object
+      required: [scope, limit_usd, spent_usd, threshold]
+      description: Where one budget stands, over its own period.
+      properties:
+        scope:
+          $ref: "#/components/schemas/BudgetScope"
+        limit_usd:
+          type: number
+          description: The budget, extensions of the month included for a monthly cap.
+        spent_usd:
+          type: number
+        threshold:
+          type: integer
+          description: The threshold that applies, the project's or the budget's own.
+        monthly:
+          type: boolean
+        held:
+          type: boolean
+          description: The budget reached its threshold and holds its agents.
+
+    SpendLine:
+      type: object
+      required: [key, spent_usd]
+      properties:
+        key:
+          type: string
+          description: Agent address, team id, feature id or schedule id.
+        label:
+          type: string
+          description: The feature's or schedule's title.
+        spent_usd:
+          type: number
+
+    SpendSummary:
+      type: object
+      required: [month, total_usd, agents, teams, features, schedules, gauges]
+      properties:
+        month:
+          type: string
+          example: 2026-11
+        total_usd:
+          type: number
+          description: Everything spent in the month (the staff's spend).
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendLine"
+        teams:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendLine"
+        features:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendLine"
+        schedules:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpendLine"
+        gauges:
+          type: array
+          description: Every budget that is set, with where it stands now (empty when budgets are turned off).
+          items:
+            $ref: "#/components/schemas/BudgetGauge"
+
+    BudgetRequest:
+      type: object
+      required: [id, scope, status, active, held_agents, limit_usd, spent_usd, created_at]
+      description: |
+        One request per budget at its threshold (ADR-0013, point 5), active
+        while the budget stays reached.
+        `awaiting_agent`: the first agent to stop is asked to justify it
+        (ticket, agent, team budgets); `awaiting_director`: the director is to
+        give its opinion, or for a staff or feature budget its justification;
+        `awaiting_human`: the director submitted it, a card waits in its
+        chat; then `extended`, `refused`, or `closed` (monthly reset, budgets
+        turned off, the budget removed).
+      properties:
+        id:
+          type: string
+          example: BR-4
+        scope:
+          $ref: "#/components/schemas/BudgetScope"
+        status:
+          type: string
+          enum: [awaiting_agent, awaiting_director, awaiting_human, extended, refused, closed]
+        active:
+          type: boolean
+          description: Its budget is still reached; at most one request per budget is active.
+        held_agents:
+          type: array
+          description: The agents its budget holds now (empty once it is no longer active).
+          items:
+            type: string
+        asked_agent:
+          type: string
+          description: The agent asked to justify it, the first to stop.
+        requested_by:
+          type: string
+          description: The agent that justified it, or the director for a staff or feature budget.
+        amount_usd:
+          type: number
+          description: The amount asked.
+        justification:
+          type: string
+          description: Empty when the agent stopped without calling budget_request.
+        director_opinion:
+          type: string
+        recommended_usd:
+          type: number
+          description: The amount the director recommends.
+        limit_usd:
+          type: number
+        spent_usd:
+          type: number
+        feature_remaining_usd:
+          type: number
+          description: For a ticket inside a feature with a budget, what the feature has left to allocate.
+        card_message:
+          type: string
+          description: ID of the director's message to the human that carries the card.
+        extended_usd:
+          type: number
+        refusal:
+          $ref: "#/components/schemas/BudgetRefusal"
+        closed_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        submitted_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+
+    BudgetRefusal:
+      type: object
+      required: [outcomes]
+      additionalProperties: false
+      properties:
+        outcomes:
+          type: object
+          description: An outcome for every held agent, by address.
+          additionalProperties:
+            type: string
+            enum: [cancel, release, hold]
+        commit_first:
+          type: boolean
+        reason:
+          type: string
+
+    BudgetProposal:
+      type: object
+      required: [id, scope, cap, status, proposed_by, created_at]
+      properties:
+        id:
+          type: string
+          example: BP-1
+        scope:
+          $ref: "#/components/schemas/BudgetScope"
+        cap:
+          $ref: "#/components/schemas/BudgetCap"
+        reason:
+          type: string
+          description: Why the director proposes it.
+        status:
+          type: string
+          enum: [proposed, accepted, refused]
+        proposed_by:
+          type: string
+        proposal_message:
+          type: string
+        refusal_reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        decided_at:
+          type: string
+          format: date-time
+
+    StatusLineReport:
+      type: object
+      description: The JSON Claude Code hands its statusLine; only these fields are used.
+      required: [session_id, cost]
+      properties:
+        session_id:
+          type: string
+        cost:
+          type: object
+          required: [total_cost_usd]
+          properties:
+            total_cost_usd:
+              type: number
+              description: The session's running total, Claude Code's estimate at list price.
 
     HookEvent:
       description: Event JSON as sent by Claude Code; only these fields are used.

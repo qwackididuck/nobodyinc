@@ -43,6 +43,10 @@ func (s Status) Closed() bool {
 
 // Ticket is a unit of work owned by a team.
 type Ticket struct {
+	// Budget is optional; inside a feature with a budget, every ticket has
+	// one (ADR-0013, point 3).
+	Budget
+
 	ID                 string    `json:"id"` // "T-12"
 	Title              string    `json:"title"`
 	Description        string    `json:"description,omitempty"`
@@ -58,6 +62,9 @@ type Ticket struct {
 	// Archived: the ticket of a finished feature, kept for the record and no
 	// longer worked on (ADR-0007).
 	Archived bool `json:"archived,omitempty"`
+	// SpentUSD is what was spent on it, all time (ADR-0013); read-only,
+	// computed by the store.
+	SpentUSD float64 `json:"spent_usd"`
 }
 
 // Deliverable is something produced for a ticket.

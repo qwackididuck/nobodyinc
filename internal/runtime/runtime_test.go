@@ -93,6 +93,7 @@ func TestLaunchCommand(t *testing.T) {
 	for _, want := range []string{
 		"/bin/claude", "--setting-sources project,local", "--append-system-prompt", "--model sonnet",
 		`"command":"/opt/nobody-hook"`, `"UserPromptSubmit"`, `"PostToolUse"`, `"Stop"`, `"PermissionRequest"`, `"timeout":600`,
+		`"statusLine":{"command":"/opt/nobody-hook statusline","type":"command"}`,
 		officeTools, onboardingPrompt,
 	} {
 		if !strings.Contains(args, want) {

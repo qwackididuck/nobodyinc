@@ -108,6 +108,8 @@ type Daemon struct {
 	// (schedulerDone) before closing the database.
 	stopScheduler context.CancelFunc
 	schedulerDone chan struct{}
+	// budgets' guard reconciles in the background until Close stops it.
+	budgets *budgets
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
@@ -184,26 +186,17 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Requeue:       st.Requeue,
 	}
 
-	// What happens when mail is sent (see docs/hooks.md):
-	//   - an urgent question to a busy agent is answered by a fork of its
-	//     session, without disturbing it;
-	//   - otherwise an idle recipient is woken up, and a busy one gets the mail
-	//     from its hooks.
-	// An agent going idle also checks for mail that arrived as its turn ended.
-	messages.OnSent = func(m messaging.Message) {
-		bus.Publish(events.Event{Type: events.MessageSent, Data: m})
-		staff.onSent(context.WithoutCancel(ctx), m)
+	messages.OnSent = onSent(ctx, bus, staff, forker, supervisor)
 
-		if forker.ShouldAnswer(m) {
-			go forker.Answer(context.WithoutCancel(ctx), m)
-
-			return
-		}
-
-		supervisor.NotifyMail(m.To)
+	budgets, err := wireBudgets(ctx, opts, st, statuses, bus)
+	if err != nil {
+		return nil, err
 	}
 
-	tickets := &work.Service{Store: announcingWorkStore{Store: st, bus: bus}, Org: opts.Org, Workspace: git}
+	tickets := &work.Service{
+		Store: announcingWorkStore{Store: st, bus: bus, onChange: budgets.guard.trigger}, Org: opts.Org, Workspace: git,
+		BudgetsEnabled: budgets.book.Enabled, CheckClaim: budgets.guard.checkClaim,
+	}
 	// A new feature moves every agent into its team's worktree.
 	tickets.OnFeatureStarted = func(f work.Feature) {
 		git.activate(f)
@@ -242,6 +235,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	staffService := newStaffing(ctx, opts, staffingDeps{catalog: cat, agents: supervisor, messages: messages, bus: bus, git: git})
 
+	budgetOffice := newBudgetOffice(budgets, st, tickets, messages, opts, bus)
 	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
 
 	builtinSkills := discoverBuiltinSkills(ctx, opts)
@@ -264,6 +258,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		// Claude Code's built-in skills, discovered in the background.
 		BuiltinSkills: builtinSkills,
 		Schedules:     schedules,
+		// What the agents spend; wired to the supervisor and the forker.
+		Spend:        wireSpend(st, opts, bus, supervisor, forker, budgets.guard),
+		Budgets:      budgets.book,
+		BudgetStop:   budgets.guard.atStop,
+		BudgetOffice: budgetOffice,
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,
@@ -273,7 +272,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		},
 		Extra: map[string]http.Handler{
 			"/mcp/{address}": officemcp.Handler(officemcp.Office{
-				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules,
+				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules, Budgets: budgetOffice,
 				Version: opts.Version,
 			}),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),
@@ -297,6 +296,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 		stopScheduler: stopScheduler,
 		schedulerDone: schedulerDone,
+		budgets:       budgets,
 	}, nil
 }
 
@@ -391,6 +391,30 @@ func onTicketDeleted(ctx context.Context, messages *messaging.Service, logger *s
 	}
 }
 
+// onSent is what happens when mail is sent (see docs/hooks.md):
+//   - an urgent question to a busy agent is answered by a fork of its
+//     session, without disturbing it;
+//   - otherwise an idle recipient is woken up, and a busy one gets the mail
+//     from its hooks.
+//
+// An agent going idle also checks for mail that arrived as its turn ended.
+func onSent(
+	ctx context.Context, bus *events.Bus, staff *staff, forker *runtime.Forker, supervisor *runtime.Supervisor,
+) func(messaging.Message) {
+	return func(m messaging.Message) {
+		bus.Publish(events.Event{Type: events.MessageSent, Data: m})
+		staff.onSent(context.WithoutCancel(ctx), m)
+
+		if forker.ShouldAnswer(m) {
+			go forker.Answer(context.WithoutCancel(ctx), m)
+
+			return
+		}
+
+		supervisor.NotifyMail(m.To)
+	}
+}
+
 // announce publishes on the bus the changes the services report through
 // their hooks: agent statuses, deliveries and permission requests. Sent
 // messages, tickets, features and the organization are announced where those
@@ -412,6 +436,8 @@ func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, appr
 func (d *Daemon) Close() error {
 	d.stopScheduler()
 	<-d.schedulerDone
+	d.budgets.stop()
+	<-d.budgets.done
 	d.background.Wait()
 	d.Supervisor.StopAll()
 

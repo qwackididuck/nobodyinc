@@ -2,8 +2,9 @@
 
 import { type FormEvent, useState } from "react";
 
-import { createTicket } from "@/lib/api";
+import { createTicket, usd } from "@/lib/api";
 import { useLive } from "@/lib/live";
+import { parseUSD, useBudgetsOn } from "../budgets/CapEditor";
 import ui from "../ui/ui.module.css";
 import styles from "./kanban.module.css";
 
@@ -15,21 +16,38 @@ interface Props {
 // NewTicket files a ticket in a team's queue, as the human. It joins the
 // active feature, if any; the team's next available agent takes it.
 export function NewTicket({ onClose, onCreated }: Props) {
-  const { teams, tickets } = useLive();
+  const { teams, tickets, features } = useLive();
   const [title, setTitle] = useState("");
   const [team, setTeam] = useState(teams[0]?.id ?? "");
   const [description, setDescription] = useState("");
   const [criteria, setCriteria] = useState("");
   const [blockedBy, setBlockedBy] = useState<string[]>([]);
+  const [budget, setBudget] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const unfinished = tickets.filter((t) => t.status === "open" || t.status === "in_progress");
+
+  // Inside an active feature with a budget, every ticket needs one, at most
+  // what the feature has left to allocate (ADR-0013).
+  const budgetsOn = useBudgetsOn();
+  const active = features.find((f) => f.active);
+  const left = active?.budget_usd !== undefined ? active.budget_usd - active.allocated_usd : undefined;
+  const amount = parseUSD(budget);
+  const budgetRequired = budgetsOn && left !== undefined;
+  const budgetOK = !budgetsOn || (amount === undefined ? !budgetRequired : !Number.isNaN(amount) && (left === undefined || amount <= left + 0.005));
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      const t = await createTicket({ title: title.trim(), team, description, acceptance_criteria: criteria, blocked_by: blockedBy });
+      const t = await createTicket({
+        title: title.trim(),
+        team,
+        description,
+        acceptance_criteria: criteria,
+        blocked_by: blockedBy,
+        ...(budgetsOn && amount !== undefined ? { budget_usd: amount } : {}),
+      });
       onClose();
       onCreated(t.id);
     } catch (err) {
@@ -92,8 +110,26 @@ export function NewTicket({ onClose, onCreated }: Props) {
             </div>
           </div>
         )}
+        {budgetsOn && (
+          <label className={ui.label}>
+            BUDGET (USD){budgetRequired ? "" : ", OPTIONAL"}
+            <input
+              id="ticket-budget"
+              className={ui.input}
+              inputMode="decimal"
+              value={budget}
+              required={budgetRequired}
+              onChange={(e) => setBudget(e.target.value)}
+            />
+            {left !== undefined && (
+              <span className={ui.sub}>
+                {active?.id} has {usd(Math.max(left, 0))} left to allocate.
+              </span>
+            )}
+          </label>
+        )}
         <div className={styles.actions}>
-          <button type="submit" className={ui.btnPrimary} disabled={busy || !title.trim() || !team}>
+          <button type="submit" className={ui.btnPrimary} disabled={busy || !title.trim() || !team || !budgetOK}>
             Create
           </button>
         </div>

@@ -11,6 +11,8 @@
 //   - mcp.go:       /api/mcp*        MCP servers (ADR-0010);
 //   - skills.go:    /api/skills*     skills (ADR-0011);
 //   - schedules.go: /api/schedule*   scheduled tasks (ADR-0012);
+//   - budgets.go:   /api/spend       costs and budgets (ADR-0013), and the
+//     agents' statusLine reports;
 //   - hooks.go:     /internal/*      for nobody-hook, called by Claude Code hooks.
 package server
 
@@ -22,8 +24,10 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/budget"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
+	"github.com/qwackididuck/nobodyinc/internal/hook"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
@@ -78,6 +82,19 @@ type Deps struct {
 	BuiltinSkills *skills.Builtin
 	// Schedules backs the scheduled tasks (schedules.go); nil answers 501.
 	Schedules Schedules
+	// Spend turns the agents' statusLine reports into spend records
+	// (budgets.go, ADR-0013); nil records nothing.
+	Spend *budget.Meter
+	// Budgets holds .nobody/budgets.yaml; nil answers 501 on /api/budgets
+	// and leaves the gauges of /api/spend empty.
+	Budgets *budget.Book
+	// BudgetStop decides the Stop of an agent a budget may hold: the
+	// response to give it, and whether it is held (hooks.go); nil holds
+	// nobody.
+	BudgetStop func(ctx context.Context, address string) (*hook.Response, bool, error)
+	// BudgetOffice backs the budget requests and cap proposals
+	// (budgets.go); nil answers 501.
+	BudgetOffice BudgetOffice
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits
@@ -143,6 +160,7 @@ func New(d Deps) http.Handler {
 	s.routeMCP(mux)
 	s.routeSkills(mux)
 	s.routeSchedules(mux)
+	s.routeBudgets(mux)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.decideApproval)
 

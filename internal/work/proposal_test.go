@@ -39,11 +39,11 @@ func TestFeatureProposals(t *testing.T) {
 		t.Fatalf("proposal = %+v (proposed callbacks: %d)", f, len(proposed))
 	}
 
-	if _, err := s.StartProposedFeature(ctx, "god", f.ID); !errors.Is(err, work.ErrForbidden) {
+	if _, err := s.StartProposedFeature(ctx, "god", f.ID, nil); !errors.Is(err, work.ErrForbidden) {
 		t.Fatalf("the director started its own proposal: err = %v", err)
 	}
 
-	started, err := s.StartProposedFeature(ctx, org.HumanAddress, f.ID)
+	started, err := s.StartProposedFeature(ctx, org.HumanAddress, f.ID, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestFeatureProposals(t *testing.T) {
 		t.Fatalf("stored = %+v, %v", stored, err)
 	}
 
-	if _, err := s.StartProposedFeature(ctx, org.HumanAddress, f.ID); !errors.Is(err, work.ErrConflict) {
+	if _, err := s.StartProposedFeature(ctx, org.HumanAddress, f.ID, nil); !errors.Is(err, work.ErrConflict) {
 		t.Fatalf("starting a started feature again: err = %v", err)
 	}
 }
@@ -86,7 +86,7 @@ func TestRefuseFeature(t *testing.T) {
 		t.Fatalf("refused = %+v", refused)
 	}
 
-	if _, err := s.StartProposedFeature(ctx, org.HumanAddress, f.ID); !errors.Is(err, work.ErrConflict) {
+	if _, err := s.StartProposedFeature(ctx, org.HumanAddress, f.ID, nil); !errors.Is(err, work.ErrConflict) {
 		t.Fatalf("starting a refused feature: err = %v", err)
 	}
 }
