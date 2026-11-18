@@ -1,6 +1,6 @@
 # ADR-0012 — Scheduled tasks: the daemon hands recurring work to ordinary agents
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-18
 
 ## Context
@@ -22,7 +22,7 @@ Two things do not exist yet. The daemon has no timer (only the SSE heartbeat), a
 
 ### 1. A schedule is committed with the project
 
-Schedules are declared in `<project>/.nobody/schedules.yaml`, next to `org.yaml`, and travel with the repository (ADR-0004). Only the daemon writes the file: the control room and the API go through it, agents keep their deny rules on `.nobody/`, and the director only proposes (point 9). The file is read at start-up. A change made by hand is picked up at the next change made through Nobody Inc, or when the daemon restarts, as for agent files. The file does not belong to the organization (`org.Org`): changing a schedule restarts nobody and sends no org-change notice.
+Schedules are declared in `<project>/.nobody/schedules.yaml`, next to `org.yaml`, and travel with the repository (ADR-0004). Only the daemon writes the file: the control room and the API go through it, agents keep their deny rules on `.nobody/`, and the director only proposes (point 9). The file is read at start-up; an invalid file stops the daemon from starting, as an invalid `org.yaml` does. A change made by hand is picked up at the next change made through Nobody Inc, or when the daemon restarts, as for agent files. The file does not belong to the organization (`org.Org`): changing a schedule restarts nobody and sends no org-change notice.
 
 ```yaml
 schedules:
@@ -30,7 +30,7 @@ schedules:
     title: Watch the production dashboard
     every: 10m                   # either every…
     # cron: "0 9 * * 1-5"        # …or cron, never both
-    target: monitor@ops          # an agent, "@ops" (any member), or the director
+    target: monitor@ops          # an agent, "@ops" (its first free member), or the director
     mode: message                # message | ticket
     enabled: true                # false: paused, or disabled by the daemon
     instructions: |
@@ -43,7 +43,7 @@ What each schedule did lives in the local database, never in the file (point 8).
 ### 2. Recurrence: an interval or a cron expression
 
 - `every`: a Go duration of one minute or more. The first occurrence comes one interval after the schedule is armed (the daemon starts, or the schedule is created, resumed or edited), then once per interval.
-- `cron`: a standard five-field expression, or a descriptor such as `@daily`, parsed by `robfig/cron/v3` (`cron.ParseStandard`; new dependency, accepted by the human).
+- `cron`: a standard five-field expression, or a descriptor such as `@daily`, parsed by `robfig/cron/v3` (new dependency, accepted by the human). A `TZ=`/`CRON_TZ=` prefix is refused (the time zone is the machine's), and so is `@every` (the `every` field says it).
 - Times are read in **the machine's time zone** (`time.Local`). Around daylight saving changes, we keep the library's behaviour, pinned by a test: a time that does not exist that day is skipped, a time that happens twice runs twice. On a machine without tzdata (a bare container), the local zone is UTC.
 
 ### 3. Only while the daemon runs, no catch-up
@@ -84,9 +84,9 @@ Scheduled work is signed by **`nobody`**:
 
 Results stay where the work left them: in the ticket, and in the schedule's history. The agent writes to the human only when the instructions ask it to ("if an alert is red, write to human").
 
-### 7. The human is told in the chat
+### 7. The human is told
 
-A schedule disabled because its target is gone, or an unavailable target, reaches the human as a notice from `nobody` (act `inform`). It names the schedule and says what to do: recruit an agent, change the target, bring an agent back from leave.
+A schedule disabled because its target is gone, or an unavailable target, is told to the human as a notice from `nobody` (act `inform`), kept with the messages. It names the schedule and says what to do: recruit an agent, change the target, bring an agent back from leave. The control room shows the same problem on the schedule itself, in alert in the Schedules tab (point 10), rather than as a chat message.
 
 ### 8. History in the local database
 
@@ -103,14 +103,14 @@ An occurrence blocked on a permission request shows as such, because its agent's
 
 ### 9. The director proposes, the human decides, enforced by the code
 
-The director gets one office tool, `schedule_propose`, with the same fields as a schedule. It cannot create, edit, pause or delete a schedule itself. Like `feature_propose`:
+The director gets two office tools: `schedule_propose`, with the same fields as a schedule, and `schedule_list`, to read the schedules so that it does not propose one that already exists. It has no tool to create, edit, pause or delete a schedule. A proposal works like `feature_propose`:
 
 - the proposal is stored in the local database (`schedule_proposals`), not in `schedules.yaml`;
 - the human receives it as a `propose` message from the director;
 - in the control room, the human **accepts** it (possibly after editing it) or **refuses** it, with an optional reason;
 - the director receives the decision as `agree` or `refuse` mail.
 
-Only acceptance writes the schedule to the file. The director can also read the schedules (`schedule_list`), so it does not propose one that already exists.
+Only acceptance writes the schedule to the file.
 
 ### 10. What the human does
 
@@ -119,14 +119,16 @@ The human uses a new **Schedules** tab of the control room, backed by `/api/sche
 - list the schedules with their next occurrence and their history;
 - create and **edit** a schedule;
 - **pause / resume** it;
-- **Run now**: one occurrence at once, following the dispatch rules of point 6. It is refused while an occurrence is waiting or running;
+- **Run now**: one occurrence at once, following the dispatch rules of point 6, also for a paused schedule. It is refused while an occurrence is waiting or running;
 - **delete** it. Its history stays in the database;
-- accept or refuse the director's proposals.
+- accept or refuse the director's proposals, there or from their card in the director's chat.
 
 Some details:
 
 - Pausing or editing a schedule cancels an occurrence that is still waiting. An occurrence that is already running goes on to its end.
-- An edit re-arms the recurrence.
+- An edit re-arms the recurrence. While the human types a recurrence, the daemon shows its next three occurrences (`POST /api/schedules/preview`).
+- A schedule whose last occurrence found no agent is shown in alert in the tab, whose badge counts alerts and pending proposals. The notices of point 7 are not shown as chat messages.
+- The office clock rings, as an animation, when an occurrence is done; it lists the latest occurrences that are over (`docs/schedules.md`).
 - At creation and edit, when the target agent uses the `default` permission profile, the control room warns the human: every sensitive action will wait in the approval queue.
 - **No spending guard in V1.** Costs are not measured yet; budgets come with "Budgets and observability".
 
