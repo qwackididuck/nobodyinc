@@ -52,7 +52,24 @@ const resumePrompt = `Nobody Inc restarted your session: your model, permissions
 // resumeMessage is the first prompt of a resumed session: resumePrompt, then
 // the agent's current system prompt, for its up-to-date organization chart.
 func resumeMessage(systemPrompt string) string {
-	return resumePrompt + "\n\n<current_organization>\n" + systemPrompt + "\n</current_organization>"
+	return resumePrompt + "\n\n" + currentOrganization(systemPrompt)
+}
+
+// interruptedPrompt opens a session resumed after the daemon stopped in the
+// middle of the agent's turn (ResumeInterrupted): the turn is work it had
+// not finished. The current organization comes from its SessionStart hook
+// (ReopenContext).
+const interruptedPrompt = `Nobody Inc stopped while you were in the middle of a turn, and has just resumed your session: ` +
+	`carry on with what you were doing. If mail is attached to this message, take it into account.`
+
+// reopenIntro introduces the context a session resumed when the project
+// opens again gets from its SessionStart hook (ReopenContext).
+const reopenIntro = `Nobody Inc reopened the project and resumed your session. ` +
+	`The organization may have changed while the project was closed; its current state is below, for your information. ` +
+	`Your mail will reach you automatically.`
+
+func currentOrganization(systemPrompt string) string {
+	return "<current_organization>\n" + systemPrompt + "\n</current_organization>"
 }
 
 // officeTools are the office MCP tools every agent may use without being
@@ -118,16 +135,12 @@ type Launch struct {
 //   - NOBODY_AGENT and NOBODY_DAEMON_URL tell nobody-hook who and where it is;
 //   - a short onboarding turn brings the agent to the idle state.
 //
-// With a non-empty resume session ID, the agent continues that Claude Code
-// session (claude --resume): it keeps its memory and system prompt, and gets
-// its current launch flags (see resumePrompt).
-func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, error) {
-	var user string
-	if l.UserInstructions != nil {
-		user = l.UserInstructions()
-	}
-
-	systemPrompt, err := SystemPrompt(o, m, user)
+// With a resume session, the agent continues that Claude Code session
+// (claude --resume): it keeps its memory and system prompt, and gets its
+// current launch flags; how the session opens depends on the resume mode
+// (sessions.go).
+func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume Resume) (*exec.Cmd, error) {
+	systemPrompt, err := SystemPrompt(o, m, l.userInstructions())
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +171,28 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume st
 	cmd.Env = agentEnvironment(cmd.Environ(), m.Address, l.DaemonURL)
 
 	return cmd, nil
+}
+
+// ReopenContext is what the SessionStart hook of a session resumed when the
+// project opens again hands the agent (ADR-0015): its current system prompt,
+// for its up-to-date organization chart, since Claude Code keeps the system
+// prompt of the session's first start.
+func (l Launch) ReopenContext(o *org.Org, m org.Member) (string, error) {
+	systemPrompt, err := SystemPrompt(o, m, l.userInstructions())
+	if err != nil {
+		return "", err
+	}
+
+	return reopenIntro + "\n\n" + currentOrganization(systemPrompt), nil
+}
+
+// userInstructions is the text of the user's own CLAUDE.md, "" for none.
+func (l Launch) userInstructions() string {
+	if l.UserInstructions == nil {
+		return ""
+	}
+
+	return l.UserInstructions()
 }
 
 // SettingSources are the settings sources agents are started with: only
@@ -201,14 +236,24 @@ func (l Launch) flags(d catalog.Definition, systemPrompt, settings, mcpConfig st
 }
 
 // firstPrompt opens the session: the onboarding turn of a new session, or
-// the resume of an existing one with its current system prompt (see
-// resumePrompt).
-func firstPrompt(systemPrompt, resume string) []string {
-	if resume != "" {
-		return []string{"--resume", resume, resumeMessage(systemPrompt)}
+// the resume of an existing one (sessions.go): with its current system
+// prompt after a change (resumePrompt), with nothing when the project opens
+// again while the agent was idle, or with a prompt to carry on when its turn
+// was interrupted.
+func firstPrompt(systemPrompt string, resume Resume) []string {
+	if resume.Session == "" {
+		return []string{onboardingPrompt}
 	}
 
-	return []string{onboardingPrompt}
+	switch resume.Mode {
+	case ResumeSilently:
+		return []string{"--resume", resume.Session}
+	case ResumeInterrupted:
+		return []string{"--resume", resume.Session, interruptedPrompt}
+	case ResumeAfterChange: // below
+	}
+
+	return []string{"--resume", resume.Session, resumeMessage(systemPrompt)}
 }
 
 // parentSessionVars identify the Claude Code session the daemon may have been

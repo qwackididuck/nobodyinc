@@ -95,6 +95,11 @@ type Deps struct {
 	// BudgetOffice backs the budget requests and cap proposals
 	// (budgets.go); nil answers 501.
 	BudgetOffice BudgetOffice
+	// SessionStarted is told about an agent's SessionStart hook: it returns
+	// the context to add for a session resumed because the project opened
+	// again, and the status the agent settles in ("" for unchanged; idle or
+	// budget_hold for a silent resume, ADR-0015); nil adds nothing.
+	SessionStarted func(address string) (string, runtime.Status)
 }
 
 // AgentStarter launches an agent's session and tells whether a change waits

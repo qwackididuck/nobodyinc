@@ -6,10 +6,14 @@
 // part in the protocol:
 //
 //   - a session start, new or resumed, runs the SessionStart hook, which
-//     hands over the preloaded skills;
-//   - every turn (the initial prompt, then each line typed into its terminal)
-//     runs the UserPromptSubmit hook, then the Stop hook until no more mail
-//     is handed over, exactly as Claude Code does;
+//     hands over the preloaded skills (and the organization, when a project
+//     opens again);
+//   - sessions are kept on disk and --resume continues one, keeping its
+//     memory; resuming a session it does not have fails like the real CLI
+//     (sessions.go);
+//   - every turn (the initial prompt, if any, then each line typed into its
+//     terminal) runs the UserPromptSubmit hook, then the Stop hook until no
+//     more mail is handed over, exactly as Claude Code does;
 //   - the hooks are the real nobody-hook binary from --settings;
 //   - messages are sent with the real send_message tool, over the MCP server
 //     given in --mcp-config.
@@ -21,8 +25,9 @@
 //   - a request whose body is "WORK <seconds>" keeps it busy that long;
 //   - a query gets an inform answer; the query "SYSTEM PROMPT?" is answered
 //     with the system prompt it was started with (--append-system-prompt),
-//     and "PRELOADED SKILLS?" with how the session started and what its
-//     SessionStart hook handed over;
+//     "PRELOADED SKILLS?" with how the session started and what its
+//     SessionStart hook handed over, and "MEMORY?" with what the session
+//     remembers: every prompt and every message it got, across resumes;
 //   - an inform answering one of its queries is forwarded, as done, to whoever
 //     made the original request;
 //   - when send_message fails, the error is escalated to the human;
@@ -100,7 +105,19 @@ func run(args []string) error {
 		return answerAsFork(opts.prompt)
 	}
 
-	a, err := newAgent(opts)
+	return runSession(opts)
+}
+
+// runSession plays an interactive session: the first prompt, then every
+// line typed into the terminal.
+func runSession(opts options) error {
+	// Checked first: the real CLI exits at once on a session it does not have.
+	s, err := openSession(opts.resume)
+	if err != nil {
+		return err
+	}
+
+	a, err := newAgent(opts, s)
 	if err != nil {
 		return err
 	}
@@ -108,7 +125,11 @@ func run(args []string) error {
 
 	a.startSession()
 	a.reportCost() // the session is ready: nothing spent yet
-	a.turn(opts.prompt)
+
+	// Resumed without a prompt, it waits for one (ADR-0015).
+	if opts.prompt != "" {
+		a.turn(opts.prompt)
+	}
 
 	// Lines typed into the terminal (the daemon's wake-up prompt, or a human)
 	// each start a new turn, like a prompt submitted in Claude Code.
@@ -300,8 +321,9 @@ func sayf(format string, args ...any) {
 
 // agent is one fake Claude Code session.
 type agent struct {
-	opts options
-	mcp  *mcp.ClientSession
+	opts    options
+	session *session
+	mcp     *mcp.ClientSession
 	// origins maps a query we sent to the request that made us send it, so the
 	// answer can be forwarded back.
 	origins map[string]mail
@@ -312,7 +334,7 @@ type agent struct {
 	spentUSD float64
 }
 
-func newAgent(opts options) (*agent, error) {
+func newAgent(opts options, s *session) (*agent, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 
@@ -323,7 +345,7 @@ func newAgent(opts options) (*agent, error) {
 		return nil, fmt.Errorf("connect to the office MCP: %w", err)
 	}
 
-	return &agent{opts: opts, mcp: session, origins: map[string]mail{}}, nil
+	return &agent{opts: opts, session: s, mcp: session, origins: map[string]mail{}}, nil
 }
 
 // startSession runs the SessionStart hook, as Claude Code does when a
@@ -343,6 +365,7 @@ func (a *agent) startSession() {
 // turn plays one Claude Code turn.
 func (a *agent) turn(prompt string) {
 	sayf("> %s", prompt)
+	a.session.remember("> " + prompt)
 
 	if resp := a.runHook(hook.EventUserPromptSubmit); resp != nil && resp.HookSpecificOutput != nil {
 		a.react(resp.HookSpecificOutput.AdditionalContext)
@@ -396,7 +419,7 @@ func (a *agent) reportCost() {
 	}
 
 	input, err := json.Marshal(map[string]any{
-		"session_id": "fake-session-" + os.Getenv("NOBODY_AGENT"),
+		"session_id": a.session.ID,
 		"model":      map[string]string{"id": "fake"},
 		"cost":       map[string]float64{"total_cost_usd": a.spentUSD},
 	})
@@ -426,10 +449,9 @@ func (a *agent) runHookFrom(event, source string) *hook.Response {
 		return nil
 	}
 
-	session := "fake-session-" + os.Getenv("NOBODY_AGENT")
 	cwd, _ := os.Getwd() // an unknown working directory: the daemon falls back to the project
 
-	input, err := json.Marshal(hook.Event{Name: event, SessionID: session, Cwd: cwd, Source: source})
+	input, err := json.Marshal(hook.Event{Name: event, SessionID: a.session.ID, Cwd: cwd, Source: source})
 	if err != nil {
 		return nil
 	}
@@ -462,6 +484,7 @@ type mail struct {
 func (a *agent) react(text string) {
 	for _, m := range parseMail(text) {
 		sayf("mail %s from %s [%s] %s", m.ID, m.From, m.Act, m.Subject)
+		a.session.remember("mail from " + m.From + ": " + m.Body)
 
 		switch {
 		case m.From == "nobody":
@@ -485,6 +508,8 @@ func (a *agent) answer(m mail) {
 		body = a.opts.systemPrompt
 	case "PRELOADED SKILLS?":
 		body = a.preloaded
+	case "MEMORY?":
+		body = strings.Join(a.session.Memory, "\n")
 	}
 
 	a.send(map[string]any{"to": m.From, "act": "inform", "subject": "Re: " + m.Subject, "body": body, "in_reply_to": m.ID})

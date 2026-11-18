@@ -134,12 +134,14 @@ func (e interactiveEnv) environ() []string {
 
 // interactiveSession is claude running in a PTY, as the supervisor runs an
 // agent. Its statusLine writes every JSON it receives to a file of
-// reportsDir; its Stop hook writes a file to stopsDir at every end of turn.
+// reportsDir; its Stop hook writes its input to a file of stopsDir at every
+// end of turn, and its SessionStart hook its input to a file of startsDir.
 type interactiveSession struct {
 	cmd        *exec.Cmd
 	terminal   *os.File
 	reportsDir string
 	stopsDir   string
+	startsDir  string
 	screen     *screenBuffer
 	turns      int
 }
@@ -147,20 +149,39 @@ type interactiveSession struct {
 func startInteractive(t *testing.T, env interactiveEnv, extraArgs ...string) *interactiveSession {
 	t.Helper()
 
+	return startInteractiveWithContext(t, env, "", extraArgs...)
+}
+
+// startInteractiveWithContext is startInteractive with a SessionStart hook
+// that hands additionalContext over to the session ("" for none).
+func startInteractiveWithContext(t *testing.T, env interactiveEnv, additionalContext string, extraArgs ...string) *interactiveSession {
+	t.Helper()
+
+	s := launchInteractive(t, env, additionalContext, extraArgs...)
+	s.waitForPrompt(t)
+
+	return s
+}
+
+// launchInteractive starts claude in a PTY without waiting for its prompt.
+func launchInteractive(t *testing.T, env interactiveEnv, additionalContext string, extraArgs ...string) *interactiveSession {
+	t.Helper()
+
 	dir := t.TempDir()
 	s := &interactiveSession{
 		reportsDir: filepath.Join(dir, "reports"),
 		stopsDir:   filepath.Join(dir, "stops"),
+		startsDir:  filepath.Join(dir, "starts"),
 		screen:     &screenBuffer{},
 	}
 
-	for _, d := range []string{s.reportsDir, s.stopsDir} {
+	for _, d := range []string{s.reportsDir, s.stopsDir, s.startsDir} {
 		if err := os.MkdirAll(d, 0o750); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	settings := statusLineSettings(t, dir, s.reportsDir, s.stopsDir)
+	settings := statusLineSettings(t, dir, s, additionalContext)
 	args := append(slices.Clone(runtime.SettingSources), "--model", "haiku", "--settings", settings)
 	args = append(args, extraArgs...)
 
@@ -177,8 +198,6 @@ func startInteractive(t *testing.T, env interactiveEnv, extraArgs ...string) *in
 	t.Cleanup(s.close)
 
 	go s.screen.drain(terminal)
-
-	s.waitForPrompt(t)
 
 	return s
 }
@@ -354,17 +373,33 @@ func (s *interactiveSession) logShape(t *testing.T) {
 }
 
 // statusLineSettings is a --settings value with a statusLine that saves each
-// JSON it gets to its own file of reportsDir, and a Stop hook that drops a
-// file into stopsDir.
-func statusLineSettings(t *testing.T, dir, reportsDir, stopsDir string) string {
+// JSON it gets to its own file of s.reportsDir, a Stop hook that saves its
+// input to a file of s.stopsDir, and a SessionStart hook that saves its
+// input to a file of s.startsDir and hands additionalContext over, if any.
+func statusLineSettings(t *testing.T, dir string, s *interactiveSession, additionalContext string) string {
 	t.Helper()
 
 	statusLine := filepath.Join(dir, "statusline.sh")
 	stop := filepath.Join(dir, "stop.sh")
+	start := filepath.Join(dir, "session-start.sh")
+
+	startScript := "#!/bin/sh\ncat > \"$(mktemp '" + s.startsDir + "/s.XXXXXX')\"\n"
+
+	if additionalContext != "" {
+		output, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{
+			"hookEventName": "SessionStart", "additionalContext": additionalContext,
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		startScript += "printf '%s' '" + string(output) + "'\n"
+	}
 
 	scripts := map[string]string{
-		statusLine: "#!/bin/sh\ncat > \"$(mktemp '" + reportsDir + "/r.XXXXXX')\"\nprintf 'probe'\n",
-		stop:       "#!/bin/sh\ncat > \"$(mktemp '" + stopsDir + "/s.XXXXXX')\"\n",
+		statusLine: "#!/bin/sh\ncat > \"$(mktemp '" + s.reportsDir + "/r.XXXXXX')\"\nprintf 'probe'\n",
+		stop:       "#!/bin/sh\ncat > \"$(mktemp '" + s.stopsDir + "/s.XXXXXX')\"\n",
+		start:      startScript,
 	}
 
 	for path, script := range scripts {
@@ -376,7 +411,8 @@ func statusLineSettings(t *testing.T, dir, reportsDir, stopsDir string) string {
 	data, err := json.Marshal(map[string]any{
 		"statusLine": map[string]any{"type": "command", "command": statusLine},
 		"hooks": map[string]any{
-			"Stop": []map[string]any{{"hooks": []map[string]string{{"type": "command", "command": stop}}}},
+			"Stop":         []map[string]any{{"hooks": []map[string]string{{"type": "command", "command": stop}}}},
+			"SessionStart": []map[string]any{{"hooks": []map[string]string{{"type": "command", "command": start}}}},
 		},
 	})
 	if err != nil {

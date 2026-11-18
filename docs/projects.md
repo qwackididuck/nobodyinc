@@ -75,7 +75,7 @@ Details:
 
 ## What stops with a project
 
-Stopping a project stops its daemon, and with it every agent's Claude Code session. Mail, tickets, the active feature, scheduled tasks, budgets and spend are kept, in the database and in `.nobody/`. At the next opening the agents start again, on new sessions (they find their work through their tickets, but not their conversation). Scheduled tasks run only while the project is open: an occurrence that falls while it is closed is lost (ADR-0012).
+Stopping a project stops its daemon, and with it every agent's Claude Code process. Mail, tickets, the active feature, scheduled tasks, budgets and spend are kept, in the database and in `.nobody/`; so is each agent's Claude Code session, which Claude Code keeps on disk and the daemon remembers (`agent_sessions`). At the next opening each agent **resumes its session** and keeps its memory (ADR-0015, `agents.md` "Sessions across openings"): an idle agent silently, costing nothing until it has something to do; an agent stopped in the middle of a turn with a prompt to carry on. Scheduled tasks run only while the project is open: an occurrence that falls while it is closed is lost (ADR-0012).
 
 ## Deleting a project
 

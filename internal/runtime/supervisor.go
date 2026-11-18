@@ -42,8 +42,16 @@ type Supervisor struct {
 	Statuses *Statuses
 	Logger   *slog.Logger
 	// NewCommand builds the process of an agent; usually Launch.Command. A
-	// non-empty resume is the Claude Code session to continue.
-	NewCommand func(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, error)
+	// resume with a session continues that Claude Code session.
+	NewCommand func(ctx context.Context, o *org.Org, m org.Member, resume Resume) (*exec.Cmd, error)
+	// Sessions remembers the agents' sessions across daemon restarts, so
+	// that StartAll resumes them (sessions.go, ADR-0015); nil remembers
+	// nothing and every start of the daemon is fresh.
+	Sessions SessionStore
+	// ReopenContext, when set, is the context the SessionStart hook hands a
+	// session resumed because the project opened again (usually
+	// Launch.ReopenContext).
+	ReopenContext func(o *org.Org, m org.Member) (string, error)
 	// HasMail reports whether an agent has undelivered mail.
 	HasMail func(ctx context.Context, address string) (bool, error)
 	// OnRetired, when set, is called once an agent has stopped because it is
@@ -73,13 +81,27 @@ type agentProcess struct {
 	output   *Output
 	writeMu  sync.Mutex    // keeps keystrokes from interleaving
 	exited   chan struct{} // closed once the process is gone
+	// ctx is the context the agent was started with, reused to start it
+	// afresh when its session turns out to be lost (watch).
+	ctx context.Context //nolint:containedctx // the process's own lifetime
+	// resume is how the process started. The fields below are guarded by
+	// the supervisor's lock.
+	resume Resume
+	// sessionStarted is set by its first SessionStart hook.
+	sessionStarted bool
+	// stopped is set when the supervisor kills it on purpose.
+	stopped bool
 }
 
 // stopTimeout bounds how long Stop waits for an agent's process to end.
 const stopTimeout = 10 * time.Second
 
-// StartAll starts every agent of the organization, except those on leave.
+// StartAll starts every agent of the organization, except those on leave,
+// when the daemon starts. An agent whose session the daemon remembers
+// resumes it (sessions.go, ADR-0015); the others start afresh.
 func (s *Supervisor) StartAll(ctx context.Context) error {
+	saved := s.savedSessions(ctx)
+
 	var errs []error
 
 	for _, m := range s.Org.Current().Members() {
@@ -87,7 +109,7 @@ func (s *Supervisor) StartAll(ctx context.Context) error {
 			continue
 		}
 
-		if err := s.Start(ctx, m.Address); err != nil {
+		if err := s.start(ctx, m.Address, s.reopening(m.Address, saved)); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -101,7 +123,7 @@ func (s *Supervisor) StartAll(ctx context.Context) error {
 //
 // ctx bounds the agent's process: it must live as long as the agent should.
 func (s *Supervisor) Start(ctx context.Context, address string) error {
-	return s.start(ctx, address, "")
+	return s.start(ctx, address, Resume{})
 }
 
 // StopAll terminates every running agent.
@@ -117,6 +139,8 @@ func (s *Supervisor) StopAll() {
 	s.pending = nil
 
 	for address, p := range s.agents {
+		p.stopped = true
+
 		if err := p.cmd.Process.Kill(); err != nil {
 			s.Logger.Warn("stop agent", "agent", address, "err", err)
 		}
@@ -130,6 +154,10 @@ func (s *Supervisor) Stop(address string) error {
 	if !ok {
 		return nil
 	}
+
+	s.mu.Lock()
+	p.stopped = true
+	s.mu.Unlock()
 
 	if err := p.cmd.Process.Kill(); err != nil {
 		return fmt.Errorf("stop agent %s: %w", address, err)
@@ -257,8 +285,8 @@ func (s *Supervisor) OnIdle(address string) {
 	}
 }
 
-// start launches an agent, continuing the given session if resume is set.
-func (s *Supervisor) start(ctx context.Context, address, resume string) error {
+// start launches an agent, continuing the given session if resume has one.
+func (s *Supervisor) start(ctx context.Context, address string, resume Resume) error {
 	// One snapshot for the whole start, so the member and the prompt's
 	// contacts come from the same organization.
 	o := s.Org.Current()
@@ -287,7 +315,7 @@ func (s *Supervisor) start(ctx context.Context, address, resume string) error {
 		return fmt.Errorf("%w: %s", ErrAlreadyRunning, address)
 	}
 
-	cmd, resumed, err := s.command(ctx, o, member, resume)
+	cmd, resume, err := s.command(ctx, o, member, resume)
 	if err != nil {
 		return err
 	}
@@ -301,10 +329,14 @@ func (s *Supervisor) start(ctx context.Context, address, resume string) error {
 		return fmt.Errorf("start agent %s: %w", address, err)
 	}
 
-	p := &agentProcess{cmd: cmd, terminal: terminal, output: NewOutput(), exited: make(chan struct{})}
+	p := &agentProcess{
+		cmd: cmd, terminal: terminal, output: NewOutput(), exited: make(chan struct{}),
+		ctx: ctx, resume: resume,
+	}
 	s.agents[address] = p
 	s.Statuses.Set(address, StatusStarting)
-	s.Logger.Info("agent started", "agent", address, "pid", cmd.Process.Pid, "resumed", resumed)
+	s.Logger.Info("agent started", "agent", address, "pid", cmd.Process.Pid,
+		"resumed", resume.Session != "", "resume_mode", resume.Mode)
 
 	go s.watch(address, p)
 
@@ -339,44 +371,36 @@ func startInPTY(cmd *exec.Cmd) (*os.File, error) {
 }
 
 // command builds an agent's process, resuming the given session when it can,
-// and reports whether it does. Called with s.mu held.
+// and returns how it actually starts. Called with s.mu held.
 //
 // Claude Code keeps sessions per directory: a session started in another
 // directory (e.g. before a feature moved the agent into its worktree) cannot
-// be resumed, so the agent then starts afresh.
-func (s *Supervisor) command(ctx context.Context, o *org.Org, m org.Member, resume string) (*exec.Cmd, bool, error) {
-	cmd, err := s.NewCommand(ctx, o, m, resume)
-	if err != nil || resume == "" {
-		s.recordSessionDir(m.Address, cmd)
+// be resumed, so the agent then starts afresh. A fresh session replaces the
+// one the daemon remembered (RememberSession records it once known).
+func (s *Supervisor) command(ctx context.Context, o *org.Org, m org.Member, resume Resume) (*exec.Cmd, Resume, error) {
+	if resume.Session != "" {
+		cmd, err := s.NewCommand(ctx, o, m, resume)
+		if err != nil {
+			return nil, Resume{}, err
+		}
 
-		return cmd, false, err
+		if cmd.Dir == s.sessionDirs[m.Address] {
+			return cmd, resume, nil
+		}
+
+		s.Logger.Info("agent moved to another directory: fresh session instead of resuming",
+			"agent", m.Address, "from", s.sessionDirs[m.Address], "to", cmd.Dir)
 	}
 
-	if cmd.Dir == s.sessionDirs[m.Address] {
-		return cmd, true, nil
+	cmd, err := s.NewCommand(ctx, o, m, Resume{})
+	if err != nil {
+		return nil, Resume{}, err
 	}
 
-	s.Logger.Info("agent moved to another directory: fresh session instead of resuming",
-		"agent", m.Address, "from", s.sessionDirs[m.Address], "to", cmd.Dir)
+	s.setSessionDir(m.Address, cmd.Dir)
+	s.forgetSession(ctx, m.Address)
 
-	cmd, err = s.NewCommand(ctx, o, m, "")
-	s.recordSessionDir(m.Address, cmd)
-
-	return cmd, false, err
-}
-
-// recordSessionDir remembers where a fresh session starts. Called with s.mu
-// held.
-func (s *Supervisor) recordSessionDir(address string, cmd *exec.Cmd) {
-	if cmd == nil {
-		return
-	}
-
-	if s.sessionDirs == nil {
-		s.sessionDirs = map[string]string{}
-	}
-
-	s.sessionDirs[address] = cmd.Dir
+	return cmd, Resume{}, nil
 }
 
 // watch copies the agent's terminal output until the process ends.
@@ -386,6 +410,9 @@ func (s *Supervisor) watch(address string, p *agentProcess) {
 
 	s.mu.Lock()
 	delete(s.agents, address)
+	// A resumed session that ends before its SessionStart hook, without
+	// being stopped, is one Claude Code no longer has (sessions.go).
+	lost := p.resume.Session != "" && !p.sessionStarted && !p.stopped && !s.stopping
 	s.mu.Unlock()
 
 	p.terminal.Close()
@@ -395,6 +422,12 @@ func (s *Supervisor) watch(address string, p *agentProcess) {
 	s.Statuses.Set(address, StatusExited)
 	s.Logger.Info("agent exited", "agent", address, "err", err)
 	close(p.exited)
+
+	if lost {
+		s.startAfresh(address, p)
+
+		return
+	}
 
 	// An agent that exits on its own (crash, /exit) while a change waits for
 	// the end of its turn will never be idle: the change is applied now.

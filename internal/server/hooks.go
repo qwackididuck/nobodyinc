@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/hook"
+	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
 
@@ -42,7 +43,7 @@ func (s *server) handleHookEvent(w http.ResponseWriter, r *http.Request) {
 
 		return
 	case hook.EventSessionStart:
-		s.handOverPreloadedSkills(w, address, ev)
+		s.startSession(w, address, ev)
 
 		return
 	}
@@ -139,11 +140,16 @@ func (s *server) agentAddress(w http.ResponseWriter, r *http.Request) (string, b
 	return address, true
 }
 
-// handOverPreloadedSkills answers a SessionStart event with the skills the
-// agent preloads (its file's skills:, ADR-0011), read where it works.
-// It runs at every session start, resumed sessions included: that is how a
-// change of preloaded skills reaches an agent without losing its memory.
-func (s *server) handOverPreloadedSkills(w http.ResponseWriter, address string, ev hook.Event) {
+// startSession answers a SessionStart event. It runs at every session start,
+// resumed sessions included:
+//
+//   - it hands over the skills the agent preloads (its file's skills:,
+//     ADR-0011), read where it works: that is how a change of preloaded
+//     skills reaches an agent without losing its memory;
+//   - for a session resumed because the project opened again, it adds the
+//     current organization, and a silent resume makes the agent idle, ready
+//     for its mail, or on budget hold (ADR-0015).
+func (s *server) startSession(w http.ResponseWriter, address string, ev hook.Event) {
 	o := s.Org.Current()
 
 	m, ok := o.Member(address)
@@ -163,6 +169,20 @@ func (s *server) handOverPreloadedSkills(w http.ResponseWriter, address string, 
 		s.Logger.Warn("preloaded skills not found", "agent", address, "skills", missing, "work_dir", workDir)
 	}
 
-	s.Logger.Info("hook event", "agent", address, "event", ev.Name, "source", ev.Source, "preloaded", len(preloaded))
-	s.writeJSON(w, http.StatusOK, hookDecision{Response: hook.PreloadResponse(preloaded), MessageIDs: []string{}})
+	var (
+		reopen  string
+		settled runtime.Status
+	)
+
+	if s.SessionStarted != nil {
+		reopen, settled = s.SessionStarted(address)
+	}
+
+	s.Logger.Info("hook event", "agent", address, "event", ev.Name, "source", ev.Source,
+		"preloaded", len(preloaded), "reopened", reopen != "", "settled", settled)
+
+	// Answered before the agent becomes idle: becoming idle may wake it up
+	// for its mail, which should find the session ready.
+	s.writeJSON(w, http.StatusOK, hookDecision{Response: hook.SessionStartResponse(preloaded, reopen), MessageIDs: []string{}})
+	s.Statuses.ObserveSessionStart(address, ev, settled)
 }

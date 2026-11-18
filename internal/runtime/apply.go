@@ -131,9 +131,9 @@ func (s *Supervisor) applyPending(address string) error {
 	}
 
 	// The session is read before stopping: it is the one to continue.
-	resume := ""
+	var resume Resume
 	if !change.opts.Fresh {
-		resume = s.Statuses.Session(address)
+		resume = Resume{Session: s.Statuses.Session(address), Mode: ResumeAfterChange}
 	}
 
 	if err := s.Stop(address); err != nil {

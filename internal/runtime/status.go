@@ -38,6 +38,10 @@ type Statuses struct {
 	// OnChange, when set, is called when an agent's status actually changes
 	// (not when the same status is recorded again), outside the lock.
 	OnChange func(address string, st Status)
+	// OnSession, when set, is called when a hook reports a session ID that
+	// differs from the agent's known one, outside the lock (the daemon
+	// remembers it across restarts, Supervisor.RememberSession).
+	OnSession func(address, sessionID string)
 }
 
 // NewStatuses returns a registry where every agent is stopped.
@@ -119,11 +123,30 @@ func (s *Statuses) ObserveHook(address string, ev hook.Event, delivered int) {
 	}
 }
 
+// ObserveSessionStart records the session an agent starts or resumes, from
+// its SessionStart hook. Its status does not change, unless settled is set:
+// a session resumed silently runs no turn and settles idle, or on budget
+// hold (Supervisor.SessionStarted).
+func (s *Statuses) ObserveSessionStart(address string, ev hook.Event, settled Status) {
+	s.rememberSession(address, ev)
+
+	if settled != "" {
+		s.Set(address, settled)
+	}
+}
+
 // rememberSession records the session an agent runs, from a hook event.
 func (s *Statuses) rememberSession(address string, ev hook.Event) {
-	if ev.SessionID != "" {
-		s.mu.Lock()
-		s.sessions[address] = ev.SessionID
-		s.mu.Unlock()
+	if ev.SessionID == "" {
+		return
+	}
+
+	s.mu.Lock()
+	changed := s.sessions[address] != ev.SessionID
+	s.sessions[address] = ev.SessionID
+	s.mu.Unlock()
+
+	if changed && s.OnSession != nil {
+		s.OnSession(address, ev.SessionID)
 	}
 }
