@@ -75,6 +75,7 @@ Claude Code keeps the system prompt a session started with: on `--resume` it ign
 
 - `nobody.yaml` is replaced by `<project>/.nobody/`. An existing `nobody.yaml` is migrated automatically on first start.
 - The daemon is started with the project directory (`nobodyd -project <dir>`), not with an organization file.
+  *Amended 2026-11-18 (ADR-0014)*: `nobodyd` is now a launcher, and the control room opens projects; the launcher starts each project's daemon with its directory (`nobodyd project -project <dir>`, internal). `nobodyd init` and the migration of `nobody.yaml` (`-org`) are removed.
 - The organization can change while the daemon runs: every component reads it through a shared holder instead of keeping its own copy.
 - Adding a template needs no code change: drop a markdown file into `~/.nobody/catalog/`. Adding a built-in template is a file in `internal/catalog/builtin/` and a rebuild.
 - Behaviours checked against the real CLI (`task contract`, `test/contract/definition_test.go`): the three permission modes are accepted (auto only on non-Haiku models); deny rules on `.nobody/` win over `acceptEdits`; `${VARIABLE}` references in `--mcp-config` are expanded; a resumed session keeps its memory, follows a changed model, permission mode and MCP config, and obeys a definition handed over in its first message. Still to check: whether skills from `~/.claude/skills` stay visible with `--setting-sources project,local` (if not, skills are copied into the worktree's `.claude/skills/`). Until then, `skills` is not applied.

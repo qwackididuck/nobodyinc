@@ -1,7 +1,9 @@
 # ADR-0014 — Several projects: a launcher, one daemon per project, one window per project
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-18
+
+How it works in detail: `docs/projects.md`.
 
 ## Context
 
@@ -21,11 +23,12 @@ A daemon is built around one project: its organization, database, event bus, age
 - The child stops when its launcher dies: it watches a pipe from the launcher and shuts down when it closes. No daemon is ever left running alone.
 - A project daemon takes a lock in its state directory (`~/.nobody/projects/<id>/daemon.lock`): one project never runs twice, whoever starts it.
 - The control room reaches a project through the launcher: `/p/<id>/api/...` is proxied to the child's `/api/...`, REST, the event stream (SSE) and the terminals' WebSockets alike. Agents keep talking to their own daemon directly.
-- The project daemon mode is internal (`nobodyd project ...`, used only by the launcher). `nobodyd init` and `nobodyd -project` are removed: the control room creates and opens projects. If Nobody Inc runs in the cloud one day, the same screens are its onboarding.
+- The project daemon mode is internal (`nobodyd project ...`, used only by the launcher). `nobodyd init`, `nobodyd -project` and the migration of the former `nobody.yaml` (`-org`) are removed: the control room creates and opens projects. If Nobody Inc runs in the cloud one day, the same screens are its onboarding.
+- The launcher's flags (`-claude`, `-hook`, `-start`, `-origins`) apply to every project daemon. With `-start=false`, agents neither start with the daemon nor restart when a feature starts or ends (`daemon.Options.StartAgents`): finishing a feature on such a daemon starts nobody.
 
 ### 2. The registry of known projects
 
-`~/.nobody/projects.yaml` (written by the launcher only, crash-safe) lists the known projects: id, absolute path, display name, when it was last opened. The id is the name of the project's state directory, `<folder>-<hash of the path>` (ADR-0004), already used by the control room (`project_id`). A project whose folder disappeared stays listed as missing, until the human removes it.
+`~/.nobody/projects.yaml` (written by the launcher only, crash-safe) lists the known projects: id, absolute path, when a window last opened it (the display name is the folder's name). The id is the name of the project's state directory, `<folder>-<hash of the path>` (ADR-0004), already used by the control room (`project_id`). A project whose folder disappeared stays listed as missing, until the human removes it.
 
 ### 3. One window, one project
 
@@ -33,7 +36,8 @@ A daemon is built around one project: its organization, database, event bus, age
 - A window that shows a project **holds** it: it keeps a WebSocket open to the launcher (`/api/projects/<id>/attach`, with an id the window keeps in `sessionStorage`). Holding a project starts its daemon if it is not running.
 - **A project runs only while a window holds it.** When its window is closed, the connection drops; after a grace period (15 s) without the window coming back, the launcher stops the project daemon and its agents. A crash of the window or of the application drops the connection too.
 - **Switching project in a window** releases the current one at once (no grace period) and opens the other.
-- **A project is held by one window at most.** A second window asking for it is refused (409) and shows "This project is open in another window", with "Open here" (it takes the project over; the other window shows "Open elsewhere") or "Back to projects". The desktop application, which knows its windows, will bring the existing window to the front instead.
+- **A project is held by one window at most.** A second window asking for it while the holder is connected is refused (the launcher sends `held`, then closes the WebSocket with code 4409, the WebSocket counterpart of HTTP 409) and shows "This project is open in another window", with "Open here" (it takes the project over; the other window gets `taken` and shows "Opened in another window") or "Back to projects". A hold in its grace period is free to take, without taking over. The desktop application, which knows its windows, will bring the existing window to the front instead.
+- The window's id is kept in `sessionStorage`, so that a reload gets the hold back. A duplicated browser tab copies it: the newest connection with an id wins, and the older one is told `taken`.
 - The window reconnects on its own when the connection drops. Within the grace period it gets the same hold back and nothing stopped; after it, the project was stopped, and the window opens it again, since it is still that window's project.
 - Pings every 10 s detect a half-dead connection. A locked screen changes nothing (the machine runs, the connection is on loopback). During sleep every process is frozen, the window and the launcher alike: the connection does not drop, and the grace period, measured by the launcher, does not run out while asleep.
 - Closing a window while agents work: the control room warns before leaving (the browser's own prompt; the desktop application can ask "Close and stop / Cancel").
@@ -47,17 +51,18 @@ Stopping a project stops its daemon and every agent session; mail, tickets, the 
 
 - The control room browses the machine's folders through the launcher (`GET /api/fs/dirs`): names of the sub-folders, whether each is a git repository, already has a `.nobody/`, or is a known project. Listing only, nothing is read inside files.
 - **Open** a folder: it joins the registry. A folder without `.nobody/` is set up first, as `nobodyd init` did: `.nobody/` with its director and no team, the user's catalog and settings if missing, and Claude Code's trust of the folder (`runtime.Trust`), so that agents do not stop on the trust question.
-- **New project**: creates the folder, runs `git init`, then sets it up as above.
+- **New project**: creates the folder, runs `git init` with an empty first commit signed by Nobody Inc (a feature needs a base branch with a commit), then sets it up as above.
 - **Delete** a project removes Nobody Inc from it, never the code: the project's `.nobody/` (a tracked deletion if it was committed, left to the user to commit), its state directory `~/.nobody/projects/<id>/` (database, worktrees, MCP and skills staging) and its registry entry. The git branches stay, `nobody/*` included: they are code. Delete is refused while another window holds the project; from the project's own window, the window releases it and goes back to the projects page.
 - **A feature that is not finished** (an active feature) stops the deletion and the human chooses:
   - **Merge as it is**: the feature is finished anyway (ADR-0007, `force`): unfinished tickets canceled, local merge into the base branch. On a conflict or a refusal (uncommitted changes in the project), nothing is deleted and the reason is shown.
   - **Delete anyway**: the teams' worktrees are removed (their uncommitted changes are lost, the control room says so), their branches and the feature branch stay.
   - **Cancel**.
-  To check and finish the feature, the launcher runs the project daemon without starting its agents (`-start=false`), then stops it.
+  The feature is settled **before** anything is stopped or deleted, so that a refusal changes nothing: the running daemon answers when the project is open; otherwise the launcher runs the project daemon without starting its agents (`-start=false`) to check and finish the feature, then stops it. Only then do windows lose the project, its daemon stop, and its files go.
+- The control room asks the human to type the project's name before deleting it.
 
 ### 6. Launcher API
 
-Described in `api/openapi.yaml` with the project daemon's, under its own tag: `GET/POST /api/projects` (list; open or create), `DELETE /api/projects/{id}` (with the choice about an unfinished feature), `GET /api/projects/{id}/attach` (WebSocket), `GET /api/fs/dirs`. The cross-site guard and allowed origins apply to the launcher as to the daemon; the launcher hands its origins to the children.
+Described in `api/openapi.yaml` with the project daemon's, under its own tag: `GET/POST /api/projects` (list; open or create), `DELETE /api/projects/{id}` (with the choice about an unfinished feature), `GET /api/projects/{id}/attach` (WebSocket: the launcher sends `state`, `held` and `taken`; the window sends `release`, and `start` to restart a daemon that stopped on its own), `GET /api/fs/dirs`. The cross-site guard and allowed origins apply to the launcher as to the daemon; the launcher hands its origins to the children.
 
 ## Not decided here
 
@@ -68,7 +73,7 @@ Described in `api/openapi.yaml` with the project daemon's, under its own tag: `G
 
 ## Consequences
 
-- The control room becomes multi-project: a projects page, a project menu in the top bar, and the project's name always shown.
+- The control room becomes multi-project: a projects page (each open project with its agents at work, this month's spend and its active feature, read from its daemon), a project menu in the top bar, and the project's name always shown.
 - Closing a window frees what its project used; nothing runs that no window shows.
 - The project daemon is unchanged inside; agents, hooks and MCP clients see no difference. Every window's API calls go through the launcher's proxy.
 - `nobodyd init` and `nobodyd -project` disappear; `task dev:daemon` runs the launcher.

@@ -21,6 +21,8 @@ The director is an agent like the others (a definition file, a Claude Code sessi
 
   *Amended 2026-11-16*: the director is **always present**. It is no longer in the catalog: `nobodyd init` writes it (and nothing else: the user builds the teams), and the daemon writes it at startup when a project has none (`org.EnsureDirector`). `POST /api/director` is gone, and dismissing the director or putting it on leave is refused (409); it can only be edited. It may also create teams (`team_create`). It is not a source of knowledge about the project: the agents' routing rule treats a question to the director like a question to the human (`docs/agents.md`, "Whom to ask").
 
+  *Amended 2026-11-18 (ADR-0014)*: `nobodyd init` is gone; setting a folder up from the control room writes the director instead (`projects.SetUp`, `docs/projects.md`).
+
 ### 2. Its rights
 
 - **Messages**: like the human, it may write to anyone, and anyone may write to it; no channel is needed.

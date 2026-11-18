@@ -1,15 +1,18 @@
 # Architecture
 
-Nobody Inc runs an organisation of Claude Code agents. This page describes the pieces of the walking skeleton and how a message travels. Decisions are recorded in `adr/`.
+Nobody Inc runs an organisation of Claude Code agents. This page describes the pieces of a project daemon and how a message travels. Decisions are recorded in `adr/`.
 
 ## Overview
 
+`nobodyd` is a launcher (`projects.md`, ADR-0014): it runs one project daemon per project open in a window, as a child process, and passes the control room's requests on to it (`/p/<project>/api/...`). Below is one project daemon.
+
 ```
-            Browser: Next.js UI (web/)
+            Browser: Next.js UI (web/), one window per project
             office · chat · terminal · kanban · staff
-                 │ REST + SSE events (/api)   │ terminal WebSocket
+                 │ REST + SSE events          │ terminal WebSocket
+                 │ (/p/<project>/api, through the launcher)
                  ▼                            ▼
-┌──────────────────────────── nobodyd (cmd/nobodyd) ─────────────────────────────┐
+┌───────────────────── nobodyd project (cmd/nobodyd/project.go) ─────────────────┐
 │ server     /api/* (UI), /internal/* (hooks)          officemcp  /mcp/{address} │
 │ messaging  sending rules, threads, hop cap           runtime    PTYs, statuses,│
 │ org        teams, agents, block lists (<project>/.nobody/)      wake-up, terms │
@@ -37,7 +40,9 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 | `internal/approval` | The queue of agents' permission requests waiting for the human (`approvals.md`). |
 | `internal/runtime` | Starts each agent (`claude` in a PTY), tracks its status and session, wakes it up when mail arrives, answers urgent questions to busy agents with a session fork, streams its terminal over a WebSocket. |
 | `internal/server` | The HTTP API described in `api/openapi.yaml`. |
-| `internal/daemon` | Wires all of the above together, turns ticket events into notices, picks the member of a team that gets team-addressed work; `cmd/nobodyd` adds flags and a listener. |
+| `internal/daemon` | Wires all of the above together, turns ticket events into notices, picks the member of a team that gets team-addressed work; `cmd/nobodyd/project.go` adds flags, the lock and the socket handed over by the launcher. |
+| `internal/projects` | Where projects live (`projects.md`): `~/.nobody`, state directories and their lock, the registry of known projects, setting a folder up, removing Nobody Inc from a project. |
+| `internal/launcher` | The launcher (`projects.md`, ADR-0014): known projects and folders, the windows' holds, project daemons as child processes, the proxy, deleting a project. |
 | `internal/budget` | Costs and budgets (ADR-0013, `budgets.md`): turns the agents' running costs into spend records, the budgets file, gauges, which budgets cover which agents. |
 | `cmd/nobody-hook` | Relay run by Claude Code on hooks: forwards the event to the daemon, prints the answer, acknowledges. As every agent's statusLine (`nobody-hook statusline`), it posts the session's running cost and prints nothing. |
 
@@ -79,12 +84,12 @@ Agents see neither the user's global settings, hooks and plugins nor the environ
 ## Testing
 
 - Unit tests next to each package.
-- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block, scheduled tasks with a manual clock, costs and budgets through fakeclaude's statusLine) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
+- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block, scheduled tasks with a manual clock, costs and budgets through fakeclaude's statusLine, the launcher with real project daemons) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
 - `test/contract` (`task contract`): the Claude Code behaviours we rely on, against the real CLI.
 
 ## Changes pushed to the browser
 
-The control room does not poll: `GET /api/events` streams every change as Server-Sent Events (agent statuses, messages sent and delivered, approvals, tickets, features, the organization, the catalog, scheduled tasks), and the UI reads the changed resource again through the REST API. See `docs/events.md` and ADR-0006.
+The control room does not poll: each project's `GET /api/events` (reached as `/p/<project>/api/events`) streams every change as Server-Sent Events (agent statuses, messages sent and delivered, approvals, tickets, features, the organization, the catalog, scheduled tasks), and the UI reads the changed resource again through the REST API. See `docs/events.md` and ADR-0006.
 
 ## The terminal in the browser
 

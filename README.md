@@ -2,7 +2,7 @@
 
 Run teams of Claude Code agents that talk to each other (normal and urgent mailboxes, open flows between teams that each team can restrict), supervised from a web control room.
 
-> Early stage project. Architecture: [`docs/architecture.md`](docs/architecture.md) · Hooks: [`docs/hooks.md`](docs/hooks.md) · Approvals: [`docs/approvals.md`](docs/approvals.md) · Tickets: [`docs/tickets.md`](docs/tickets.md) · Agents: [`docs/agents.md`](docs/agents.md) · Director: [`docs/god.md`](docs/god.md) · Workspaces: [`docs/workspaces.md`](docs/workspaces.md) · Scheduled tasks: [`docs/schedules.md`](docs/schedules.md) · Decisions: [`docs/adr/`](docs/adr/).
+> Early stage project. Architecture: [`docs/architecture.md`](docs/architecture.md) · Projects: [`docs/projects.md`](docs/projects.md) · Hooks: [`docs/hooks.md`](docs/hooks.md) · Approvals: [`docs/approvals.md`](docs/approvals.md) · Tickets: [`docs/tickets.md`](docs/tickets.md) · Agents: [`docs/agents.md`](docs/agents.md) · Director: [`docs/god.md`](docs/god.md) · Workspaces: [`docs/workspaces.md`](docs/workspaces.md) · Scheduled tasks: [`docs/schedules.md`](docs/schedules.md) · Decisions: [`docs/adr/`](docs/adr/).
 
 ## Requirements
 

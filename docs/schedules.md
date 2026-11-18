@@ -1,6 +1,6 @@
 # Scheduled tasks
 
-A scheduled task is recurring work the daemon hands to an agent: "every 10 minutes, look at the production dashboard", "every weekday at 9, write the report". It runs **only while the daemon runs**: an occurrence that falls while the daemon is stopped is lost, never caught up. Decisions and rationale: ADR-0012.
+A scheduled task is recurring work the daemon hands to an agent: "every 10 minutes, look at the production dashboard", "every weekday at 9, write the report". It runs **only while the project's daemon runs**, that is while a window shows the project (`projects.md`): an occurrence that falls while the project is closed is lost, never caught up. Decisions and rationale: ADR-0012.
 
 There is no special kind of agent. A "background agent" is an ordinary agent, often in a dedicated team (`ops`, `watch`…), with a permission profile that lets it work unattended.
 
@@ -46,7 +46,7 @@ When a schedule falls due (`internal/daemon/schedules.go`):
 
 1. **The previous occurrence is not over** (waiting or running): this one is **skipped**.
 2. **The target is gone**: no agent can ever take it (the agent was dismissed, the team deleted or emptied, or the director is targeted in ticket mode). The schedule is **disabled** (`enabled: false`, written to the file) and the human is told.
-3. **None of the target's agents runs** (on leave, stopped, exited, or the daemon was started with `-start=false`): the occurrence is **skipped and reported**. The human is told once per streak of such occurrences, not every ten minutes.
+3. **None of the target's agents runs** (on leave, stopped, exited, or the launcher was started with `-start=false`): the occurrence is **skipped and reported**. The human is told once per streak of such occurrences, not every ten minutes.
 4. Otherwise it **waits** until a target agent is **free**, that is idle and with no ticket in progress, during a feature or not. It then goes to that agent; for a team target, the first member to be free gets it.
 
 Every occurrence is signed by **`nobody`**:

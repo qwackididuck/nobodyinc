@@ -1,11 +1,11 @@
 # Events: how the control room hears about changes
 
-The daemon pushes changes to the control room over **Server-Sent Events** on `GET /api/events`. Most events only say *what* changed; the UI then reads it again through the REST API, which stays the source of truth. Decision and rationale: ADR-0006.
+A project's daemon pushes changes to the control room over **Server-Sent Events** on `GET /api/events`, which the control room reaches through the launcher as `/p/<project>/api/events` (`projects.md`). Most events only say *what* changed; the UI then reads it again through the REST API, which stays the source of truth. Decision and rationale: ADR-0006.
 
 ## The stream
 
 ```
-$ curl -N http://127.0.0.1:7420/api/events
+$ curl -N http://127.0.0.1:7420/p/shop-6e403867/api/events   # a project open in a window
 retry: 2000
 
 event: hello

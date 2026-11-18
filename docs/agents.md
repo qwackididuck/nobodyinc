@@ -7,7 +7,8 @@ An **agent** is a member of a team that runs as a Claude Code session. A **templ
 ```
 <nobody binary>                           built-in templates (internal/catalog/builtin/)
 ~/.nobody/
-  settings.yaml                           your settings for every project (created by nobodyd init)
+  settings.yaml                           your settings for every project (created with the first project)
+  projects.yaml                           the projects Nobody Inc knows (docs/projects.md)
   catalog/<template>.md                   your templates; same name as a built-in one = replaces it
   projects/<id>/nobody.db                 runtime state of one project on this machine (never shared)
   projects/<id>/worktrees/                the teams' worktrees, outside the project (docs/workspaces.md)
@@ -129,7 +130,7 @@ teams:
 
 A team exists when it is declared here; its members are the files in `teams/<team>/`. A new project has no team: create them from the control room (the "+" plot of the office, or "+ New team" in the Staff tab), with `POST /api/teams`, or by asking the director (`team_create`). A team's sign in the office, or "Edit team" in Staff, changes its goal and prompt, or deletes it; "Delete team" in Staff deletes it directly (see "Lifecycle").
 
-**Flows between teams** are open (ADR-0009): any agent may start a conversation with any team. `block` lists the teams a team's members may not start a conversation with, `@team` included. A block is one-way (above, `dev` may still write to `qa`), never stops an answer or a ticket, and never applies to the human, `nobody` or the director (`architecture.md`, "Conversation rules"). Set it in the team dialog of the Staff tab, under "Advanced settings" (one box per other team, checked when the flow is open), with `block` in `POST /api/teams` or `PUT /api/teams/{team}`, or through the director (`team_block`, with your agreement). Changing it restarts nobody: the members of both teams get a notice from `nobody`. An `org.yaml` written before ADR-0009 may still have `channels:`: they are ignored, with a warning when the daemon starts, and dropped the next time `org.yaml` is written.
+**Flows between teams** are open (ADR-0009): any agent may start a conversation with any team. `block` lists the teams a team's members may not start a conversation with, `@team` included. A block is one-way (above, `dev` may still write to `qa`), never stops an answer or a ticket, and never applies to the human, `nobody` or the director (`architecture.md`, "Conversation rules"). Set it in the team dialog of the Staff tab, under "Advanced settings" (one box per other team, checked when the flow is open), with `block` in `POST /api/teams` or `PUT /api/teams/{team}`, or through the director (`team_block`, with your agreement). Changing it restarts nobody: the members of both teams get a notice from `nobody`. An `org.yaml` written before ADR-0009 may still have `channels:`: they are ignored, with a warning when the project's daemon starts, and dropped the next time `org.yaml` is written.
 
 When the daemon writes `org.yaml`, it rewrites the whole file (comments are lost).
 
