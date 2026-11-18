@@ -488,3 +488,25 @@ func TestBook(t *testing.T) {
 		t.Fatalf("OnChange called %d times, want 4 (create, pause, update, delete)", len(announced))
 	}
 }
+
+func TestPreview(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 11, 18, 10, 0, 0, 0, time.UTC)
+
+	next, err := Preview("10m", "", now, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []time.Time{now.Add(10 * time.Minute), now.Add(20 * time.Minute), now.Add(30 * time.Minute)}
+	for i := range want {
+		if !next[i].Equal(want[i]) {
+			t.Fatalf("Preview = %v, want %v", next, want)
+		}
+	}
+
+	if _, err := Preview("", "", now, 3); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("no recurrence: %v", err)
+	}
+}

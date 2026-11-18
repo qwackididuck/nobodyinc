@@ -154,3 +154,37 @@ func TestSchedulesAPIWithoutSchedules(t *testing.T) {
 		t.Fatalf("status = %d, want 501", rec.Code)
 	}
 }
+
+func TestPreviewRecurrence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		body string
+		code int
+		want string // part of the answer
+	}{
+		{`{"every":"10m"}`, http.StatusOK, `"next":["`},
+		{`{"cron":"0 9 * * 1-5"}`, http.StatusOK, `"next":["`},
+		{`{"every":"30s"}`, http.StatusBadRequest, "at least"},
+		{`{"every":"10m","cron":"@daily"}`, http.StatusBadRequest, "not both"},
+		{`{}`, http.StatusBadRequest, "every"},
+	}
+
+	h := New(Deps{Logger: slog.New(slog.DiscardHandler)}) // no scheduled tasks needed
+
+	for _, tt := range tests {
+		t.Run(tt.body, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/api/schedules/preview", strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.code || !strings.Contains(rec.Body.String(), tt.want) {
+				t.Fatalf("%d %s, want %d with %q", rec.Code, rec.Body, tt.code, tt.want)
+			}
+		})
+	}
+}

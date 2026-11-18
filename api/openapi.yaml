@@ -1081,6 +1081,43 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/schedules/preview:
+    post:
+      operationId: previewScheduleRecurrence
+      summary: The next occurrences of a recurrence, while the human types it
+      description: |
+        Checks `every` or `cron` (exactly one) and returns the next three
+        occurrences from now, as a schedule created now would have them.
+        Nothing is saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                every:
+                  type: string
+                cron:
+                  type: string
+      responses:
+        "200":
+          description: The next occurrences
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [next]
+                properties:
+                  next:
+                    type: array
+                    items:
+                      type: string
+                      format: date-time
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/schedules/{id}:
     parameters:
       - $ref: "#/components/parameters/ScheduleID"

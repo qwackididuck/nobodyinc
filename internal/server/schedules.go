@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/schedule"
 )
@@ -30,6 +31,9 @@ type Schedules interface {
 	Refuse(ctx context.Context, id, reason string) (schedule.Proposal, error)
 }
 
+// previewCount is how many occurrences POST /api/schedules/preview shows.
+const previewCount = 3
+
 // Bounds of GET /api/schedule-runs?limit=.
 const (
 	defaultRunsLimit = 100
@@ -40,6 +44,7 @@ const (
 // they answer 501.
 func (s *server) routeSchedules(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/schedules", s.listSchedules)
+	mux.HandleFunc("POST /api/schedules/preview", s.previewRecurrence)
 	mux.HandleFunc("POST /api/schedules", s.createSchedule)
 	mux.HandleFunc("PUT /api/schedules/{id}", s.updateSchedule)
 	mux.HandleFunc("DELETE /api/schedules/{id}", s.deleteSchedule)
@@ -70,6 +75,31 @@ func (s *server) listSchedules(w http.ResponseWriter, r *http.Request) {
 
 	views, err := s.Schedules.List(r.Context())
 	s.scheduleReply(w, http.StatusOK, views, err)
+}
+
+// recurrence is the body of POST /api/schedules/preview.
+type recurrence struct {
+	Every string `json:"every"`
+	Cron  string `json:"cron"`
+}
+
+// preview is the answer of POST /api/schedules/preview.
+type preview struct {
+	Next []time.Time `json:"next"`
+}
+
+// previewRecurrence checks a recurrence and shows its next occurrences; it
+// needs no schedule, nor the daemon's scheduled tasks.
+func (s *server) previewRecurrence(w http.ResponseWriter, r *http.Request) {
+	var in recurrence
+	if err := decodeJSON(w, r, &in, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	next, err := schedule.Preview(in.Every, in.Cron, time.Now(), previewCount)
+	s.scheduleReply(w, http.StatusOK, preview{Next: next}, err)
 }
 
 func (s *server) createSchedule(w http.ResponseWriter, r *http.Request) {

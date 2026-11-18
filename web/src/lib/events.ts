@@ -16,7 +16,8 @@ export type DaemonEvent =
   | { type: "tickets.changed"; data: { id: string } }
   | { type: "features.changed"; data: { id: string } }
   | { type: "org.changed" }
-  | { type: "catalog.changed" };
+  | { type: "catalog.changed" }
+  | { type: "schedules.changed" };
 
 export type EventType = DaemonEvent["type"];
 
@@ -31,6 +32,7 @@ const EVENT_TYPES: EventType[] = [
   "features.changed",
   "org.changed",
   "catalog.changed",
+  "schedules.changed",
 ];
 
 // connectEvents opens the stream and calls onEvent for each event, and

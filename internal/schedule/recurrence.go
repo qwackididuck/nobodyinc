@@ -28,6 +28,25 @@ func (s Schedule) Next(armed, after time.Time) time.Time {
 	return s.nextIn(time.Local, armed, after)
 }
 
+// Preview checks a recurrence (Every or Cron, exactly one) and returns its
+// first n occurrences after now, for a schedule armed now: what the human
+// sees while typing it.
+func Preview(every, spec string, now time.Time, n int) ([]time.Time, error) {
+	r, err := Schedule{Every: every, Cron: spec}.recurrence(time.Local)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	next := make([]time.Time, 0, n)
+
+	for at := now; len(next) < n; {
+		at = r.next(now, at)
+		next = append(next, at)
+	}
+
+	return next, nil
+}
+
 // nextIn is Next in a given time zone, for tests.
 func (s Schedule) nextIn(loc *time.Location, armed, after time.Time) time.Time {
 	r, err := s.recurrence(loc)

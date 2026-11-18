@@ -7,7 +7,7 @@ import { useLive } from "@/lib/live";
 import { TerminalView } from "./TerminalView";
 import { isAnswered, isDirector, statusKey, statusLabel, teamLabel, timeOf, withHuman } from "./agents";
 import { Avatar } from "./Avatar";
-import { ApprovalCard, FeatureProposal, UrgentQuestion } from "./cards";
+import { ApprovalCard, FeatureProposal, ScheduleProposalCard, UrgentQuestion } from "./cards";
 import styles from "./chat.module.css";
 import { Composer } from "./Composer";
 
@@ -21,7 +21,7 @@ type Item = { at: string; message: Message } | { at: string; approval: Approval 
 
 // Thread is the human's chat with one agent: the messages both ways, with
 // cards for what waits for the human (a permission request, an urgent
-// question, a feature proposal), and a switch to the agent's live terminal.
+// question, a feature or schedule proposal), and a switch to the agent's live terminal.
 export function Thread({ agent, onSeen }: Props) {
   const live = useLive();
   const [view, setView] = useState<"chat" | "terminal">("chat");
@@ -128,8 +128,18 @@ interface MessageItemProps {
 // MessageItem shows one message: a bubble, or a card when it waits for the
 // human (an unanswered urgent question, a pending feature proposal).
 function MessageItem({ message: m, agent, messages, onReply }: MessageItemProps) {
-  const { features, reload } = useLive();
+  const { features, scheduleProposals, reload } = useLive();
   const out = m.from === HUMAN;
+
+  const scheduleProposal = m.act === "propose" ? scheduleProposals.find((p) => p.proposal_message === m.id) : undefined;
+  if (scheduleProposal) {
+    return (
+      <li className={styles.in}>
+        <ScheduleProposalCard proposal={scheduleProposal} onDecided={() => reload("scheduleProposals")} />
+        <span className={styles.time}>{timeOf(m.sent_at)}</span>
+      </li>
+    );
+  }
 
   const proposal = m.act === "propose" ? features.find((f) => f.proposal_message === m.id) : undefined;
   if (proposal) {
