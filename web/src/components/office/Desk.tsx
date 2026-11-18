@@ -1,4 +1,5 @@
-import type { Agent } from "@/lib/api";
+import type { Agent, BudgetGauge } from "@/lib/api";
+import { gaugeText, progress, tightest } from "@/lib/budgets";
 import { lookOf } from "@/lib/look";
 import { isDirector, statusLabel } from "../chat/agents";
 import type { Point } from "./layout";
@@ -13,13 +14,17 @@ interface Props {
   selected: boolean;
   // While its walker comes to sit down, the seated character is hidden.
   arriving: boolean;
+  // The budgets that cover the agent (ADR-0013): the gauge shows the one
+  // closest to its threshold, the tooltip lists them all.
+  gauges: BudgetGauge[];
   onSelect: () => void;
 }
 
 // Desk is an agent at work: the character behind its desk, a bubble telling
-// its status, and its name plate. An agent on leave left an empty chair and
-// a note.
-export function Desk({ agent, at, ticket, selected, arriving, onSelect }: Props) {
+// its status, its name plate, and a small gauge of its tightest budget. An
+// agent on leave left an empty chair and a note; one on budget hold shows an
+// empty wallet.
+export function Desk({ agent, at, ticket, selected, arriving, gauges, onSelect }: Props) {
   const away = agent.on_leave;
   const off = agent.status === "stopped" || agent.status === "exited";
 
@@ -52,7 +57,28 @@ export function Desk({ agent, at, ticket, selected, arriving, onSelect }: Props)
       <span className={styles.plate}>
         {agent.name} <em>{away ? "away" : (ticket ?? (isDirector(agent) ? "boss" : off ? "off" : ""))}</em>
       </span>
+      <MiniGauge gauges={gauges} className={styles.deskGauge} />
     </button>
+  );
+}
+
+// MiniGauge fills up to the spend of the tightest of the gauges given; it
+// turns amber near the threshold and red at it. Nothing without a gauge.
+export function MiniGauge({ gauges, className }: { gauges: BudgetGauge[]; className: string }) {
+  const tight = tightest(gauges);
+  if (!tight) return null;
+
+  const p = progress(tight);
+  const ratio = tight.limit_usd > 0 ? tight.spent_usd / tight.limit_usd : 0;
+
+  return (
+    <span
+      className={`${styles.miniGauge} ${className}`}
+      data-tone={p >= 1 ? "held" : p >= 0.75 ? "near" : "ok"}
+      title={gauges.map(gaugeText).join("\n")}
+    >
+      <span style={{ width: `${Math.min(ratio, 1) * 100}%` }} />
+    </span>
   );
 }
 
@@ -77,6 +103,12 @@ function Bubble({ status }: { status: Agent["status"] }) {
       return (
         <span className={`${styles.say} ${styles.sayIdle}`} aria-hidden="true">
           z
+        </span>
+      );
+    case "budget_hold":
+      return (
+        <span className={`${styles.say} ${styles.sayWallet}`} aria-hidden="true">
+          <i />
         </span>
       );
     default:

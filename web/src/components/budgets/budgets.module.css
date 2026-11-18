@@ -1,0 +1,46 @@
+/* Budget fields and cards (ADR-0013). */
+
+.cap {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+}
+
+.capRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+
+.capRow > label {
+  flex: 1 1 120px;
+}
+
+.check {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+}
+
+/* "spent / budget" next to a ticket or a feature. */
+.spent {
+  font-variant-numeric: tabular-nums;
+}
+
+.spent[data-tone="near"] {
+  color: var(--warn);
+}
+
+.spent[data-tone="held"] {
+  color: var(--danger);
+  font-weight: bold;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+}

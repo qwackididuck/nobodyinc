@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useState } from "react";
 
 import { type AgentDefinition, editDefinition, getDefinition, recruitAgent, saveTemplate, type Template } from "@/lib/api";
 import { useLive } from "@/lib/live";
+import { CapEditor } from "../budgets/CapEditor";
 import { TeamSelect } from "../teams/TeamSelect";
 import ui from "../ui/ui.module.css";
 import { cleanDefinition, emptyDefinition, NAME_PATTERN, toDefinition } from "./definition";
@@ -78,6 +79,8 @@ export function EditAgent({ address, onDone }: { address: string; onDone: () => 
       </div>
       {note && <p className={ui.note}>{note}</p>}
       {error && <p className={ui.error}>{error}</p>}
+      {/* The director has no cap: it is never held for budget (ADR-0013). */}
+      {address.includes("@") && <CapEditor scope={{ kind: "agent", id: address }} title={`Cap on ${address}`} />}
     </div>
   );
 }

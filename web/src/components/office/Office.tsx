@@ -20,13 +20,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { type Agent, type Feature, type Team } from "@/lib/api";
+import { type Agent, type BudgetGauge, type Feature, type Team } from "@/lib/api";
 import { useAppearance } from "@/lib/appearance";
+import { covering } from "@/lib/budgets";
 import { useDaemonEvents, useLive } from "@/lib/live";
 import { lookOf, teamColors } from "@/lib/look";
 import { betweenAgents, isDirector } from "../chat/agents";
 import { Banner } from "./Banner";
-import { Desk } from "./Desk";
+import { Desk, MiniGauge } from "./Desk";
 import { endedAt, isEnded } from "../schedules/scheduling";
 import { ArchivesPanel } from "./ArchivesPanel";
 import { ClockPanel } from "./ClockPanel";
@@ -79,7 +80,7 @@ const orgKey = (agents: Agent[], teams: Team[]) =>
 let nextSceneID = 1;
 
 export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSeen, onClockSeen }: Props) {
-  const { agents, teams, tickets, features, loaded, scheduleRuns } = useLive();
+  const { agents, teams, tickets, features, loaded, scheduleRuns, spend } = useLive();
   const appearance = useAppearance();
   const moving = appearance.animations === "full";
   const layer = useRef<HTMLDivElement>(null);
@@ -276,6 +277,9 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
   const working = new Map(tickets.filter((t) => t.status === "in_progress" && t.assignee).map((t) => [t.assignee as string, t.id]));
   const queue = (team: string) => tickets.filter((t) => t.team === team && t.status === "open" && !t.assignee).length;
   const byAddress = new Map(agents.map((a) => [a.address, a]));
+  // Budget gauges (ADR-0013): none while budgets are off (the daemon sends none).
+  const gauges = spend?.gauges ?? [];
+  const teamGauge = (team: string) => gauges.filter((g) => g.scope.kind === "team" && g.scope.id === team);
 
   return (
     <section className={styles.office} aria-label="Office">
@@ -307,6 +311,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
               carpet={carpetOf(room, teams)}
               building={building.has(room.id)}
               queue={room.kind === "team" ? queue(room.id) : 0}
+              gauges={room.kind === "team" ? teamGauge(room.id) : []}
               onOpen={() => {
                 if (room.kind === "team") setEditingTeam(teams.find((t) => t.id === room.id) ?? null);
                 if (room.kind === "archives") setArchivesOpen(true);
@@ -336,6 +341,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
                   ticket={working.get(address)}
                   selected={selected === address}
                   arriving={arrivals.get(address) === "seating"}
+                  gauges={covering(agent, gauges, tickets)}
                   onSelect={() => onSelectAgent(address)}
                 />
               );
@@ -395,6 +401,8 @@ interface RoomViewProps {
   carpet?: string;
   building: boolean;
   queue: number;
+  // A team's cap, if it has one.
+  gauges: BudgetGauge[];
   // Clicking the room (its floor, frame or sign; desks are above it) opens
   // what it is about.
   onOpen: () => void;
@@ -409,7 +417,7 @@ const ROOM_HINT: Record<Room["kind"], string> = {
   plot: "",
 };
 
-function RoomView({ room, carpet, building, queue, onOpen, children }: RoomViewProps) {
+function RoomView({ room, carpet, building, queue, gauges, onOpen, children }: RoomViewProps) {
   const name = room.kind === "director" ? "director" : room.kind === "archives" ? "the archives" : `team ${room.id}`;
   return (
     <div
@@ -430,6 +438,7 @@ function RoomView({ room, carpet, building, queue, onOpen, children }: RoomViewP
         {room.kind === "director" ? "DIRECTOR" : room.id.toUpperCase()}
         {room.kind === "team" && <em> Q{queue}</em>}
       </span>
+      <MiniGauge gauges={gauges} className={styles.roomGauge} />
       <span className={styles.plant} />
       {children}
       <span className={styles.roomHint} aria-hidden="true">

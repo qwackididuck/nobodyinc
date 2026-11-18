@@ -22,14 +22,19 @@ type Badge = { kind: "approval" | "urgent" | "count"; text: string };
 
 // AvatarRail lists the agents like the chats of a messaging app, the
 // director first, with the wastebasket at the bottom. A badge tells what
-// waits: a permission request, an unanswered urgent question, or the number
-// of messages received since the chat was last opened.
+// waits: a permission request, an unanswered urgent question, a budget
+// extension request the director passed on (ADR-0013: on the director, never
+// on the held agent), or the number of messages received since the chat was
+// last opened.
 export function AvatarRail({ agents, target, marks, onTarget }: Props) {
-  const { approvals, messages } = useLive();
+  const { approvals, messages, budgetRequests } = useLive();
 
   function badgeOf(a: Agent): Badge | null {
     const pendingApprovals = approvals.filter((p) => p.agent === a.address).length;
     if (pendingApprovals > 0) return { kind: "approval", text: String(pendingApprovals) };
+
+    const pendingBudgets = isDirector(a) ? budgetRequests.filter((r) => r.status === "awaiting_human").length : 0;
+    if (pendingBudgets > 0) return { kind: "urgent", text: `$${pendingBudgets > 1 ? pendingBudgets : ""}` };
 
     const toHuman = messages.filter((m) => m.from === a.address && m.to === HUMAN);
     if (toHuman.some((m) => m.priority === "urgent" && !isAnswered(m, messages))) return { kind: "urgent", text: "!" };

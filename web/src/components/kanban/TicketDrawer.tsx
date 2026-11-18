@@ -2,8 +2,10 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 
-import { commentTicket, getTicket, setTicketStatus, type TicketDetails, type TicketStatus } from "@/lib/api";
+import { commentTicket, getTicket, setTicketStatus, type Ticket, type TicketDetails, type TicketStatus, updateTicketBudget } from "@/lib/api";
 import { useDaemonEvents } from "@/lib/live";
+import { parseUSD, useBudgetsOn } from "../budgets/CapEditor";
+import { Spent } from "../budgets/Spent";
 import { timeOf } from "../chat/agents";
 import ui from "../ui/ui.module.css";
 import styles from "./kanban.module.css";
@@ -42,9 +44,10 @@ export function TicketDrawer({ id, onClose, onOpenChat, readOnly = false }: Prop
     };
   }, [id, version]);
 
-  // Read it again when it changes (status, comment, deliverable).
+  // Read it again when it changes (status, comment, deliverable), and as it
+  // spends.
   useDaemonEvents((e) => {
-    if (e.type === "tickets.changed" && e.data.id === id) setVersion((v) => v + 1);
+    if ((e.type === "tickets.changed" && e.data.id === id) || e.type === "spend.changed") setVersion((v) => v + 1);
   });
 
   async function act(action: () => Promise<unknown>) {
@@ -107,6 +110,7 @@ export function TicketDrawer({ id, onClose, onOpenChat, readOnly = false }: Prop
               </div>
             )}
             {t.blocked_by?.length ? <p className={ui.sub}>Waits for {t.blocked_by.join(", ")}</p> : null}
+            <TicketBudget ticket={t} readOnly={readOnly} onChange={(b) => act(() => updateTicketBudget(id, b))} />
             {t.description && <Section title="What is needed">{t.description}</Section>}
             {t.acceptance_criteria && <Section title="Acceptance criteria">{t.acceptance_criteria}</Section>}
             <h4 className={styles.sectionTitle}>Deliverables</h4>
@@ -166,6 +170,70 @@ export function TicketDrawer({ id, onClose, onOpenChat, readOnly = false }: Prop
         {error && <p className={ui.error}>{error}</p>}
       </div>
     </aside>
+  );
+}
+
+interface TicketBudgetProps {
+  ticket: Ticket;
+  readOnly: boolean;
+  onChange: (budget: { budget_usd: number | null }) => Promise<void>;
+}
+
+// TicketBudget shows what the ticket spent against its budget, and lets the
+// human change the budget (ADR-0013; inside a feature with a budget, at most
+// what the feature has left).
+function TicketBudget({ ticket, readOnly, onChange }: TicketBudgetProps) {
+  const budgetsOn = useBudgetsOn();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(ticket.budget_usd !== undefined ? String(ticket.budget_usd) : "");
+  const amount = parseUSD(value);
+
+  if (!budgetsOn && ticket.spent_usd === 0) return null;
+
+  const editable = budgetsOn && !readOnly && ticket.status !== "canceled";
+
+  return (
+    <p className={ui.sub}>
+      Budget: <Spent spent={ticket.spent_usd} budget={ticket.budget_usd} threshold={ticket.threshold} />
+      {budgetsOn && ticket.budget_usd === undefined && " (none)"}
+      {editable && !editing && (
+        <>
+          {" · "}
+          <button type="button" className={ui.link} onClick={() => setEditing(true)}>
+            Change
+          </button>
+        </>
+      )}
+      {editing && (
+        <>
+          {" "}
+          <input
+            id="ticket-budget-edit"
+            className={ui.input}
+            inputMode="decimal"
+            aria-label="Budget in USD"
+            placeholder="none"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />{" "}
+          <button
+            type="button"
+            className={ui.btn}
+            disabled={Number.isNaN(amount)}
+            onClick={() =>
+              void onChange({ budget_usd: amount ?? null }).then(() => {
+                setEditing(false);
+              })
+            }
+          >
+            Save
+          </button>{" "}
+          <button type="button" className={ui.link} onClick={() => setEditing(false)}>
+            Cancel
+          </button>
+        </>
+      )}
+    </p>
   );
 }
 
