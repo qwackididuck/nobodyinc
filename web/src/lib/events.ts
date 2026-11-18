@@ -17,7 +17,11 @@ export type DaemonEvent =
   | { type: "features.changed"; data: { id: string } }
   | { type: "org.changed" }
   | { type: "catalog.changed" }
-  | { type: "schedules.changed" };
+  | { type: "schedules.changed" }
+  // Agents spent (at most once a second), and budgets, holds, requests or
+  // cap proposals changed (ADR-0013).
+  | { type: "spend.changed" }
+  | { type: "budgets.changed" };
 
 export type EventType = DaemonEvent["type"];
 
@@ -33,6 +37,8 @@ const EVENT_TYPES: EventType[] = [
   "org.changed",
   "catalog.changed",
   "schedules.changed",
+  "spend.changed",
+  "budgets.changed",
 ];
 
 // connectEvents opens the stream and calls onEvent for each event, and

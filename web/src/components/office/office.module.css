@@ -253,6 +253,54 @@
   background: var(--ink-px);
 }
 
+/* The spending board: an easel with a bar chart and a dollar sign, which
+   opens the spending popup (SpendPanel). Its legs stand on the wall's
+   skirting, between the clock and the third window. */
+.easel {
+  position: absolute;
+  z-index: 3;
+  top: 8px;
+  left: 530px;
+  width: 46px;
+  height: 64px;
+  padding: 0;
+  border: 0;
+  background:
+    linear-gradient(var(--ink-px), var(--ink-px)) 8px 40px / 4px 24px no-repeat,
+    linear-gradient(var(--ink-px), var(--ink-px)) 34px 40px / 4px 24px no-repeat;
+}
+
+.easel:hover,
+.easel:focus-visible {
+  outline: none;
+  filter: brightness(1.15);
+  animation: rattle 0.32s steps(4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .easel:hover,
+  .easel:focus-visible {
+    animation: none;
+  }
+}
+
+/* The board: three rising bars, and the dollar sign in a corner. */
+.easelChart {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 42px;
+  padding: 2px 4px 0 0;
+  background:
+    linear-gradient(var(--accent), var(--accent)) 7px 24px / 7px 12px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) 17px 16px / 7px 20px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) 27px 8px / 7px 28px no-repeat,
+    var(--paper);
+  box-shadow: inset 0 0 0 3px var(--ink-px);
+  color: var(--ink-px);
+  font: bold 11px/1 monospace;
+  text-align: right;
+}
+
 .door {
   position: absolute;
   bottom: 0;

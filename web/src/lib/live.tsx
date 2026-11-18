@@ -15,18 +15,26 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import {
   type Agent,
   type Approval,
+  type BudgetProposal,
+  type BudgetRequest,
+  type BudgetSettings,
   type Feature,
   type Message,
   type ScheduleProposal,
   type ScheduleRun,
   type ScheduleView,
   type Settings,
+  type SpendSummary,
   type Team,
   type Template,
   type Ticket,
+  getBudgets,
   getSettings,
+  getSpend,
   listAgents,
   listApprovals,
+  listBudgetProposals,
+  listBudgetRequests,
   listFeatures,
   listMessages,
   listScheduleProposals,
@@ -57,6 +65,12 @@ interface Resources {
   schedules: ScheduleView[];
   scheduleRuns: ScheduleRun[]; // newest first
   scheduleProposals: ScheduleProposal[];
+  // Costs and budgets (ADR-0013): the settings, this month's spend with every
+  // gauge, the extension requests and the director's cap proposals.
+  budgets: BudgetSettings | null;
+  spend: SpendSummary | null;
+  budgetRequests: BudgetRequest[]; // newest first
+  budgetProposals: BudgetProposal[];
 }
 
 export type Resource = keyof Resources;
@@ -73,6 +87,10 @@ const EMPTY: Resources = {
   schedules: [],
   scheduleRuns: [],
   scheduleProposals: [],
+  budgets: null,
+  spend: null,
+  budgetRequests: [],
+  budgetProposals: [],
 };
 
 const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
@@ -87,6 +105,10 @@ const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
   schedules: listSchedules,
   scheduleRuns: () => listScheduleRuns("", RECENT_RUNS),
   scheduleProposals: listScheduleProposals,
+  budgets: getBudgets,
+  spend: () => getSpend(),
+  budgetRequests: listBudgetRequests,
+  budgetProposals: listBudgetProposals,
 };
 
 // What each invalidation event makes stale.
@@ -98,6 +120,11 @@ const STALE: Partial<Record<DaemonEvent["type"], Resource[]>> = {
   // A schedule's warning depends on its target's profile.
   "org.changed": ["agents", "teams", "schedules"],
   "schedules.changed": ["schedules", "scheduleRuns", "scheduleProposals"],
+  // Tickets, features and occurrences carry what they spent.
+  "spend.changed": ["spend", "tickets", "features", "scheduleRuns"],
+  // Budgets change the gauges, the tickets' and features' budgets, and the
+  // requests that hold agents.
+  "budgets.changed": ["budgets", "spend", "budgetRequests", "budgetProposals", "tickets", "features"],
 };
 
 export interface Live extends Resources {

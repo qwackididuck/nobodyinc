@@ -31,6 +31,7 @@ export function statusLabel(a: Agent): string {
     idle: "Idle",
     exited: "Exited",
     awaiting_approval: "Needs approval",
+    budget_hold: "Budget hold",
   };
   return labels[a.status];
 }

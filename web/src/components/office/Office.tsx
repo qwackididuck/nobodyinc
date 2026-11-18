@@ -31,6 +31,7 @@ import { endedAt, isEnded } from "../schedules/scheduling";
 import { ArchivesPanel } from "./ArchivesPanel";
 import { ClockPanel } from "./ClockPanel";
 import { FeatureReview } from "./FeatureReview";
+import { SpendPanel } from "./SpendPanel";
 import { TeamDialog } from "../teams/TeamDialog";
 import { addWalker, celebrate, dismantle, fileTickets, flyPlane, site, walk, works } from "./effects";
 import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
@@ -98,6 +99,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
   const [editingTeam, setEditingTeam] = useState<Team | null>(null);
   const [seenFinished, setSeenFinished] = useState<string | null>(null);
   const [clockOpen, setClockOpen] = useState(false);
+  const [spendOpen, setSpendOpen] = useState(false);
   // The occurrences already done when last rendered, and how many times the
   // clock rang: a scheduled task newly done rings it (the alarm replays when
   // the count changes). Nothing rings for what was done before the page
@@ -283,6 +285,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
       {reviewing && <FeatureReview feature={reviewing} onClose={() => setReviewing(null)} />}
       {archivesOpen && <ArchivesPanel onClose={() => setArchivesOpen(false)} onOpenChat={onSelectAgent} />}
       {clockOpen && <ClockPanel onClose={() => setClockOpen(false)} onSeen={onClockSeen} />}
+      {spendOpen && <SpendPanel onClose={() => setSpendOpen(false)} />}
       <div className={styles.wrap}>
         <div className={styles.scene} style={{ width: SCENE_WIDTH, height: Math.max(layout.height, full.height) }}>
           <Wall
@@ -291,6 +294,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
             clockUnread={clockUnread}
             rings={moving ? rings : 0}
             onOpenClock={() => setClockOpen(true)}
+            onOpenSpend={() => setSpendOpen(true)}
           />
           <div className={styles.floor} style={{ top: WALL_HEIGHT }} />
           {layout.rooms.map((room) =>
@@ -352,9 +356,11 @@ interface WallProps {
   // How many times the clock rang; 0 never animates it.
   rings: number;
   onOpenClock: () => void;
+  // The spending board (an easel with a chart) opens the spending popup.
+  onOpenSpend: () => void;
 }
 
-function Wall({ binUnread, onOpenBin, clockUnread, rings, onOpenClock }: WallProps) {
+function Wall({ binUnread, onOpenBin, clockUnread, rings, onOpenClock, onOpenSpend }: WallProps) {
   return (
     <div className={styles.wall} style={{ height: WALL_HEIGHT }}>
       {[60, 200, 620].map((x) => (
@@ -370,6 +376,11 @@ function Wall({ binUnread, onOpenBin, clockUnread, rings, onOpenClock }: WallPro
         onClick={onOpenClock}
       >
         {clockUnread > 0 && <span className={styles.binBadge}>{clockUnread}</span>}
+      </button>
+      <button type="button" className={styles.easel} aria-label="The spending board: what the agents spent, and the budgets" onClick={onOpenSpend}>
+        <span className={styles.easelChart} aria-hidden="true">
+          $
+        </span>
       </button>
       <span className={styles.door} style={{ left: DOOR.x, width: DOOR.width }} />
       <button type="button" className={styles.bin} style={{ left: BIN.x, top: BIN.y }} aria-label="Wastebasket: messages between agents" onClick={onOpenBin}>
