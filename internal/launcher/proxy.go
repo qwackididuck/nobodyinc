@@ -11,13 +11,20 @@ import (
 // <prefix>/api/..., to its daemon's /api/....
 //
 // httputil.ReverseProxy also carries WebSocket upgrades (the agents'
-// terminals) and flushes event streams as they come (/api/events). The
-// browser's Origin header goes through untouched: the project daemon checks
-// it against the same allowed origins as the launcher.
+// terminals) and flushes event streams as they come (/api/events).
+//
+// The browser's Origin and the request's Host both go through untouched: the
+// project daemon checks the Origin against its Host (server.GuardCrossSite,
+// and the terminals' WebSocket), and against the same allowed origins as the
+// launcher. Keeping the Host matters when the launcher serves the control
+// room itself (ADR-0016): the page's origin is the launcher, which SetURL
+// would otherwise replace by the daemon's own address, and every change
+// would be refused as cross-origin.
 func newProxy(target *url.URL, prefix string) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(target)
+			r.Out.Host = r.In.Host
 			r.Out.URL.Path = strings.TrimPrefix(r.In.URL.Path, prefix)
 			r.Out.URL.RawPath = strings.TrimPrefix(r.In.URL.RawPath, prefix)
 		},

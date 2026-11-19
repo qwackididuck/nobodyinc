@@ -83,12 +83,24 @@ func (tl *testLauncher) do(t *testing.T, method, path, body string, want int) []
 func (tl *testLauncher) request(t *testing.T, method, path, body string) ([]byte, int) {
 	t.Helper()
 
+	return tl.requestFrom(t, "", method, path, body)
+}
+
+// requestFrom is request sent by a page of origin (a browser's Origin
+// header), "" for none.
+func (tl *testLauncher) requestFrom(t *testing.T, origin, method, path, body string) ([]byte, int) {
+	t.Helper()
+
 	req, err := http.NewRequestWithContext(t.Context(), method, tl.url+path, strings.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
