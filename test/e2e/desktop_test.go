@@ -85,6 +85,19 @@ func TestLauncherInTheDesktopApp(t *testing.T) {
 		t.Fatalf("windows brought to the front: %q, want w1", focused)
 	}
 
+	// The control room served by the launcher changes things in the project,
+	// through the proxy, with the launcher's own origin (no allowed origin
+	// configured): the project daemon must take it as same-origin.
+	tl.directorIdle(t, shop.ID)
+
+	if data, status := tl.requestFrom(t, tl.url, http.MethodPut, "/p/"+shop.ID+"/api/project", `{"prompt":"Ship it."}`); status != http.StatusOK {
+		t.Fatalf("PUT /api/project from the launcher's page = %d: %s", status, data)
+	}
+
+	if _, status := tl.requestFrom(t, "http://evil.example", http.MethodPut, "/p/"+shop.ID+"/api/project", `{"prompt":"x"}`); status != http.StatusForbidden {
+		t.Fatalf("PUT /api/project from another site = %d, want 403", status)
+	}
+
 	// Closing w1 in the app stops the project at once: no grace period (the
 	// manual clock never moves).
 	tl.launcher.Release("w1")
