@@ -197,8 +197,8 @@ func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 		t.Parallel()
 
 		want := []string{
-			"Edit(./.nobody/**)", "Write(./.nobody/**)", "Edit(//tmp/project/.nobody/**)", "Write(//tmp/project/.nobody/**)",
-			"Edit(./.claude/**)", "Write(./.claude/**)", "Edit(//tmp/project/.claude/**)", "Write(//tmp/project/.claude/**)",
+			"Edit(./.nobody/**)", "Edit(//tmp/project/.nobody/**)",
+			"Edit(./.claude/**)", "Edit(//tmp/project/.claude/**)",
 		}
 
 		for _, address := range []string{"plain@dev", "listed@dev", "auto@dev"} {
@@ -207,6 +207,13 @@ func TestLaunchFollowsTheAgentDefinition(t *testing.T) {
 			for _, rule := range want {
 				if !slices.Contains(got.deny, rule) {
 					t.Errorf("%s: deny misses %q", address, rule)
+				}
+			}
+
+			// Edit covers Write; Claude Code warns that a Write rule never matches.
+			for _, rule := range got.deny {
+				if strings.HasPrefix(rule, "Write(") {
+					t.Errorf("%s: deny has %q: use an Edit rule", address, rule)
 				}
 			}
 

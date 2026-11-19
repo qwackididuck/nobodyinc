@@ -86,10 +86,8 @@ func TestLaunchGivesSkills(t *testing.T) {
 	}
 
 	for _, dir := range []string{staging, personal} {
-		for _, tool := range []string{"Edit", "Write"} {
-			if rule := tool + "(/" + dir + "/**)"; !slices.Contains(s.Permissions.Deny, rule) {
-				t.Errorf("deny rules lack %s: %v", rule, s.Permissions.Deny)
-			}
+		if rule := "Edit(/" + dir + "/**)"; !slices.Contains(s.Permissions.Deny, rule) {
+			t.Errorf("deny rules lack %s: %v", rule, s.Permissions.Deny)
 		}
 	}
 

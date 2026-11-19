@@ -80,7 +80,7 @@ func run(opts options) error {
 	logger := slog.New(slog.NewJSONHandler(logs, nil))
 	slog.SetDefault(logger)
 
-	claude := useLoginShellPath(logger)
+	claude := useLoginShellEnv(logger)
 	if opts.claude != "" {
 		claude = opts.claude // e.g. test/fakeclaude, to try the app for free
 	}

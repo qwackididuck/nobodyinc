@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -378,9 +379,10 @@ func allowedTools(tools []string) string {
 // the outside directories it may not write, and the skills it excludes,
 // turned off (ADR-0011).
 func agentSettings(hookPath string, d catalog.Definition, projectDir string, outside []string) (string, error) {
-	run := []map[string]any{{"hooks": []map[string]any{shellCommand(hookPath)}}}
+	hook := shellWord(hookPath)
+	run := []map[string]any{{"hooks": []map[string]any{shellCommand(hook)}}}
 
-	waiting := shellCommand(hookPath)
+	waiting := shellCommand(hook)
 	waiting["timeout"] = int(PermissionHookTimeout.Seconds())
 	permission := []map[string]any{{"hooks": []map[string]any{waiting}}}
 
@@ -395,7 +397,7 @@ func agentSettings(hookPath string, d catalog.Definition, projectDir string, out
 			"PermissionRequest": permission,
 		},
 		"permissions": map[string]any{"allow": allow, "deny": deny},
-		"statusLine":  shellCommand(hookPath + " statusline"),
+		"statusLine":  shellCommand(hook + " statusline"),
 	}
 
 	if len(d.SkillsExclude) > 0 {
@@ -414,6 +416,22 @@ func agentSettings(hookPath string, d catalog.Definition, projectDir string, out
 // runs a command.
 func shellCommand(command string) map[string]any {
 	return map[string]any{"type": "command", "command": command}
+}
+
+// safeShellWord matches what a POSIX shell reads as one word, as it is.
+var safeShellWord = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
+
+// shellWord quotes s as one word of a shell command line. Claude Code runs
+// hooks and the statusLine through /bin/sh: an unquoted path with a space,
+// such as the macOS app bundle's ("Nobody Inc.app"), would be cut in two and
+// every hook would fail with "No such file or directory". A path that needs
+// no quoting is left as it is.
+func shellWord(s string) string {
+	if safeShellWord.MatchString(s) {
+		return s
+	}
+
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // stageMu keeps agents started at the same time from staging the personal

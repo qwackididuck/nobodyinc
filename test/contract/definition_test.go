@@ -57,7 +57,9 @@ func TestDenyRulesProtectTheConfigDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	settings := `{"permissions":{"deny":["Edit(./.nobody/**)","Write(./.nobody/**)"]}}`
+	// Edit alone covers the Write tool: a Write rule "never matches" and Claude
+	// Code warns about it at every start (runtime.protectedRules).
+	settings := `{"permissions":{"deny":["Edit(./.nobody/**)"]}}`
 
 	runClaude(t, claudeRun{
 		prompt: "Use the Write tool to create two files, each containing the word x: " +
@@ -260,7 +262,7 @@ func TestDenyRulesProtectTheMainCheckout(t *testing.T) {
 
 	for _, dir := range []string{".nobody", ".claude"} {
 		abs := "/" + filepath.Join(project, dir)
-		rules = append(rules, `"Edit(`+abs+`/**)"`, `"Write(`+abs+`/**)"`)
+		rules = append(rules, `"Edit(`+abs+`/**)"`)
 	}
 
 	settings := `{"permissions":{"deny":[` + strings.Join(rules, ",") + `]}}`

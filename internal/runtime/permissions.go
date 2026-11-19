@@ -25,6 +25,10 @@ const (
 //     permissions.
 var protectedDirs = []string{".nobody", ".claude"}
 
+// Only Edit rules are written: an Edit rule covers every tool that changes
+// files, the Write tool included (checked by test/contract), and Claude Code
+// warns at every start that a Write rule "never matches".
+//
 // protectedRules are the deny rules for protectedDirs, both in the agent's
 // working directory ("./", its worktree or the project) and, by absolute path
 // ("//"), in the project's main checkout, which the daemon reads: a worktree
@@ -40,7 +44,7 @@ func protectedRules(projectDir string, outside []string) []string {
 	var rules []string
 
 	for _, dir := range protectedDirs {
-		rules = append(rules, "Edit(./"+dir+"/**)", "Write(./"+dir+"/**)")
+		rules = append(rules, "Edit(./"+dir+"/**)")
 
 		if projectDir != "" {
 			rules = append(rules, absoluteDenyRules(filepath.Join(projectDir, dir))...)
@@ -61,7 +65,7 @@ func protectedRules(projectDir string, outside []string) []string {
 func absoluteDenyRules(dir string) []string {
 	abs := "/" + filepath.ToSlash(dir)
 
-	return []string{"Edit(" + abs + "/**)", "Write(" + abs + "/**)"}
+	return []string{"Edit(" + abs + "/**)"}
 }
 
 // allowlistAllow is what the allowlist profile runs without asking, on top of

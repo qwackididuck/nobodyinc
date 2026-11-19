@@ -65,10 +65,8 @@ func TestLaunchGivesCommands(t *testing.T) {
 	}
 	decode(t, argValue(t, cmd.Args, "--settings"), &s)
 
-	for _, tool := range []string{"Edit", "Write"} {
-		if rule := tool + "(/" + personal + "/**)"; !slices.Contains(s.Permissions.Deny, rule) {
-			t.Errorf("deny rules lack %s: %v", rule, s.Permissions.Deny)
-		}
+	if rule := "Edit(/" + personal + "/**)"; !slices.Contains(s.Permissions.Deny, rule) {
+		t.Errorf("deny rules lack %s: %v", rule, s.Permissions.Deny)
 	}
 
 	// Only the personal commands agents get are staged: not the shadowed one.

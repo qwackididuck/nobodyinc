@@ -47,7 +47,9 @@ A separate Go module, `desktop/` (`github.com/qwackididuck/nobodyinc/desktop`, `
 
 ### 4. The environment of an app started from the Finder
 
-An app started from the Finder or the Dock does not get the shell's `PATH`, so `claude` (often in `~/.local/bin` or Homebrew's directory) would not be found. At start-up the app reads the `PATH` of the user's login shell (`$SHELL -ilc`, between markers so that what the shell prints is ignored) and uses it for the launcher and every project daemon. If `claude` is still not found, the app shows a native error and quits.
+An app started from the Finder or the Dock does not get the shell's environment, so `claude` (often in `~/.local/bin` or Homebrew's directory) would not be found. At start-up the app reads the `PATH` of the user's login shell (`$SHELL -ilc`, between markers so that what the shell prints is ignored) and uses it for the launcher and every project daemon. If `claude` is still not found, the app shows a native error and quits.
+
+**Amended on 2026-11-19, after the first real use: the whole environment, not only `PATH`.** Agents started from the app answered "Not logged in", and the MCP servers whose configuration refers to a variable got nothing: the app and its agents had none of the six `ANTHROPIC_*` variables of the user's shell, and Claude Code expands `${VARIABLE}` in MCP configurations from the daemon's environment (ADR-0010). The app now takes the login shell's whole environment (`env -0`), as the launcher started from a terminal already has it; the user chose this over an allowlist of authentication variables. The markers of a parent Claude Code session are left out (`runtime.CleanEnvironment`, ADR-0003 is unchanged: agents are still isolated from a parent session), and so are the variables that describe the process or the terminal (`PWD`, `TERM`, `TMPDIR`...). Consequence: every secret exported by the user's shell reaches the app, the project daemons and the agents, exactly as it does for a `claude` started in that shell; values are never logged.
 
 ### 5. Packaging
 
