@@ -127,6 +127,8 @@ func TestLaunchCommand(t *testing.T) {
 	for _, want := range []string{
 		"/bin/claude", "--setting-sources project,local", "--append-system-prompt", "--model sonnet",
 		`"command":"/opt/nobody-hook"`, `"UserPromptSubmit"`, `"PostToolUse"`, `"Stop"`, `"PermissionRequest"`, `"timeout":600`,
+		// PreToolUse for the file tools only: the knowledge base's files (ADR-0019).
+		`"PreToolUse":[{"hooks":[{"command":"/opt/nobody-hook","type":"command"}],"matcher":"Read|Edit|Write|MultiEdit|NotebookEdit"}]`,
 		`"statusLine":{"command":"/opt/nobody-hook statusline","type":"command"}`,
 		officeTools, onboardingPrompt,
 	} {

@@ -102,6 +102,10 @@ type Deps struct {
 	// Knowledge is the project's knowledge base (knowledge.go, ADR-0019);
 	// nil answers 404 on /api/kb/* but GET and PUT /api/kb.
 	Knowledge *kb.Service
+	// ToolUsed is told of an agent's PreToolUse (file tools only) and
+	// PostToolUse hooks, to follow what it does with the knowledge base's
+	// files; it must not block. Nil tells nothing.
+	ToolUsed func(address string, ev hook.Event)
 	// SessionStarted is told about an agent's SessionStart hook: it returns
 	// the context to add for a session resumed because the project opened
 	// again, and the status the agent settles in ("" for unchanged; idle or

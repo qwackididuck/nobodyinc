@@ -122,6 +122,55 @@ func TestKnowledgeBase(t *testing.T) {
 	}
 }
 
+// Agents also read and write the documentation with their own tools: their
+// hooks tell the daemon (ADR-0019, docs/knowledge.md).
+//   - a file tool's PreToolUse on a file of the knowledge folder announces
+//     kb.read (the office walks the agent to the library); one on another
+//     file announces nothing;
+//   - the PostToolUse of an edit there scans the knowledge base at once (the
+//     background scan is made too slow here to be the one seeing it).
+func TestKnowledgeFilesThroughHooks(t *testing.T) {
+	t.Parallel()
+
+	live := staffProject(t)
+	dir := live.Current().ProjectDir
+	writeTestFile(t, filepath.Join(dir, "docs", "README.md"), "# Docs\n")
+
+	d := startDaemonWithOptions(t, live, ":memory:", func(o *daemon.Options) { o.KnowledgeScanEvery = time.Hour })
+	call(t, d, http.MethodPut, "/api/kb", `{"path":"docs"}`, http.StatusOK)
+
+	stream := subscribe(t, d.Handler)
+	page := filepath.Join(dir, "docs", "kb", "auth.md")
+
+	hookEvent(t, d, "dev1@dev", "PreToolUse", "Edit", filepath.Join(dir, "main.go"))
+	hookEvent(t, d, "dev1@dev", "PreToolUse", "Edit", page)
+	waitForEvent(t, stream, "kb.read", func(data string) bool {
+		if strings.Contains(data, "main.go") {
+			t.Errorf("a file out of the knowledge base was announced: %s", data)
+		}
+
+		return strings.Contains(data, `"agent":"dev1@dev","tool":"Edit","subject":"kb/auth.md"`)
+	})
+
+	writeTestFile(t, page, "# Authentication\n")
+	hookEvent(t, d, "dev1@dev", "PostToolUse", "Edit", page)
+	waitForEvent(t, stream, "kb.changed", func(data string) bool { return strings.Contains(data, `"added":1`) })
+
+	if got := string(call(t, d, http.MethodGet, "/api/kb", "", http.StatusOK)); !strings.Contains(got, `"pages":2`) {
+		t.Errorf("GET /api/kb after the edit = %s", got)
+	}
+}
+
+// hookEvent sends a file tool's hook event for an agent, as nobody-hook
+// relays it from Claude Code.
+func hookEvent(t *testing.T, d *daemon.Daemon, agent, event, tool, file string) {
+	t.Helper()
+
+	body := `{"hook_event_name":"` + event + `","session_id":"s-hook","cwd":"/","tool_name":"` + tool +
+		`","tool_input":{"file_path":"` + file + `"}}`
+	call(t, d, http.MethodPost, "/internal/agents/"+agent+"/hook", body, http.StatusOK)
+}
+
 // askKnowledge asks dev1@dev "KB? <words>": fakeclaude answers with what its
 // kb_search tool returns (or why it could not call it).
 func askKnowledge(t *testing.T, d *daemon.Daemon, words string) string {

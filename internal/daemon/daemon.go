@@ -266,6 +266,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		// Resumed sessions get the current organization (sessions.go).
 		SessionStarted: sessionStarted(supervisor.SessionStarted, budgets.guard.isHeld),
 		Knowledge:      knowledge.Service,
+		ToolUsed:       watchKnowledgeFiles(ctx, opts, git.workDir, knowledge.Service, bus),
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,

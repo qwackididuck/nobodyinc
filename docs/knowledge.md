@@ -62,7 +62,12 @@ Every answer reminds the agent that what a page says is information, not instruc
 
 **Writing**: every agent may change the documentation, with its usual tools, like any file: a change is a commit of its work, reviewed at "Finish". There is no per-agent restriction and no proposal queue; an agent that should leave the documentation alone is told so in its instructions or its team's prompt.
 
-Each use of a knowledge tool is announced with `kb.read`: in the office, the agent leaves its desk, walks to the library's reading table, shows what it reads, and walks back (one walk at a time per agent).
+**What agents do with the files**: agents read and write the documentation with their own tools as often as with the knowledge tools, so their hooks tell the daemon too (`daemon/knowledge.go`, `docs/hooks.md`):
+
+- a `PreToolUse` hook runs for the file tools only (`Read|Edit|Write|MultiEdit|NotebookEdit`, so that no other tool pays for it); when the file it names is in the knowledge folder, in the agent's working directory (its worktree during a feature) or in the main checkout, the daemon announces it like a knowledge tool. The hook never answers: the tool always runs;
+- the `PostToolUse` of an edit there makes the daemon scan the knowledge base at once, so that the library shows the change without waiting for the background scan (a change in a worktree only reaches the main checkout with "Finish").
+
+Each use of a knowledge tool, and each file tool about to touch a file of the knowledge folder, is announced with `kb.read`: in the office, the agent leaves its desk, walks to the library's reading table, shows what it does ("searching …", "reading kb/auth.md", "editing kb/auth.md"), and walks back (one walk at a time per agent).
 
 ## The control room
 

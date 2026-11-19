@@ -48,8 +48,9 @@ const (
 	// KBChanged carries a KBChangedData: pages of the knowledge base changed,
 	// or the knowledge base itself (ADR-0019).
 	KBChanged = "kb.changed"
-	// KBRead carries a KBReadData: an agent used a knowledge tool, and the
-	// office walks it to the library.
+	// KBRead carries a KBReadData: an agent used a knowledge tool, or is
+	// about to read or change a file of the knowledge base with its own
+	// tools, and the office walks it to the library.
 	KBRead = "kb.read"
 )
 
@@ -67,9 +68,11 @@ type KBChangedData struct {
 // KBReadData is the data of a KBRead event.
 type KBReadData struct {
 	Agent string `json:"agent"`
-	// Tool is kb_search, kb_read or kb_list.
+	// Tool is kb_search, kb_read or kb_list, or a file tool (Read, Edit,
+	// Write, MultiEdit, NotebookEdit).
 	Tool string `json:"tool"`
-	// Subject is the query, the page or the folder.
+	// Subject is the query, the page or the folder; for a file tool, the
+	// file's path in the knowledge folder.
 	Subject string `json:"subject"`
 }
 

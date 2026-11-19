@@ -88,15 +88,19 @@ const READING_MS = 1600;
 const DESK_EDGE = 60;
 const TABLE_OFFSET = 150;
 
-// readLabel says what an agent reads at the library.
-function readLabel(tool: "kb_search" | "kb_read" | "kb_list", subject: string): string {
+// readLabel says what an agent does at the library: a knowledge tool, or a
+// file tool on one of its files.
+function readLabel(tool: string, subject: string): string {
   switch (tool) {
     case "kb_search":
       return `searching "${subject}"`;
-    case "kb_read":
-      return `reading ${subject}`;
     case "kb_list":
       return `browsing ${subject || "the shelves"}`;
+    case "kb_read":
+    case "Read":
+      return `reading ${subject}`;
+    default:
+      return `editing ${subject}`;
   }
 }
 

@@ -18,6 +18,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/commands"
+	"github.com/qwackididuck/nobodyinc/internal/hook"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -381,12 +382,16 @@ func allowedTools(tools []string) string {
 // the outside directories it may not write, and the skills it excludes,
 // turned off (ADR-0011).
 func agentSettings(hookPath string, d catalog.Definition, projectDir string, outside []string) (string, error) {
-	hook := shellWord(hookPath)
-	run := []map[string]any{{"hooks": []map[string]any{shellCommand(hook)}}}
+	relay := shellWord(hookPath)
+	run := []map[string]any{{"hooks": []map[string]any{shellCommand(relay)}}}
 
-	waiting := shellCommand(hook)
+	waiting := shellCommand(relay)
 	waiting["timeout"] = int(PermissionHookTimeout.Seconds())
 	permission := []map[string]any{{"hooks": []map[string]any{waiting}}}
+
+	// PreToolUse only for the file tools: the daemon watches the knowledge
+	// base's files (ADR-0019), and no other tool pays for the round trip.
+	fileTools := []map[string]any{{"matcher": hook.FileTools, "hooks": []map[string]any{shellCommand(relay)}}}
 
 	allow, deny := permissionRules(d.Permissions, projectDir, outside)
 
@@ -394,12 +399,13 @@ func agentSettings(hookPath string, d catalog.Definition, projectDir string, out
 		"hooks": map[string]any{
 			"SessionStart":      run,
 			"UserPromptSubmit":  run,
+			"PreToolUse":        fileTools,
 			"PostToolUse":       run,
 			"Stop":              run,
 			"PermissionRequest": permission,
 		},
 		"permissions": map[string]any{"allow": allow, "deny": deny},
-		"statusLine":  shellCommand(hook + " statusline"),
+		"statusLine":  shellCommand(relay + " statusline"),
 	}
 
 	if len(d.SkillsExclude) > 0 {

@@ -3,9 +3,13 @@ package daemon
 import (
 	"context"
 	"errors"
+	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/events"
+	"github.com/qwackididuck/nobodyinc/internal/hook"
 	"github.com/qwackididuck/nobodyinc/internal/kb"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 )
@@ -82,6 +86,106 @@ func startKnowledgeScans(ctx context.Context, opts Options, knowledge *kb.Servic
 	}()
 
 	return stop, done
+}
+
+// watchKnowledgeFiles follows what agents do with the knowledge base's
+// files through their own tools (the hooks, server.Deps.ToolUsed): agents
+// read and write the documentation with Read and Edit as often as with the
+// knowledge tools.
+//   - PreToolUse of a file tool on a file of the knowledge folder (in the
+//     agent's working directory, its worktree during a feature, or in the
+//     main checkout): the control room hears it like a knowledge tool
+//     (events.KBRead), and the office walks the agent to the library;
+//   - PostToolUse of a tool that changed such a file: the knowledge base is
+//     scanned at once, so that the library shows the change without waiting
+//     for the next background scan (in the main checkout only: a worktree's
+//     changes reach it with "Finish").
+func watchKnowledgeFiles(
+	ctx context.Context, opts Options, workDir func(string) string, knowledge *kb.Service, bus *events.Bus,
+) func(string, hook.Event) {
+	ctx = context.WithoutCancel(ctx)
+
+	return func(address string, ev hook.Event) {
+		o := opts.Org.Current()
+
+		declared := o.KnowledgePath()
+		if declared == "" {
+			return
+		}
+
+		rel, ok := knowledgeFile(declared, ev, workDir(address), o.ProjectDir)
+		if !ok {
+			return
+		}
+
+		switch ev.Name {
+		case hook.EventPreToolUse:
+			bus.Publish(events.Event{Type: events.KBRead, Data: events.KBReadData{Agent: address, Tool: ev.ToolName, Subject: rel}})
+		case hook.EventPostToolUse:
+			if slices.Contains(hook.WritingTools, ev.ToolName) {
+				// The hook must not wait for the scan.
+				go func() {
+					if _, err := knowledge.Refresh(ctx); err != nil && !errors.Is(err, kb.ErrNone) {
+						opts.Logger.Debug("scan the knowledge base after an edit", "err", err)
+					}
+				}()
+			}
+		}
+	}
+}
+
+// knowledgeFile tells whether the file a hook event's tool names is in the
+// knowledge folder declared under one of roots (the agent's working
+// directory, the main checkout), and returns its path in that folder. A
+// relative path is the tool's, from the event's working directory. Hidden
+// files are not part of the knowledge base.
+func knowledgeFile(declared string, ev hook.Event, roots ...string) (string, bool) {
+	p := ev.FilePath()
+	if p == "" {
+		return "", false
+	}
+
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(ev.Cwd, p)
+	}
+
+	p = filepath.Clean(p)
+
+	for _, root := range rootsWithLinks(roots) {
+		rel, err := filepath.Rel(filepath.Join(root, filepath.FromSlash(declared)), p)
+		if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			continue
+		}
+
+		rel = filepath.ToSlash(rel)
+		if slices.ContainsFunc(strings.Split(rel, "/"), func(seg string) bool { return strings.HasPrefix(seg, ".") }) {
+			return "", false
+		}
+
+		return rel, true
+	}
+
+	return "", false
+}
+
+// rootsWithLinks is roots, each also with its symbolic links followed:
+// Claude Code may name a file through either (on macOS, /var is a link to
+// /private/var).
+func rootsWithLinks(roots []string) []string {
+	var all []string
+
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+
+		all = append(all, root)
+		if resolved, err := filepath.EvalSymlinks(root); err == nil && resolved != root {
+			all = append(all, resolved)
+		}
+	}
+
+	return all
 }
 
 // announceKnowledgeRead tells the control room an agent used a knowledge

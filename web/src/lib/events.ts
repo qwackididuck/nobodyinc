@@ -24,10 +24,11 @@ export type DaemonEvent =
   | { type: "spend.changed" }
   | { type: "budgets.changed" }
   // Pages of the knowledge base changed, or the knowledge base itself
-  // (reset: set up, moved, removed), and an agent used a knowledge tool
-  // (ADR-0019).
+  // (reset: set up, moved, removed), and an agent used a knowledge tool, or
+  // is about to read or change one of its files with a file tool (Read,
+  // Edit, Write, MultiEdit, NotebookEdit) (ADR-0019).
   | { type: "kb.changed"; data: { pages: number; added: number; removed: number; changed: number; reset: boolean } }
-  | { type: "kb.read"; data: { agent: string; tool: "kb_search" | "kb_read" | "kb_list"; subject: string } };
+  | { type: "kb.read"; data: { agent: string; tool: string; subject: string } };
 
 export type EventType = DaemonEvent["type"];
 

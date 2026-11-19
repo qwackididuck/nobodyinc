@@ -749,7 +749,7 @@ paths:
         - `spend.changed`: `{}` (agents spent; sent at most once a second, ADR-0013)
         - `budgets.changed`: `{}` (the budgets file, a ticket's or feature's budget, a hold, a budget request or a cap proposal changed)
         - `kb.changed`: KnowledgeChangedEvent (pages of the knowledge base changed, or the knowledge base itself, ADR-0019)
-        - `kb.read`: KnowledgeReadEvent (an agent used a knowledge tool: the office walks it to the library)
+        - `kb.read`: KnowledgeReadEvent (an agent used a knowledge tool, or is about to read or change a file of the knowledge base: the office walks it to the library)
       responses:
         "200":
           description: The event stream, until the client or the daemon closes it
@@ -3412,10 +3412,13 @@ components:
           type: string
         tool:
           type: string
-          enum: [kb_search, kb_read, kb_list]
+          description: |
+            A knowledge tool, or a file tool whose PreToolUse hook names a file
+            of the knowledge folder (the agent's worktree or the main checkout).
+          enum: [kb_search, kb_read, kb_list, Read, Edit, Write, MultiEdit, NotebookEdit]
         subject:
           type: string
-          description: The query, the page or the folder.
+          description: The query, the page or the folder; for a file tool, the file's path in the knowledge folder.
 
     NewCommandName:
       type: string

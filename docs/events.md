@@ -47,7 +47,7 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 | `spend.changed` | `{}` | agents spent: a statusLine report or a fork's cost became a spend record; sent at most once a second (`budgets.md`) | `daemon/spend.go` |
 | `budgets.changed` | `{}` | `.nobody/budgets.yaml` is written; a budget extension request is opened, justified, passed on, decided or closed; a cap proposal is made or decided (`budgets.md`) | `daemon/budgets.go`, `daemon/budgetoffice.go` |
 | `kb.changed` | `{pages, added, removed, changed, reset}` | a scan of the knowledge base found pages added, removed or changed (by an agent or by hand; scans run every few seconds and when it is read), or the knowledge base itself was set up, moved or removed (`reset`: reload without announcing new pages; `knowledge.md`) | `daemon/knowledge.go` |
-| `kb.read` | `{agent, tool, subject}` | an agent used a knowledge tool (`kb_search`, `kb_read`, `kb_list`): the office walks it to the library (`knowledge.md`) | `daemon/knowledge.go`, from `officemcp` |
+| `kb.read` | `{agent, tool, subject}` | an agent used a knowledge tool (`kb_search`, `kb_read`, `kb_list`), or a file tool's `PreToolUse` names a file of the knowledge folder (`tool`: `Read`, `Edit`…; `subject`: the file's path in the folder): the office walks it to the library (`knowledge.md`) | `daemon/knowledge.go`, from `officemcp` and the hooks |
 
 The wiring is in `internal/daemon/daemon.go` (`announce` and `New`); the bus is `internal/events`.
 
