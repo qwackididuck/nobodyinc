@@ -11,8 +11,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { attachURL, openDesktopWindow } from "./launcher";
 
 // projectURL is the address of a project's window ("" for the projects page).
-export function projectURL(id: string | null): string {
-  return id ? `/?project=${encodeURIComponent(id)}` : "/";
+// setup marks the first opening of a project the launcher has just set up:
+// the control room then offers to import its subagents (ADR-0018).
+export function projectURL(id: string | null, setup = false): string {
+  if (!id) return "/";
+  return `/?project=${encodeURIComponent(id)}${setup ? "&setup=1" : ""}`;
 }
 
 const WINDOW_KEY = "nobody.window";

@@ -141,6 +141,24 @@ func TestHas(t *testing.T) {
 	}
 }
 
+func TestKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, input := range []string{
+		"---\nname: x\ndescription: d\n# comment\ntools: Read\nhooks:\n  Stop: []\n---\n",
+		"---\nname: x\ndescription: not: valid\n# comment\ntools: Read\nhooks:\n  Stop: []\n---\n",
+	} {
+		f, err := Parse([]byte(input))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := f.Keys(); len(got) != 3 || got[0] != "name" || got[1] != "tools" || got[2] != "hooks" {
+			t.Errorf("Keys of %q = %v, want [name tools hooks]", input, got)
+		}
+	}
+}
+
 func TestValue(t *testing.T) {
 	t.Parallel()
 

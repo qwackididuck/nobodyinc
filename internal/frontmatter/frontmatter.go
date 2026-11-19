@@ -91,6 +91,32 @@ func (f File) Has(key string) bool {
 	return false
 }
 
+// Keys returns the header's other keys (the description left out), in
+// order.
+func (f File) Keys() []string {
+	var keys []string
+
+	if f.looseOther != "" {
+		for line := range strings.SplitSeq(f.looseOther, "\n") {
+			if line == "" || strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") || strings.HasPrefix(line, "#") {
+				continue
+			}
+
+			if key, _, ok := strings.Cut(line, ":"); ok {
+				keys = append(keys, strings.TrimSpace(key))
+			}
+		}
+
+		return keys
+	}
+
+	for i := 0; i+1 < len(f.other); i += 2 {
+		keys = append(keys, f.other[i].Value)
+	}
+
+	return keys
+}
+
 // Value returns the value of a header key (other than the description), ""
 // when it is absent: a scalar as it is, a list as its items joined with
 // ", " (in brackets when written in brackets: "argument-hint: [pr]" is a

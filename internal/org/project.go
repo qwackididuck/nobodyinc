@@ -131,7 +131,8 @@ func WriteProject(o *Org) error {
 }
 
 // WriteOrgFile validates the organization and writes .nobody/org.yaml alone:
-// teams (id, goal, block list). Agent files and prompts are untouched.
+// teams (id, goal, block list) and the dismissed subagents. Agent files and
+// prompts are untouched.
 func WriteOrgFile(o *Org) error {
 	if err := o.Validate(); err != nil {
 		return err

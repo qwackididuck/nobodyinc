@@ -100,7 +100,7 @@ export function Lobby() {
       </div>
 
       {browsing && (
-        <FolderBrowser mode={browsing} onClose={() => setBrowsing(null)} onOpened={(p) => window.location.assign(projectURL(p.id))} />
+        <FolderBrowser mode={browsing} onClose={() => setBrowsing(null)} onOpened={(p) => window.location.assign(projectURL(p.id, p.created))} />
       )}
       {deleting && (
         <DeleteProject

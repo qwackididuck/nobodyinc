@@ -556,3 +556,101 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ---- Subagents import (SubagentImport.tsx, ADR-0018) -------------------------- */
+
+.importer {
+  display: grid;
+  gap: 14px;
+}
+
+.importer h2 {
+  margin: 0;
+}
+
+/* The notice at the top of the Staff screen. */
+.importNotice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 2px dashed var(--accent);
+  background: var(--panel);
+  font-size: 13px;
+}
+
+.importNotice strong {
+  color: var(--accent);
+}
+
+.importRows {
+  display: grid;
+  gap: 8px;
+}
+
+.importRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 12px;
+  border: 2px solid var(--line);
+  background: var(--bg);
+}
+
+.importRow[data-choice="join"] {
+  border-color: var(--accent);
+}
+
+.importRow[data-choice="skip"] {
+  opacity: 0.6;
+}
+
+.importWho {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.importDesc {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.importTeam {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.importLost {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.importBroken summary {
+  cursor: pointer;
+}
+
+.importActions {
+  display: flex;
+  justify-content: end;
+  align-items: center;
+  gap: 14px;
+}
+
+@media (max-width: 640px) {
+  .importRow,
+  .importTeam {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

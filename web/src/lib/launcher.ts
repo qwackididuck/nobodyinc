@@ -19,6 +19,8 @@ export interface Project {
   held: boolean;
   state: DaemonState;
   last_opened?: string;
+  // Answer of openProject only: the folder has just been set up.
+  created?: boolean;
 }
 
 export interface Directory {

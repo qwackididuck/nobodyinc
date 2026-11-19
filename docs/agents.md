@@ -171,6 +171,20 @@ Agents run in the project (or their team's worktree during a feature) with `--se
 
 Your own personal skills and commands reach them too, through the daemon (see "Skills" and "Commands").
 
+## Importing the project's subagents
+
+A project may already have Claude Code subagents in `.claude/agents/`. Agents get them as subagents anyway; importing one also makes it an agent of a team (ADR-0018). The project's subagents are read from its main checkout at each request (`internal/subagents`), each with a status: **pending** (offered), **imported** (an agent has `from: subagent:<name>`) or **ignored** (its name is in `ignored_subagents:` of `org.yaml`, committed). A subagent's identity is its `name`, not its file name; a file that cannot be read is shown with its error.
+
+- **When**: the first time a project is opened right after the launcher set it up (`POST /api/projects` answers `created: true`, and the control room opens it with `setup=1`, read once), the import window opens by itself if subagents are pending. Afterwards, pending subagents show as a count on the STAFF tab and a notice at the top of the Staff screen, whose "Review" opens the window. "Later" writes nothing.
+- **The window**: one row per pending subagent, with a selector: an existing team, "+ New team…" (id and goal on the row; the new team then appears in the other rows), or "Don't import". A row joining a team shows the agent's name (suggested from the subagent's) and its profile. A row left on "Choose…" stays pending. "Create" applies everything at once.
+- **Conversion**: `description` gives the role (its first sentence) and the expertise (shortened); the body becomes the instructions; `model` stays (`inherit` is Claude Code's default); `permissionMode: acceptEdits` gives `allowlist`, `auto` gives `auto` (`default` with Haiku), anything else `default`; `disallowedTools` becomes `permissions.deny`; `skills` stays preloaded. A subagent's `tools` is **not** carried over: for a subagent it restricts, for an agent it allows without asking; the window shows it, to set by hand in Staff. Other keys (`mcpServers`, `hooks`, `maxTurns`…) are listed as not carried over.
+- **All or nothing**: every choice is checked against the organization with all of them (names, teams, conflicts with existing agents or with each other, profiles); one refusal writes nothing and lists every refusal. Then `org.yaml` is written once, the agent files, and the organization reloaded once: each new agent starts with a fresh session, as a recruit, and costs its onboarding turn. `.claude/agents/` is never touched.
+
+| Action | Endpoint |
+|---|---|
+| List, with status and conversion | `GET /api/subagents` |
+| Import, create teams, dismiss | `POST /api/subagents/import` with `{"teams":[{id, goal}], "agents":[{subagent, team, name, profile}], "ignore":[name]}` |
+
 ## MCP servers
 
 Every agent gets every MCP server of Claude Code's three scopes (ADR-0010), read by the daemon from Claude Code's own files, so that a server is declared once, for you and for the agents:

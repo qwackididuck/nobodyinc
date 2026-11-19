@@ -731,6 +731,48 @@ export function copyCommandToProject(name: string): Promise<CommandList> {
   return postJSON<CommandList>(`/api/commands/personal/${encodeURIComponent(name)}/copy-to-project`, {});
 }
 
+// --- Subagents (ADR-0018): the project's Claude Code subagents, imported as agents ---
+
+export type SubagentStatus = "pending" | "imported" | "ignored";
+
+export interface Subagent {
+  // Its name, its identity for Claude Code; "" when its file has none.
+  name: string;
+  // Its file, relative to the project.
+  file: string;
+  description: string;
+  status: SubagentStatus;
+  // Imported only: the agent imported from it.
+  imported_as?: string;
+  // The agent name suggested; absent when none could be made.
+  agent_name?: string;
+  // The agent it would become.
+  agent?: AgentDefinition;
+  // Its tools list, not carried over: for a subagent it restricts, for an
+  // agent it would allow without asking.
+  dropped_tools?: string;
+  // Header keys not carried over (mcpServers, hooks, maxTurns...).
+  ignored_keys?: string[];
+  // Why it cannot be imported.
+  error?: string;
+}
+
+export interface SubagentImport {
+  teams: { id: string; goal: string }[];
+  agents: { subagent: string; team: string; name: string; profile?: PermissionProfile }[];
+  ignore: string[];
+}
+
+export async function listSubagents(): Promise<Subagent[]> {
+  return (await getJSON<{ subagents: Subagent[] }>("/api/subagents")).subagents;
+}
+
+// importSubagents creates the teams, imports the subagents as agents (they
+// start at once) and dismisses the others: all or nothing.
+export async function importSubagents(choice: SubagentImport): Promise<Subagent[]> {
+  return (await postJSON<{ subagents: Subagent[] }>("/api/subagents/import", choice)).subagents;
+}
+
 export async function sendMessage(draft: HumanDraft): Promise<Message> {
   const res = await daemonFetch("/api/messages", {
     method: "POST",

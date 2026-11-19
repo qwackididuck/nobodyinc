@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { LiveProvider, useLive } from "@/lib/live";
 import { Lobby } from "./projects/Lobby";
@@ -14,6 +14,7 @@ import { Office } from "./office/Office";
 import { ScheduleNav, type ScheduleFocus } from "./schedules/nav";
 import { Schedules } from "./schedules/Schedules";
 import { StaffScreen } from "./staff/StaffScreen";
+import { pendingSubagents, SubagentImport } from "./staff/SubagentImport";
 import { Settings } from "./settings/Settings";
 import styles from "./shell/shell.module.css";
 import { type Tab, TopBar } from "./shell/TopBar";
@@ -41,7 +42,7 @@ export function App() {
   return (
     <ProjectWindow project={project} takeover={params.get("takeover") === "1"}>
       <LiveProvider>
-        <ControlRoom />
+        <ControlRoom setup={params.get("setup") === "1"} />
       </LiveProvider>
     </ProjectWindow>
   );
@@ -52,9 +53,25 @@ function neverChanges(): () => void {
   return () => {};
 }
 
-function ControlRoom() {
-  const { settings, messages } = useLive();
+// ControlRoom is one project's control room. setup is true on the first
+// opening of a project the launcher has just set up: the window importing
+// its subagents then opens by itself, if it has any (ADR-0018).
+function ControlRoom({ setup }: { setup: boolean }) {
+  const { settings, messages, subagents, loaded } = useLive();
   const [tab, setTab] = useState<Tab>("office");
+  const [importing, setImporting] = useState(false);
+  // Closing the window ends the first opening's offer: afterwards, the STAFF
+  // badge and the Staff screen's notice lead to it.
+  const [setupDone, setSetupDone] = useState(false);
+  const showImport = importing || (setup && !setupDone && loaded.subagents === true && pendingSubagents(subagents).length > 0);
+
+  // setup=1 is read once: a reload must not offer the import again.
+  useEffect(() => {
+    if (!setup) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("setup");
+    window.history.replaceState(null, "", url);
+  }, [setup]);
   const [target, setTarget] = useState<ChatTarget | null>(null);
   // What the Schedules tab shows first when opened from elsewhere; the tab
   // is keyed by it, so each new focus starts over.
@@ -85,9 +102,17 @@ function ControlRoom() {
         )}
         {tab === "kanban" && <Kanban onOpenChat={openChat} />}
         {tab === "schedules" && <Schedules key={focus.seq} focus={focus.value} onOpenChat={openChat} />}
-        {tab === "staff" && <StaffScreen onOpenChat={openChat} />}
+        {tab === "staff" && <StaffScreen onOpenChat={openChat} onImportSubagents={() => setImporting(true)} />}
         {tab === "settings" && <Settings />}
       </main>
+      {showImport && (
+        <SubagentImport
+          onClose={() => {
+            setImporting(false);
+            setSetupDone(true);
+          }}
+        />
+      )}
     </div>
     </ScheduleNav>
   );

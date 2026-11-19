@@ -3,6 +3,7 @@
 import { useLive } from "@/lib/live";
 import { ProjectMenu } from "../projects/ProjectMenu";
 import { attention } from "../schedules/scheduling";
+import { pendingSubagents } from "../staff/SubagentImport";
 import styles from "./shell.module.css";
 
 export const TABS = [
@@ -23,9 +24,13 @@ interface Props {
 // TopBar shows the project (and its menu, to switch project), the tabs and
 // whether the live connection to the project's daemon is up.
 export function TopBar({ tab, onTab }: Props) {
-  const { settings, connected, schedules, scheduleProposals } = useLive();
-  // Schedules in alert and the director's proposals wait for the human.
-  const badges: Partial<Record<Tab, number>> = { schedules: attention(schedules, scheduleProposals) };
+  const { settings, connected, schedules, scheduleProposals, subagents } = useLive();
+  // Schedules in alert and the director's proposals wait for the human; so
+  // do the project's subagents not imported nor dismissed yet (ADR-0018).
+  const badges: Partial<Record<Tab, number>> = {
+    schedules: attention(schedules, scheduleProposals),
+    staff: pendingSubagents(subagents).length,
+  };
 
   return (
     <header className={styles.topbar}>

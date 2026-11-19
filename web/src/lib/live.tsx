@@ -25,6 +25,7 @@ import {
   type ScheduleView,
   type Settings,
   type SpendSummary,
+  type Subagent,
   type Team,
   type Template,
   type Ticket,
@@ -40,6 +41,7 @@ import {
   listScheduleProposals,
   listScheduleRuns,
   listSchedules,
+  listSubagents,
   listTeams,
   listTemplates,
   listTickets,
@@ -71,6 +73,8 @@ interface Resources {
   spend: SpendSummary | null;
   budgetRequests: BudgetRequest[]; // newest first
   budgetProposals: BudgetProposal[];
+  // The project's Claude Code subagents and where each stands (ADR-0018).
+  subagents: Subagent[];
 }
 
 export type Resource = keyof Resources;
@@ -91,6 +95,7 @@ const EMPTY: Resources = {
   spend: null,
   budgetRequests: [],
   budgetProposals: [],
+  subagents: [],
 };
 
 const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
@@ -109,6 +114,7 @@ const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
   spend: () => getSpend(),
   budgetRequests: listBudgetRequests,
   budgetProposals: listBudgetProposals,
+  subagents: listSubagents,
 };
 
 // What each invalidation event makes stale.
@@ -117,8 +123,9 @@ const STALE: Partial<Record<DaemonEvent["type"], Resource[]>> = {
   "tickets.changed": ["tickets"],
   "features.changed": ["features"],
   "catalog.changed": ["templates"],
-  // A schedule's warning depends on its target's profile.
-  "org.changed": ["agents", "teams", "schedules"],
+  // A schedule's warning depends on its target's profile; a subagent's
+  // status on the agents and org.yaml.
+  "org.changed": ["agents", "teams", "schedules", "subagents"],
   "schedules.changed": ["schedules", "scheduleRuns", "scheduleProposals"],
   // Tickets, features and occurrences carry what they spent.
   "spend.changed": ["spend", "tickets", "features", "scheduleRuns"],
