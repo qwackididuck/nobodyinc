@@ -64,12 +64,16 @@ type Options struct {
 	// MCPConfigDir holds each agent's MCP configuration, readable by the user
 	// only (~/.nobody/projects/<id>/mcp, ADR-0010).
 	MCPConfigDir string
-	// SkillsStagingDir links the user's personal skills for the agents
-	// (~/.nobody/projects/<id>/skills, ADR-0011); "" gives them none.
+	// SkillsStagingDir links the user's personal skills and commands for the
+	// agents (~/.nobody/projects/<id>/skills, ADR-0011, ADR-0017); "" gives
+	// them none.
 	SkillsStagingDir string
 	// PersonalSkillsDir is where the user's personal skills live
 	// (skills.PersonalDir); agents may read it, not write it.
 	PersonalSkillsDir string
+	// PersonalCommandsDir is where the user's personal commands live
+	// (commands.PersonalDir); agents may read it, not write it.
+	PersonalCommandsDir string
 	// ClaudePath and HookPath are the executables run for each agent.
 	ClaudePath string
 	HookPath   string

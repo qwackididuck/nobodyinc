@@ -10,8 +10,7 @@ import (
 )
 
 // How commands reach an agent, with the flags agents are started with.
-// Checked on 2026-11-19 with Claude Code 2.1.328 (roadmap, "les commandes
-// dans Settings"):
+// Checked on 2026-11-19 with Claude Code 2.1.328 (ADR-0017):
 //   - the project's commands (.claude/commands) are loaded, a command in a
 //     sub-directory being named "<dir>:<name>";
 //   - the user's personal commands (<config dir>/commands) are not loaded

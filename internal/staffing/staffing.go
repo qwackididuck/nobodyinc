@@ -324,21 +324,22 @@ func sharedPrompt(o *org.Org, m org.Member) string {
 
 // changedAgents lists the agents added, removed or changed between two
 // snapshots of the organization, a change of their shared prompt, of the
-// MCP servers or of the skills included.
+// MCP servers, of the skills or of the commands included.
 func changedAgents(before, after *org.Org) []string {
 	var changed []string
 
-	// Every agent gets every MCP server and every skill: when they change,
+	// Every agent gets every MCP server, skill and command: when they change,
 	// every agent is brought in line, resuming its session (MCP servers are
-	// launch flags, skills are read at start-up, and preloaded skills come
-	// from the SessionStart hook, which runs on resume too). A skill whose
-	// content changed counts (skills.Skill.Digest).
-	newServers := !reflect.DeepEqual(before.MCP, after.MCP)
-	newSkills := !reflect.DeepEqual(before.Skills.Skills, after.Skills.Skills)
+	// launch flags, skills and commands are read at start-up, and preloaded
+	// skills come from the SessionStart hook, which runs on resume too). A
+	// skill or command whose content changed counts (its Digest).
+	everyone := !reflect.DeepEqual(before.MCP, after.MCP) ||
+		!reflect.DeepEqual(before.Skills.Skills, after.Skills.Skills) ||
+		!reflect.DeepEqual(before.Commands.Commands, after.Commands.Commands)
 
 	for _, m := range after.Members() {
 		old, ok := before.Member(m.Address)
-		if !ok || newServers || newSkills || !reflect.DeepEqual(old.Agent, m.Agent) || sharedPrompt(before, old) != sharedPrompt(after, m) {
+		if !ok || everyone || !reflect.DeepEqual(old.Agent, m.Agent) || sharedPrompt(before, old) != sharedPrompt(after, m) {
 			changed = append(changed, m.Address)
 		}
 	}

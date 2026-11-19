@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/commands"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
@@ -61,6 +62,10 @@ type Org struct {
 	// be read, for a warning. Claude Code's built-in skills are not part of
 	// the organization: the daemon discovers them (skills.Builtin).
 	Skills skills.Found `yaml:"-"`
+	// Commands are the project's commands and the user's personal commands
+	// (ADR-0017, internal/commands); Found.Ignored lists those that could not
+	// be read, for a warning.
+	Commands commands.Found `yaml:"-"`
 	// God is the director, the agent who talks with the human and leads the
 	// teams; nil when the project has none (see director.go).
 	God *Agent `yaml:"-"`

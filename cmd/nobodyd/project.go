@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/commands"
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/projects"
@@ -160,7 +161,8 @@ func loadOrganization(logger *slog.Logger, projectDir string) (*org.Org, error) 
 }
 
 // warnAbout logs what the human should fix in the project's configuration:
-// an untrusted project, former channels, MCP servers and skills left out.
+// an untrusted project, former channels, MCP servers, skills and commands
+// left out.
 func warnAbout(logger *slog.Logger, organization *org.Org) {
 	warnIfUntrusted(logger, organization.ProjectDir)
 	warnIfChannels(logger, organization)
@@ -171,6 +173,10 @@ func warnAbout(logger *slog.Logger, organization *org.Org) {
 
 	for _, ignored := range organization.Skills.Ignored {
 		logger.Warn("skill left out", "skill", ignored)
+	}
+
+	for _, ignored := range organization.Commands.Ignored {
+		logger.Warn("command left out", "command", ignored)
 	}
 }
 
@@ -220,6 +226,11 @@ func daemonOptions(logger *slog.Logger, opts projectOptions, organization *org.O
 		return daemon.Options{}, err
 	}
 
+	personalCommands, err := commands.PersonalDir()
+	if err != nil {
+		return daemon.Options{}, err
+	}
+
 	return daemon.Options{
 		Version:      version,
 		Logger:       logger,
@@ -233,14 +244,16 @@ func daemonOptions(logger *slog.Logger, opts projectOptions, organization *org.O
 		DBPath:       filepath.Join(state, "nobody.db"),
 		WorktreesDir: filepath.Join(state, "worktrees"),
 		MCPConfigDir: filepath.Join(state, "mcp"),
-		// ADR-0011: personal skills, linked for the agents.
-		SkillsStagingDir:  filepath.Join(state, "skills"),
-		PersonalSkillsDir: personalSkills,
-		ClaudePath:        opts.claudePath,
-		HookPath:          hookPath,
-		DaemonURL:         "http://" + addr,
-		UserClaudeMD:      userClaudeMD(),
-		Origins:           splitOrigins(opts.origins),
+		// ADR-0011, ADR-0017: personal skills and commands, linked for the
+		// agents.
+		SkillsStagingDir:    filepath.Join(state, "skills"),
+		PersonalSkillsDir:   personalSkills,
+		PersonalCommandsDir: personalCommands,
+		ClaudePath:          opts.claudePath,
+		HookPath:            hookPath,
+		DaemonURL:           "http://" + addr,
+		UserClaudeMD:        userClaudeMD(),
+		Origins:             splitOrigins(opts.origins),
 	}, nil
 }
 

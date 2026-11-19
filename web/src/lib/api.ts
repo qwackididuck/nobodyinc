@@ -665,6 +665,72 @@ export function copySkillToProject(name: string): Promise<SkillList> {
   return postJSON<SkillList>(`/api/skills/personal/${encodeURIComponent(name)}/copy-to-project`, {});
 }
 
+// --- Commands (ADR-0017): every agent gets every command ---
+
+// Where a command lives: the project's .claude/commands (committed), or the
+// user's personal commands (all projects).
+export type CommandScope = "project" | "personal";
+
+export interface Command {
+  // How it is invoked, without the "/": front/test.md is front:test.
+  name: string;
+  // Empty when the header has none.
+  description: string;
+  argument_hint?: string;
+  // Tools the command lets run without asking while it runs, outside the
+  // approval queue.
+  allowed_tools?: string;
+  scope: CommandScope;
+  // Project commands only: committed and unchanged. Agents working on a
+  // feature only see committed commands.
+  committed?: boolean;
+  // Personal commands only: a project command has the same name and wins.
+  shadowed?: boolean;
+}
+
+export interface CommandList {
+  commands: Command[];
+}
+
+// CommandDetail is a command to edit; other_keys is the rest of its header
+// (argument-hint, allowed-tools, model...), read-only and kept when saving.
+export interface CommandDetail {
+  name: string;
+  scope: CommandScope;
+  description: string;
+  body: string;
+  other_keys: string;
+  allowed_tools?: string;
+}
+
+// The name of a new command: segments of lowercase letters, digits and
+// hyphens, ":" for a sub-directory.
+export const COMMAND_NAME_PATTERN = "[a-z0-9][a-z0-9\\-]{0,63}(:[a-z0-9][a-z0-9\\-]{0,63})*";
+
+export function listCommands(): Promise<CommandList> {
+  return getJSON<CommandList>("/api/commands");
+}
+
+export function getCommand(scope: CommandScope, name: string): Promise<CommandDetail> {
+  return getJSON<CommandDetail>(`/api/commands/${scope}/${encodeURIComponent(name)}`);
+}
+
+// saveCommand creates or changes a command's file; agents restart once idle.
+export function saveCommand(scope: CommandScope, name: string, description: string, body: string): Promise<CommandList> {
+  return sendJSON<CommandList>("PUT", `/api/commands/${scope}/${encodeURIComponent(name)}`, { description, body });
+}
+
+// deleteCommand removes the command's file.
+export function deleteCommand(scope: CommandScope, name: string): Promise<void> {
+  return send("DELETE", `/api/commands/${scope}/${encodeURIComponent(name)}`);
+}
+
+// copyCommandToProject copies a personal command into the project, where it
+// then shadows the personal one.
+export function copyCommandToProject(name: string): Promise<CommandList> {
+  return postJSON<CommandList>(`/api/commands/personal/${encodeURIComponent(name)}/copy-to-project`, {});
+}
+
 export async function sendMessage(draft: HumanDraft): Promise<Message> {
   const res = await daemonFetch("/api/messages", {
     method: "POST",

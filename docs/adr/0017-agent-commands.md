@@ -1,6 +1,6 @@
 # ADR-0017 — Agent commands: the project's and the user's, shown and edited in the control room
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-11-19
 - Revisits, in part: ADR-0003 (the user's personal commands reach the agents, as their personal skills do since ADR-0011; their settings, hooks and plugins still do not)
 - Follows: ADR-0011 (same staging directory, same rules for the project and personal scopes)
