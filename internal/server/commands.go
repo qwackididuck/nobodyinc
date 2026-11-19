@@ -15,12 +15,14 @@ import (
 // warns about (allowed tools, not committed, shadowed), and creates,
 // changes, deletes and copies them (staffing.Service).
 
-// routeClaudeConfig mounts the endpoints of what every agent gets from
-// Claude Code's own configuration: MCP servers, skills and commands.
+// routeClaudeConfig mounts the endpoints of what Nobody Inc reads from
+// Claude Code's own configuration: the MCP servers, skills and commands
+// every agent gets, and the project's subagents to import.
 func (s *server) routeClaudeConfig(mux *http.ServeMux) {
 	s.routeMCP(mux)
 	s.routeSkills(mux)
 	s.routeCommands(mux)
+	s.routeSubagents(mux)
 }
 
 // routeCommands mounts the commands endpoints.

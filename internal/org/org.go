@@ -45,6 +45,10 @@ type Org struct {
 	// .nobody/.
 	ProjectDir string `yaml:"-"`
 	Teams      []Team `yaml:"teams"`
+	// IgnoredSubagents are the names of the project's Claude Code subagents
+	// the human chose not to import as agents (ADR-0018, internal/subagents):
+	// they are no longer offered.
+	IgnoredSubagents []string `yaml:"ignored_subagents,omitempty"`
 	// IgnoredChannels counts the "channels:" entries read from an org.yaml
 	// written before ADR-0009. They are ignored (flows are open by default)
 	// and dropped by the next write of org.yaml; the daemon warns about them.
@@ -216,6 +220,22 @@ func (o *Org) WithTeam(t Team) *Org {
 	t.Agents = nil
 	t.Block = slices.Clone(t.Block)
 	c.Teams = append(c.Teams, t)
+
+	return c
+}
+
+// WithIgnoredSubagents returns a copy of the organization with names added
+// to its dismissed subagents, each once, in order. The receiver is left
+// untouched.
+func (o *Org) WithIgnoredSubagents(names ...string) *Org {
+	c := o.copyTeams()
+	c.IgnoredSubagents = slices.Clone(o.IgnoredSubagents)
+
+	for _, name := range names {
+		if !slices.Contains(c.IgnoredSubagents, name) {
+			c.IgnoredSubagents = append(c.IgnoredSubagents, name)
+		}
+	}
 
 	return c
 }

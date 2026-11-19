@@ -1191,6 +1191,49 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/subagents:
+    get:
+      operationId: listSubagents
+      summary: The project's Claude Code subagents, and the agents they would become
+      description: |
+        Every subagent file of .claude/agents in the project's main checkout
+        (ADR-0018), read at each call, with its status: pending (offered),
+        imported (an agent has from: subagent:<name>) or ignored (dismissed
+        in org.yaml). A file that cannot be read is listed with its error.
+      responses:
+        "200":
+          description: Subagents, by name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubagentList"
+
+  /api/subagents/import:
+    post:
+      operationId: importSubagents
+      summary: Create teams, import subagents as agents and dismiss others, all or nothing
+      description: |
+        Checks every choice against the organization with all of them first;
+        one refusal writes nothing (400, every refusal listed). Then writes
+        org.yaml (new teams, dismissed subagents) and the agent files, with
+        from: subagent:<name>, and starts each new agent with a fresh
+        session, as a recruit. .claude/agents is never touched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubagentImport"
+      responses:
+        "200":
+          description: Imported; the list after the import
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubagentList"
+        "400":
+          $ref: "#/components/responses/Error"
+
   /api/commands/personal/{name}/copy-to-project:
     post:
       operationId: copyCommandToProject
@@ -2377,6 +2420,12 @@ components:
         last_opened:
           type: string
           format: date-time
+        created:
+          type: boolean
+          description: |
+            Answer of POST /api/projects only: the folder has just been set
+            up. The control room opens it with setup=1, which offers to import
+            the project's subagents (ADR-0018).
 
     DeleteRefusal:
       type: object
@@ -2884,6 +2933,92 @@ components:
             kept as it is when the skill is saved.
         has_hooks:
           type: boolean
+
+    Subagent:
+      type: object
+      required: [name, file, description, status]
+      properties:
+        name:
+          type: string
+          description: The subagent's name, its identity for Claude Code; empty when its file has none.
+        file:
+          type: string
+          description: Its file, relative to the project.
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, imported, ignored]
+        imported_as:
+          type: string
+          description: Imported only, the address of the agent imported from it.
+        agent_name:
+          type: string
+          description: The agent name suggested (its name made valid); empty when none could be made.
+        agent:
+          $ref: "#/components/schemas/AgentDefinition"
+        dropped_tools:
+          type: string
+          description: |
+            Its tools list, not carried over: for a subagent it restricts,
+            for an agent it would allow without asking. To set by hand.
+        ignored_keys:
+          type: array
+          items:
+            type: string
+          description: Header keys not carried over (mcpServers, hooks, maxTurns...).
+        error:
+          type: string
+          description: Why it cannot be imported; absent when it can.
+
+    SubagentList:
+      type: object
+      required: [subagents]
+      properties:
+        subagents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subagent"
+
+    SubagentImport:
+      type: object
+      additionalProperties: false
+      properties:
+        teams:
+          type: array
+          description: New teams.
+          items:
+            type: object
+            additionalProperties: false
+            required: [id]
+            properties:
+              id:
+                type: string
+                pattern: "^[a-z][a-z0-9-]*$"
+              goal:
+                type: string
+        agents:
+          type: array
+          description: Subagents to import.
+          items:
+            type: object
+            additionalProperties: false
+            required: [subagent, team, name]
+            properties:
+              subagent:
+                type: string
+              team:
+                type: string
+              name:
+                type: string
+                pattern: "^[a-z][a-z0-9-]*$"
+              profile:
+                $ref: "#/components/schemas/PermissionProfile"
+        ignore:
+          type: array
+          description: Names of the subagents to dismiss.
+          items:
+            type: string
 
     NewCommandName:
       type: string

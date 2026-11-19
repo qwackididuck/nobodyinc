@@ -227,3 +227,7 @@ button.chip {
 .modal[data-tone="danger"] {
   border-color: var(--danger);
 }
+
+.modal[data-size="wide"] {
+  width: min(960px, 100%);
+}

@@ -151,6 +151,46 @@ func TestLoadProjectIgnoresChannels(t *testing.T) {
 	}
 }
 
+// The dismissed subagents (ADR-0018) are written to org.yaml and read back;
+// an organization without any writes no ignored_subagents key.
+func TestIgnoredSubagentsRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".nobody", "org.yaml"), "teams: [{id: dev}]\n")
+
+	o, err := LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := WriteOrgFile(o); err != nil {
+		t.Fatal(err)
+	}
+
+	if data, _ := os.ReadFile(filepath.Join(dir, ".nobody", "org.yaml")); strings.Contains(string(data), "ignored_subagents") {
+		t.Fatalf("no dismissed subagent, yet org.yaml has the key:\n%s", data)
+	}
+
+	changed := o.WithIgnoredSubagents("changelog", "linter", "changelog")
+	if len(o.IgnoredSubagents) != 0 {
+		t.Fatal("WithIgnoredSubagents changed its receiver")
+	}
+
+	if err := WriteOrgFile(changed); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := again.IgnoredSubagents; len(got) != 2 || got[0] != "changelog" || got[1] != "linter" {
+		t.Fatalf("ignored subagents read back = %v, want [changelog linter]", got)
+	}
+}
+
 func TestLoadProjectWithoutConfigIsErrNoConfig(t *testing.T) {
 	t.Parallel()
 

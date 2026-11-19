@@ -135,7 +135,7 @@ export function ProjectMenu({ path }: Props) {
       )}
 
       {browsing && (
-        <FolderBrowser mode={browsing} onClose={() => setBrowsing(null)} onOpened={(p) => go(projectURL(p.id))} />
+        <FolderBrowser mode={browsing} onClose={() => setBrowsing(null)} onOpened={(p) => go(projectURL(p.id, p.created))} />
       )}
       {deleting && (
         <DeleteProject

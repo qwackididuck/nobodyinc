@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 
@@ -274,17 +275,17 @@ func (s *Service) reloadAndApply(ctx context.Context, address string, opts runti
 		}
 	}
 
-	return s.applyOthers(ctx, address, before, after, address == "" && opts.Now)
+	return s.applyOthers(ctx, before, after, address == "" && opts.Now, address)
 }
 
 // applyOthers applies every agent changed between before and after, except
-// the one at address, with a fresh session when its prompt changed, and at
-// once when now.
-func (s *Service) applyOthers(ctx context.Context, address string, before, after *org.Org, now bool) error {
+// those at skip (already applied by the caller), with a fresh session when
+// its prompt changed, and at once when now.
+func (s *Service) applyOthers(ctx context.Context, before, after *org.Org, now bool, skip ...string) error {
 	var errs []error
 
 	for _, other := range changedAgents(before, after) {
-		if other == address {
+		if slices.Contains(skip, other) {
 			continue
 		}
 
