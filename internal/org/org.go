@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/commands"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
@@ -44,6 +45,10 @@ type Org struct {
 	// .nobody/.
 	ProjectDir string `yaml:"-"`
 	Teams      []Team `yaml:"teams"`
+	// IgnoredSubagents are the names of the project's Claude Code subagents
+	// the human chose not to import as agents (ADR-0018, internal/subagents):
+	// they are no longer offered.
+	IgnoredSubagents []string `yaml:"ignored_subagents,omitempty"`
 	// IgnoredChannels counts the "channels:" entries read from an org.yaml
 	// written before ADR-0009. They are ignored (flows are open by default)
 	// and dropped by the next write of org.yaml; the daemon warns about them.
@@ -61,6 +66,10 @@ type Org struct {
 	// be read, for a warning. Claude Code's built-in skills are not part of
 	// the organization: the daemon discovers them (skills.Builtin).
 	Skills skills.Found `yaml:"-"`
+	// Commands are the project's commands and the user's personal commands
+	// (ADR-0017, internal/commands); Found.Ignored lists those that could not
+	// be read, for a warning.
+	Commands commands.Found `yaml:"-"`
 	// God is the director, the agent who talks with the human and leads the
 	// teams; nil when the project has none (see director.go).
 	God *Agent `yaml:"-"`
@@ -211,6 +220,22 @@ func (o *Org) WithTeam(t Team) *Org {
 	t.Agents = nil
 	t.Block = slices.Clone(t.Block)
 	c.Teams = append(c.Teams, t)
+
+	return c
+}
+
+// WithIgnoredSubagents returns a copy of the organization with names added
+// to its dismissed subagents, each once, in order. The receiver is left
+// untouched.
+func (o *Org) WithIgnoredSubagents(names ...string) *Org {
+	c := o.copyTeams()
+	c.IgnoredSubagents = slices.Clone(o.IgnoredSubagents)
+
+	for _, name := range names {
+		if !slices.Contains(c.IgnoredSubagents, name) {
+			c.IgnoredSubagents = append(c.IgnoredSubagents, name)
+		}
+	}
 
 	return c
 }

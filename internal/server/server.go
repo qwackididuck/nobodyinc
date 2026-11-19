@@ -10,6 +10,8 @@
 //   - settings.go:  /api/settings    how the daemon runs;
 //   - mcp.go:       /api/mcp*        MCP servers (ADR-0010);
 //   - skills.go:    /api/skills*     skills (ADR-0011);
+//   - commands.go:  /api/commands*   commands (ADR-0017);
+//   - subagents.go: /api/subagents*  the project's subagents, imported as agents (ADR-0018);
 //   - schedules.go: /api/schedule*   scheduled tasks (ADR-0012);
 //   - budgets.go:   /api/spend       costs and budgets (ADR-0013), and the
 //     agents' statusLine reports;
@@ -162,8 +164,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("GET /api/events", s.streamEvents)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.updateSettings)
-	s.routeMCP(mux)
-	s.routeSkills(mux)
+	s.routeClaudeConfig(mux)
 	s.routeSchedules(mux)
 	s.routeBudgets(mux)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)

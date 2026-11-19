@@ -1100,6 +1100,169 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/commands:
+    get:
+      operationId: listCommands
+      summary: Commands every agent gets
+      description: |
+        The project's commands (.claude/commands of its main checkout) and
+        the user's personal commands (commands/ of Claude Code's
+        configuration directory), ADR-0017. Every agent gets every command.
+        A command in a sub-directory is named after its path, "/" written
+        ":" (front/test.md is front:test). A personal command named like a
+        project command is shadowed: agents get the project's. Claude Code's
+        built-in commands are not listed.
+      responses:
+        "200":
+          description: Commands, by scope then name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandList"
+
+  /api/commands/{scope}/{name}:
+    parameters:
+      - name: scope
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/CommandScope"
+      - name: name
+        in: path
+        required: true
+        description: |
+          The command's name. An existing command keeps the name its file
+          gives it; a new one must follow NewCommandName.
+        schema:
+          type: string
+          minLength: 1
+    get:
+      operationId: getCommand
+      summary: One project or personal command, to edit it
+      responses:
+        "200":
+          description: The command
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandDetail"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+    put:
+      operationId: saveCommand
+      summary: Create or change a project or personal command
+      description: |
+        Writes the command's file: its description in the header (left out
+        when empty), then the prompt. The other keys of an existing header
+        are kept as they are; an existing command is written where it is (a
+        file that is a symbolic link stays one: its target is written). A new
+        command goes to <dir>/<name with ":" as "/">.md. A project command
+        must then be committed to reach agents working on a feature. A
+        personal command serves every project, and the user's own Claude
+        Code. Agents restart once idle, resuming their session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandInput"
+      responses:
+        "200":
+          description: Command saved; the list after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandList"
+        "400":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteCommand
+      summary: Delete a project or personal command
+      description: |
+        Removes the command's file, and the sub-directories it leaves empty.
+        Agents restart once idle, resuming their session.
+      responses:
+        "204":
+          description: Command deleted
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/subagents:
+    get:
+      operationId: listSubagents
+      summary: The project's Claude Code subagents, and the agents they would become
+      description: |
+        Every subagent file of .claude/agents in the project's main checkout
+        (ADR-0018), read at each call, with its status: pending (offered),
+        imported (an agent has from: subagent:<name>) or ignored (dismissed
+        in org.yaml). A file that cannot be read is listed with its error.
+      responses:
+        "200":
+          description: Subagents, by name
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubagentList"
+
+  /api/subagents/import:
+    post:
+      operationId: importSubagents
+      summary: Create teams, import subagents as agents and dismiss others, all or nothing
+      description: |
+        Checks every choice against the organization with all of them first;
+        one refusal writes nothing (400, every refusal listed). Then writes
+        org.yaml (new teams, dismissed subagents) and the agent files, with
+        from: subagent:<name>, and starts each new agent with a fresh
+        session, as a recruit. .claude/agents is never touched.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubagentImport"
+      responses:
+        "200":
+          description: Imported; the list after the import
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubagentList"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/commands/personal/{name}/copy-to-project:
+    post:
+      operationId: copyCommandToProject
+      summary: Copy a personal command into the project
+      description: |
+        Copies the command's file into the project's .claude/commands, at the
+        same path. The copy then shadows the personal command for this
+        project's agents; each is edited on its own. Refused when the project
+        already has a command of that name.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/NewCommandName"
+      responses:
+        "201":
+          description: Command copied; the list after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommandList"
+        "400":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+
   /api/features:
     get:
       operationId: listFeatures
@@ -2257,6 +2420,12 @@ components:
         last_opened:
           type: string
           format: date-time
+        created:
+          type: boolean
+          description: |
+            Answer of POST /api/projects only: the folder has just been set
+            up. The control room opens it with setup=1, which offers to import
+            the project's subagents (ADR-0018).
 
     DeleteRefusal:
       type: object
@@ -2764,6 +2933,181 @@ components:
             kept as it is when the skill is saved.
         has_hooks:
           type: boolean
+
+    Subagent:
+      type: object
+      required: [name, file, description, status]
+      properties:
+        name:
+          type: string
+          description: The subagent's name, its identity for Claude Code; empty when its file has none.
+        file:
+          type: string
+          description: Its file, relative to the project.
+        description:
+          type: string
+        status:
+          type: string
+          enum: [pending, imported, ignored]
+        imported_as:
+          type: string
+          description: Imported only, the address of the agent imported from it.
+        agent_name:
+          type: string
+          description: The agent name suggested (its name made valid); empty when none could be made.
+        agent:
+          $ref: "#/components/schemas/AgentDefinition"
+        dropped_tools:
+          type: string
+          description: |
+            Its tools list, not carried over: for a subagent it restricts,
+            for an agent it would allow without asking. To set by hand.
+        ignored_keys:
+          type: array
+          items:
+            type: string
+          description: Header keys not carried over (mcpServers, hooks, maxTurns...).
+        error:
+          type: string
+          description: Why it cannot be imported; absent when it can.
+
+    SubagentList:
+      type: object
+      required: [subagents]
+      properties:
+        subagents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Subagent"
+
+    SubagentImport:
+      type: object
+      additionalProperties: false
+      properties:
+        teams:
+          type: array
+          description: New teams.
+          items:
+            type: object
+            additionalProperties: false
+            required: [id]
+            properties:
+              id:
+                type: string
+                pattern: "^[a-z][a-z0-9-]*$"
+              goal:
+                type: string
+        agents:
+          type: array
+          description: Subagents to import.
+          items:
+            type: object
+            additionalProperties: false
+            required: [subagent, team, name]
+            properties:
+              subagent:
+                type: string
+              team:
+                type: string
+              name:
+                type: string
+                pattern: "^[a-z][a-z0-9-]*$"
+              profile:
+                $ref: "#/components/schemas/PermissionProfile"
+        ignore:
+          type: array
+          description: Names of the subagents to dismiss.
+          items:
+            type: string
+
+    NewCommandName:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9-]{0,63}(:[a-z0-9][a-z0-9-]{0,63})*$"
+      description: |
+        The name of a command the control room creates: segments of
+        lowercase letters, digits and hyphens, separated by ":" for
+        sub-directories (front:test is front/test.md).
+
+    CommandScope:
+      type: string
+      enum: [project, personal]
+      description: |
+        Where a command lives: project is .claude/commands of the project
+        (committed with it); personal is commands/ of Claude Code's
+        configuration directory, for all the user's projects and their own
+        Claude Code.
+
+    Command:
+      type: object
+      required: [name, description, scope]
+      properties:
+        name:
+          type: string
+          description: How the command is invoked, without the "/".
+        description:
+          type: string
+          description: Empty when the header has none (Claude Code then shows the prompt's first line).
+        argument_hint:
+          type: string
+          description: The header's argument-hint, absent when there is none.
+        allowed_tools:
+          type: string
+          description: |
+            The header's allowed-tools, absent when there is none: tools the
+            command lets run without asking while it runs, outside the
+            approval queue (ADR-0017).
+        scope:
+          $ref: "#/components/schemas/CommandScope"
+        committed:
+          type: boolean
+          description: |
+            Project commands only: the command is committed and unchanged.
+            Agents working on a feature only see committed commands.
+        shadowed:
+          type: boolean
+          description: "Personal commands only: a project command has the same name and wins."
+
+    CommandList:
+      type: object
+      required: [commands]
+      properties:
+        commands:
+          type: array
+          items:
+            $ref: "#/components/schemas/Command"
+
+    CommandInput:
+      type: object
+      required: [description, body]
+      additionalProperties: false
+      properties:
+        description:
+          type: string
+          description: What the command does; may be empty.
+        body:
+          type: string
+          minLength: 1
+          description: The command's prompt (the markdown after the header); $ARGUMENTS stands for its arguments.
+
+    CommandDetail:
+      type: object
+      required: [name, scope, description, body, other_keys]
+      properties:
+        name:
+          type: string
+        scope:
+          $ref: "#/components/schemas/CommandScope"
+        description:
+          type: string
+        body:
+          type: string
+        other_keys:
+          type: string
+          description: |
+            The rest of the header (argument-hint, allowed-tools, model...),
+            as YAML, read-only: kept as it is when the command is saved.
+        allowed_tools:
+          type: string
 
     HumanDraft:
       type: object

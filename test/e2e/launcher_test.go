@@ -117,11 +117,12 @@ func (tl *testLauncher) requestFrom(t *testing.T, origin, method, path, body str
 }
 
 type launcherProject struct {
-	ID    string `json:"id"`
-	Path  string `json:"path"`
-	Git   bool   `json:"git"`
-	Held  bool   `json:"held"`
-	State string `json:"state"`
+	ID      string `json:"id"`
+	Path    string `json:"path"`
+	Git     bool   `json:"git"`
+	Held    bool   `json:"held"`
+	State   string `json:"state"`
+	Created bool   `json:"created"`
 }
 
 // open makes a folder a project (POST /api/projects).
@@ -135,6 +136,19 @@ func (tl *testLauncher) open(t *testing.T, path string, create bool) launcherPro
 
 	var p launcherProject
 	decodeBody(t, tl.do(t, http.MethodPost, "/api/projects", string(body), http.StatusCreated), &p)
+
+	if !p.Created {
+		t.Fatalf("a project just set up should say created: %+v", p)
+	}
+
+	// Opening it again sets nothing up: not created (ADR-0018 offers the
+	// subagents on the first opening only).
+	var again launcherProject
+	decodeBody(t, tl.do(t, http.MethodPost, "/api/projects", `{"path":"`+p.Path+`"}`, http.StatusOK), &again)
+
+	if again.Created || again.ID != p.ID {
+		t.Fatalf("opening a known project again = %+v, want the same project, not created", again)
+	}
 
 	return p
 }

@@ -30,6 +30,10 @@ type projectView struct {
 	Held       bool       `json:"held"`
 	State      string     `json:"state"`
 	LastOpened *time.Time `json:"last_opened,omitempty"`
+	// Created is set by POST /api/projects only, when it has just set the
+	// folder up: the control room then offers to import the project's
+	// subagents (ADR-0018).
+	Created bool `json:"created,omitempty"`
 }
 
 func (l *Launcher) view(e projects.Entry) projectView {
@@ -123,7 +127,10 @@ func (l *Launcher) openProject(w http.ResponseWriter, r *http.Request) {
 			"git", result.Git, "trusted", result.Trusted)
 	}
 
-	writeJSON(w, status, l.view(entry))
+	view := l.view(entry)
+	view.Created = result.Created
+
+	writeJSON(w, status, view)
 }
 
 func (l *Launcher) setUp(r *http.Request, body opening) (projects.SetUpResult, error) {

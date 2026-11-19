@@ -12,6 +12,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/commands"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
@@ -130,7 +131,8 @@ func WriteProject(o *Org) error {
 }
 
 // WriteOrgFile validates the organization and writes .nobody/org.yaml alone:
-// teams (id, goal, block list). Agent files and prompts are untouched.
+// teams (id, goal, block list) and the dismissed subagents. Agent files and
+// prompts are untouched.
 func WriteOrgFile(o *Org) error {
 	if err := o.Validate(); err != nil {
 		return err
@@ -303,13 +305,18 @@ func readOrgFile(dir string) (*Org, error) {
 }
 
 // readClaudeConfig reads what every agent gets from Claude Code's own
-// configuration: the MCP servers (readMCP) and the skills (readSkills).
+// configuration: the MCP servers (readMCP), the skills (readSkills) and the
+// commands (readCommands).
 func readClaudeConfig(o *Org) error {
 	if err := readMCP(o); err != nil {
 		return err
 	}
 
-	return readSkills(o)
+	if err := readSkills(o); err != nil {
+		return err
+	}
+
+	return readCommands(o)
 }
 
 // readMCP reads the MCP servers every agent gets: the project's .mcp.json
@@ -340,6 +347,21 @@ func readSkills(o *Org) error {
 
 	if o.Skills, err = skills.Load(o.ProjectDir, personal); err != nil {
 		return fmt.Errorf("skills: %w", err)
+	}
+
+	return nil
+}
+
+// readCommands reads the commands of the project's .claude/commands and the
+// user's personal commands (internal/commands).
+func readCommands(o *Org) error {
+	personal, err := commands.PersonalDir()
+	if err != nil {
+		return err
+	}
+
+	if o.Commands, err = commands.Load(o.ProjectDir, personal); err != nil {
+		return fmt.Errorf("commands: %w", err)
 	}
 
 	return nil

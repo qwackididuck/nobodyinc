@@ -21,9 +21,11 @@ func newLaunch(opts Options, git *gitWorkspace) runtime.Launch {
 		DaemonURL:    opts.DaemonURL,
 		WorkDir:      git.workDir,
 		MCPConfigDir: opts.MCPConfigDir,
-		// Personal skills reach agents through the staging directory.
-		SkillsStagingDir:  opts.SkillsStagingDir,
-		PersonalSkillsDir: opts.PersonalSkillsDir,
+		// Personal skills and commands reach agents through the staging
+		// directory.
+		SkillsStagingDir:    opts.SkillsStagingDir,
+		PersonalSkillsDir:   opts.PersonalSkillsDir,
+		PersonalCommandsDir: opts.PersonalCommandsDir,
 		UserInstructions: func() string {
 			return readUserInstructions(opts.Logger, opts.UserClaudeMD)
 		},

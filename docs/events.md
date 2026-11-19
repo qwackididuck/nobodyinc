@@ -41,7 +41,7 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 | `approvals.changed` | `{}` | a permission request is added or answered | `approval.Queue.OnChange` |
 | `tickets.changed` | `{id}` | a ticket is created or changed, commented, or gets a deliverable | the ticket service's store, wrapped in `daemon/events.go` |
 | `features.changed` | `{id}` | a feature is proposed, started, refused or activated | the same wrapper |
-| `org.changed` | `{}` | the organization is reloaded after a change: an agent recruited, created, edited, put on leave, brought back or dismissed (director included); a team created, edited (goal, prompt, block list) or deleted; the project prompt changed; an MCP server added, edited or removed through the API | `staffing.Service.OnReload` |
+| `org.changed` | `{}` | the organization is reloaded after a change: an agent recruited, created, edited, put on leave, brought back or dismissed (director included); a team created, edited (goal, prompt, block list) or deleted; the project prompt changed; an MCP server added, edited or removed through the API; the project's subagents imported or dismissed (the control room then reloads `GET /api/subagents` too) | `staffing.Service.OnReload` |
 | `catalog.changed` | `{}` | a template is saved or deleted | `server/staff.go` |
 | `schedules.changed` | `{}` | a scheduled task is created, edited, paused, resumed, disabled or deleted; one of its occurrences starts, waits, ends or is skipped; a director's proposal is made or decided (`schedules.md`) | `daemon/schedules.go`, `daemon/scheduleoffice.go` |
 | `spend.changed` | `{}` | agents spent: a statusLine report or a fork's cost became a spend record; sent at most once a second (`budgets.md`) | `daemon/spend.go` |

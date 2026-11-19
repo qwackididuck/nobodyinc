@@ -169,7 +169,21 @@ Agents run in the project (or their team's worktree during a feature) with `--se
 - `.claude/skills/`, `.claude/commands/`, `.claude/agents/` (subagents) and `.claude/settings.json`;
 - in a worktree, only what is committed: an untracked skill or a git-ignored `.claude/` is not there.
 
-Your own personal skills reach them too, through the daemon (see "Skills").
+Your own personal skills and commands reach them too, through the daemon (see "Skills" and "Commands").
+
+## Importing the project's subagents
+
+A project may already have Claude Code subagents in `.claude/agents/`. Agents get them as subagents anyway; importing one also makes it an agent of a team (ADR-0018). The project's subagents are read from its main checkout at each request (`internal/subagents`), each with a status: **pending** (offered), **imported** (an agent has `from: subagent:<name>`) or **ignored** (its name is in `ignored_subagents:` of `org.yaml`, committed). A subagent's identity is its `name`, not its file name; a file that cannot be read is shown with its error.
+
+- **When**: the first time a project is opened right after the launcher set it up (`POST /api/projects` answers `created: true`, and the control room opens it with `setup=1`, read once), the import window opens by itself if subagents are pending. Afterwards, pending subagents show as a count on the STAFF tab and a notice at the top of the Staff screen, whose "Review" opens the window. "Later" writes nothing.
+- **The window**: one row per pending subagent, with a selector: an existing team, "+ New team…" (id and goal on the row; the new team then appears in the other rows), or "Don't import". A row joining a team shows the agent's name (suggested from the subagent's) and its profile. A row left on "Choose…" stays pending. "Create" applies everything at once.
+- **Conversion**: `description` gives the role (its first sentence) and the expertise (shortened); the body becomes the instructions; `model` stays (`inherit` is Claude Code's default); `permissionMode: acceptEdits` gives `allowlist`, `auto` gives `auto` (`default` with Haiku), anything else `default`; `disallowedTools` becomes `permissions.deny`; `skills` stays preloaded. A subagent's `tools` is **not** carried over: for a subagent it restricts, for an agent it allows without asking; the window shows it, to set by hand in Staff. Other keys (`mcpServers`, `hooks`, `maxTurns`…) are listed as not carried over.
+- **All or nothing**: every choice is checked against the organization with all of them (names, teams, conflicts with existing agents or with each other, profiles); one refusal writes nothing and lists every refusal. Then `org.yaml` is written once, the agent files, and the organization reloaded once: each new agent starts with a fresh session, as a recruit, and costs its onboarding turn. `.claude/agents/` is never touched.
+
+| Action | Endpoint |
+|---|---|
+| List, with status and conversion | `GET /api/subagents` |
+| Import, create teams, dismiss | `POST /api/subagents/import` with `{"teams":[{id, goal}], "agents":[{subagent, team, name, profile}], "ignore":[name]}` |
 
 ## MCP servers
 
@@ -233,6 +247,28 @@ A personal skill named like a project skill is shadowed: agents get the project'
 | Discover the built-in skills again | `POST /api/skills/builtin/refresh` |
 | Read to edit, create or change, delete | `GET` / `PUT` / `DELETE /api/skills/{project\|personal}/{name}` |
 | Copy a personal skill into the project | `POST /api/skills/personal/{name}/copy-to-project` |
+
+## Commands
+
+Every agent gets every command (ADR-0017), checked by `test/contract/commands_test.go`. A command is a markdown file, invoked as `/<name>`: an optional header (`description`, `argument-hint`, `allowed-tools`, `model`, `disable-model-invocation`…), then the prompt. A command in a sub-directory is named after its path, `/` written `:`: `front/test.md` is `/front:test`.
+
+| Kind | Where | How it reaches agents |
+|---|---|---|
+| project | `<project>/.claude/commands/**/*.md`, committed | Claude Code loads it itself (the `project` settings source), from the directory the agent works in: during a feature, only committed commands are in its worktree |
+| personal | `~/.claude/commands/` (`$CLAUDE_CONFIG_DIR/commands` when set) | the daemon links each command file into `~/.nobody/projects/<id>/skills/.claude/commands/`, at the same path: the staging directory of the personal skills, which every agent already gets with `--add-dir` |
+
+A personal command named like a project command is shadowed: agents get the project's. Plugins' commands stay out, with plugins; Claude Code's built-in commands (`/compact`, `/init`…) are not listed by the control room.
+
+- **Allowed tools**: a command's `allowed-tools` lets the tools it lists run without asking while it runs, outside your approval queue, and the model may invoke a command by itself unless it declares `disable-model-invocation: true`. The control room marks such commands ("allows tools") and shows the list. Read a personal command's `allowed-tools` before you let it reach the agents of every project.
+- **Writing**: agents may read the staging directory and your personal commands, never write them (absolute deny rules, as for skills). Only you change commands.
+- **Changing**: Settings → Commands in the control room, or the API, creates, edits and deletes project and personal commands. A new command asks where it goes: the whole project (`.claude/commands`, to commit) or you on all your projects (personal); its name is lowercase letters, digits and hyphens, `:` for a sub-directory. The daemon writes the file itself: description (left out when empty) and prompt; the other keys of an existing header are kept, and a header that is not valid YAML is read line by line, as for skills (`internal/frontmatter`). An existing command is saved where it is, whatever its name; a command file that is a symbolic link (your dotfiles) stays one: its target is written. Deleting a command removes the sub-directories it leaves empty. "Copy to project" copies a personal command into the project, at the same path, where it then shadows the personal one.
+- **Restarts**: when the commands change (one added, removed, or with a new content), every agent restarts once idle, resuming its session. A file changed by hand is picked up at the next change made through Nobody Inc, or when the daemon restarts.
+
+| Action | Endpoint |
+|---|---|
+| List (with allowed tools, committed, shadowed) | `GET /api/commands` |
+| Read to edit, create or change, delete | `GET` / `PUT` / `DELETE /api/commands/{project\|personal}/{name}` |
+| Copy a personal command into the project | `POST /api/commands/personal/{name}/copy-to-project` |
 
 ## Lifecycle
 

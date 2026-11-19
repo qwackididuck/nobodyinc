@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 
+import { useLive } from "@/lib/live";
 import ui from "../ui/ui.module.css";
 import { Catalog } from "./Catalog";
 import { EditAgent, NewAgent } from "./Editors";
 import styles from "./staff.module.css";
 import { Staff } from "./Staff";
+import { pendingSubagents } from "./SubagentImport";
 
 // The catalog and the new agent form may come with a team to recruit into,
 // when opened from a team's "Add a member".
@@ -14,6 +16,8 @@ type View = { kind: "catalog"; team?: string } | { kind: "staff" } | { kind: "ne
 
 interface Props {
   onOpenChat: (address: string) => void;
+  // onImportSubagents opens the window importing the project's subagents.
+  onImportSubagents: () => void;
 }
 
 const TABS: { kind: "catalog" | "staff" | "new"; label: string }[] = [
@@ -27,8 +31,10 @@ const TABS: { kind: "catalog" | "staff" | "new"; label: string }[] = [
 // character select screen to recruit from, and an editor for an agent's file
 // (docs/agents.md). Recruits walk into the office; changes apply once an
 // agent ends its turn, never in the middle of one.
-export function StaffScreen({ onOpenChat }: Props) {
+export function StaffScreen({ onOpenChat, onImportSubagents }: Props) {
   const [view, setView] = useState<View>({ kind: "staff" });
+  const { subagents } = useLive();
+  const pending = pendingSubagents(subagents);
 
   const heading = {
     catalog: [view.kind === "catalog" && view.team ? `Choose a recruit for ${view.team}` : "Choose your recruit", "Templates from Nobody Inc and from ~/.nobody/catalog. A recruit is a copy: later changes to the template never touch it."],
@@ -55,6 +61,19 @@ export function StaffScreen({ onOpenChat }: Props) {
         </div>
       </header>
       <div className={styles.body}>
+        {pending.length > 0 && (
+          <div className={styles.importNotice}>
+            <span>
+              <strong>
+                {pending.length} Claude Code subagent{pending.length > 1 ? "s" : ""}
+              </strong>{" "}
+              found in .claude/agents, not imported yet: make them agents of your teams, or dismiss them.
+            </span>
+            <button type="button" className={ui.btn} onClick={onImportSubagents}>
+              Review
+            </button>
+          </div>
+        )}
         {view.kind === "catalog" && <Catalog team={view.team} />}
         {view.kind === "staff" && (
           <Staff
