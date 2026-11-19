@@ -265,9 +265,11 @@ func TestParseFileWithAnInvalidYAMLHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The saved header is valid YAML (frontmatter's tests check it): parsed
+	// again, it keeps everything.
 	again, err := ParseFile(data)
-	if err != nil || again.looseOther != "" || again.Description != f.Description || !again.HasHooks() {
-		t.Fatalf("saved file is not valid YAML or lost something:\n%s\n%+v, %v", data, again, err)
+	if err != nil || again.Description != f.Description || !again.HasHooks() {
+		t.Fatalf("saved file lost something:\n%s\n%+v, %v", data, again, err)
 	}
 
 	if _, err := ParseFile([]byte("---\njust some words\n---\n")); err == nil {
