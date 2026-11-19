@@ -8,6 +8,7 @@ import { useLive } from "@/lib/live";
 import { CapEditor } from "../budgets/CapEditor";
 import ui from "../ui/ui.module.css";
 import { Commands } from "./Commands";
+import { KnowledgeSetting } from "./KnowledgeSetting";
 import { MCPServers } from "./MCPServers";
 import { Skills } from "./Skills";
 import styles from "./settings.module.css";
@@ -114,6 +115,12 @@ function ProjectSection() {
       {error && <p className={ui.error}>{error}</p>}
       <Option label="Project folder" help="The folder holding .nobody/. Agents work here, or in their team's worktree while a feature is active.">
         <code>{settings.project_dir}</code>
+      </Option>
+      <Option
+        label="Knowledge base"
+        help="A folder of the project with its documentation (markdown pages): the library in the office. Agents search and read it with their office tools, and may write it like any file. Saved in .nobody/org.yaml (commit it); changing it restarts every agent once idle, resuming its session."
+      >
+        <KnowledgeSetting />
       </Option>
       <Option label="Data on this machine" help="Database and worktrees of this project. Never committed, never shared.">
         <code>{settings.state_dir}</code>

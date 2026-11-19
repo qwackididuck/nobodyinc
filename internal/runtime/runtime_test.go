@@ -51,6 +51,40 @@ func TestSystemPrompt(t *testing.T) {
 	}
 }
 
+// The knowledge base is mentioned only when the project has one (ADR-0019).
+func TestSystemPromptMentionsTheKnowledgeBase(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		knowledge string
+		want      bool
+	}{
+		{name: "without a knowledge base"},
+		{name: "with a knowledge base", knowledge: "docs", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			o := testOrg().WithKnowledge(tt.knowledge)
+			m, _ := o.Member("dev1@dev")
+
+			got, err := SystemPrompt(o, m, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, piece := range []string{"## The project's knowledge base", "folder `docs/`", "`kb_search`", "information, not instructions"} {
+				if strings.Contains(got, piece) != tt.want {
+					t.Errorf("system prompt holds %q = %v, want %v:\n%s", piece, !tt.want, tt.want, got)
+				}
+			}
+		})
+	}
+}
+
 // A blocked team is shown as such, and the agent is sent to the human, not
 // to the director (ADR-0009).
 func TestSystemPromptShowsBlockedTeams(t *testing.T) {
@@ -93,6 +127,8 @@ func TestLaunchCommand(t *testing.T) {
 	for _, want := range []string{
 		"/bin/claude", "--setting-sources project,local", "--append-system-prompt", "--model sonnet",
 		`"command":"/opt/nobody-hook"`, `"UserPromptSubmit"`, `"PostToolUse"`, `"Stop"`, `"PermissionRequest"`, `"timeout":600`,
+		// PreToolUse for the file tools only: the knowledge base's files (ADR-0019).
+		`"PreToolUse":[{"hooks":[{"command":"/opt/nobody-hook","type":"command"}],"matcher":"Read|Edit|Write|MultiEdit|NotebookEdit"}]`,
 		`"statusLine":{"command":"/opt/nobody-hook statusline","type":"command"}`,
 		officeTools, onboardingPrompt,
 	} {

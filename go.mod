@@ -7,6 +7,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/robfig/cron/v3 v3.0.1
+	github.com/yuin/goldmark v1.8.7
 	go.yaml.in/yaml/v3 v3.0.6
 	modernc.org/sqlite v1.62.0
 )

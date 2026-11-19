@@ -11,10 +11,12 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
+	"github.com/qwackididuck/nobodyinc/internal/kb"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
@@ -88,6 +90,9 @@ type Options struct {
 	// Clock drives the scheduled tasks (ADR-0012); nil is the machine's.
 	// End-to-end tests give a schedule.ManualClock.
 	Clock schedule.Clock
+	// KnowledgeScanEvery is how often the knowledge base is scanned in the
+	// background (ADR-0019); 0 is every 5 seconds.
+	KnowledgeScanEvery time.Duration
 }
 
 // Daemon is a fully wired Nobody Inc.
@@ -117,6 +122,10 @@ type Daemon struct {
 	schedulerDone chan struct{}
 	// budgets' guard reconciles in the background until Close stops it.
 	budgets *budgets
+	// Knowledge is the project's knowledge base (ADR-0019), scanned in the
+	// background until Close stops it (knowledge).
+	Knowledge *kb.Service
+	knowledge knowledgeScans
 }
 
 // New builds a daemon. Agents are not started: call Supervisor.StartAll.
@@ -133,12 +142,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	background := &sync.WaitGroup{}
 
-	userSettings := opts.Settings
-	if userSettings.ConfigProtection == "" {
-		userSettings = settings.Defaults()
-	}
-
-	liveSettings := settings.NewLive(opts.SettingsHome, userSettings)
+	liveSettings := settings.NewLive(opts.SettingsHome, userSettingsOf(opts))
 
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
@@ -234,6 +238,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
 
 	builtinSkills := discoverBuiltinSkills(ctx, opts)
+	knowledge := startKnowledge(ctx, opts, st, bus)
 
 	handler := server.New(server.Deps{
 		Version:   opts.Version,
@@ -260,6 +265,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		BudgetOffice: budgetOffice,
 		// Resumed sessions get the current organization (sessions.go).
 		SessionStarted: sessionStarted(supervisor.SessionStarted, budgets.guard.isHeld),
+		Knowledge:      knowledge.Service,
+		ToolUsed:       watchKnowledgeFiles(ctx, opts, git.workDir, knowledge.Service, bus),
 		Info: server.DaemonInfo{
 			ProjectID:   filepath.Base(opts.StateDir),
 			StateDir:    opts.StateDir,
@@ -270,6 +277,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Extra: map[string]http.Handler{
 			"/mcp/{address}": officemcp.Handler(officemcp.Office{
 				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules, Budgets: budgetOffice,
+				Knowledge: knowledge.Service, OnKnowledgeRead: announceKnowledgeRead(bus),
 				Version: opts.Version,
 			}),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),
@@ -294,7 +302,19 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		stopScheduler: stopScheduler,
 		schedulerDone: schedulerDone,
 		budgets:       budgets,
+		Knowledge:     knowledge.Service,
+		knowledge:     knowledge,
 	}, nil
+}
+
+// userSettingsOf is the user's settings the daemon starts with: the
+// defaults when none were given.
+func userSettingsOf(opts Options) settings.Settings {
+	if opts.Settings.ConfigProtection == "" {
+		return settings.Defaults()
+	}
+
+	return opts.Settings
 }
 
 // wireSchedules builds the scheduled tasks (scheduleoffice.go), which follow
@@ -435,6 +455,8 @@ func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, appr
 func (d *Daemon) Close() error {
 	d.stopScheduler()
 	<-d.schedulerDone
+	d.knowledge.stop()
+	<-d.knowledge.done
 	d.budgets.stop()
 	<-d.budgets.done
 	d.background.Wait()

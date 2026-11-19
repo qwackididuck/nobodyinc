@@ -44,6 +44,7 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 | `internal/projects` | Where projects live (`projects.md`): `~/.nobody`, state directories and their lock, the registry of known projects, setting a folder up, removing Nobody Inc from a project. |
 | `internal/launcher` | The launcher (`projects.md`, ADR-0014): known projects and folders, the windows' holds, project daemons as child processes, the proxy, deleting a project. |
 | `internal/budget` | Costs and budgets (ADR-0013, `budgets.md`): turns the agents' running costs into spend records, the budgets file, gauges, which budgets cover which agents. |
+| `internal/kb` | The project's knowledge base (ADR-0019, `knowledge.md`): a folder of the project declared in `org.yaml`, its pages parsed with goldmark (titles, links, backlinks, broken links), rendered for the control room, and a full-text index (SQLite FTS5) derived from the files. |
 | `cmd/nobody-hook` | Relay run by Claude Code on hooks: forwards the event to the daemon, prints the answer, acknowledges. As every agent's statusLine (`nobody-hook statusline`), it posts the session's running cost and prints nothing. |
 
 ## Conversation rules
@@ -84,7 +85,7 @@ Agents see neither the user's global settings, hooks and plugins nor the environ
 ## Testing
 
 - Unit tests next to each package.
-- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block, scheduled tasks with a manual clock, costs and budgets through fakeclaude's statusLine, the launcher with real project daemons) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
+- `test/e2e`: whole scenarios (wake-up, delivery, MCP, skills, refusals by a block, scheduled tasks with a manual clock, costs and budgets through fakeclaude's statusLine, the knowledge base and an agent's `kb_search`, the launcher with real project daemons) through the real daemon, `nobody-hook` and PTYs, with `test/fakeclaude` playing the agents by fixed rules. Free and deterministic, part of `task check`.
 - `test/contract` (`task contract`): the Claude Code behaviours we rely on, against the real CLI.
 
 ## Changes pushed to the browser

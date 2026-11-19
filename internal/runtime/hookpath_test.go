@@ -93,7 +93,7 @@ func TestAgentSettingsRunFromAPathNeedingQuotes(t *testing.T) {
 	}
 	decode(t, settings, &s)
 
-	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PostToolUse", "Stop", "PermissionRequest"} {
+	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "PermissionRequest"} {
 		groups := s.Hooks[event]
 		if len(groups) != 1 || len(groups[0].Hooks) != 1 {
 			t.Fatalf("hooks of %s = %+v", event, groups)

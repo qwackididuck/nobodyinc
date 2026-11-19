@@ -14,7 +14,7 @@ An **agent** is a member of a team that runs as a Claude Code session. A **templ
   projects/<id>/worktrees/                the teams' worktrees, outside the project (docs/workspaces.md)
   projects/<id>/mcp/<agent>.json          each agent's MCP configuration, readable by you only (generated)
 <project>/.nobody/                        committed with the project
-  org.yaml                                teams and their block lists
+  org.yaml                                teams and their block lists; the knowledge base's folder (knowledge.md)
   project.md                              the project prompt, given to every agent (optional)
   teams/<team>/TEAM.md                    the team prompt, given to its members (optional)
   teams/<team>/<agent>.md                 recruited agents
@@ -131,6 +131,8 @@ teams:
 A team exists when it is declared here; its members are the files in `teams/<team>/`. A new project has no team: create them from the control room (the "+" plot of the office, or "+ New team" in the Staff tab), with `POST /api/teams`, or by asking the director (`team_create`). A team's sign in the office, or "Edit team" in Staff, changes its goal and prompt, or deletes it; "Delete team" in Staff deletes it directly (see "Lifecycle").
 
 **Flows between teams** are open (ADR-0009): any agent may start a conversation with any team. `block` lists the teams a team's members may not start a conversation with, `@team` included. A block is one-way (above, `dev` may still write to `qa`), never stops an answer or a ticket, and never applies to the human, `nobody` or the director (`architecture.md`, "Conversation rules"). Set it in the team dialog of the Staff tab, under "Advanced settings" (one box per other team, checked when the flow is open), with `block` in `POST /api/teams` or `PUT /api/teams/{team}`, or through the director (`team_block`, with your agreement). Changing it restarts nobody: the members of both teams get a notice from `nobody`. An `org.yaml` written before ADR-0009 may still have `channels:`: they are ignored, with a warning when the project's daemon starts, and dropped the next time `org.yaml` is written.
+
+`org.yaml` may also declare the project's knowledge base, `knowledge: {path: docs}`: a folder of the project whose markdown pages every agent searches and reads with its office tools `kb_search`, `kb_read` and `kb_list` (`knowledge.md`, ADR-0019).
 
 When the daemon writes `org.yaml`, it rewrites the whole file (comments are lost).
 

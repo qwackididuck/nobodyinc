@@ -48,6 +48,8 @@ func (s *server) handleHookEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.toolUsed(address, ev)
+
 	if ev.Name == hook.EventStop && s.holdAtStop(w, r, address, ev) {
 		return
 	}
@@ -69,6 +71,15 @@ func (s *server) handleHookEvent(w http.ResponseWriter, r *http.Request) {
 
 	s.Logger.Info("hook event", "agent", address, "event", ev.Name, "delivered", len(decision.MessageIDs))
 	s.writeJSON(w, http.StatusOK, decision)
+}
+
+// toolUsed passes the file tools' PreToolUse, and every PostToolUse, on to
+// ToolUsed: the daemon watches the knowledge base's files (ADR-0019). It
+// never changes the answer.
+func (s *server) toolUsed(address string, ev hook.Event) {
+	if (ev.Name == hook.EventPreToolUse || ev.Name == hook.EventPostToolUse) && s.ToolUsed != nil {
+		s.ToolUsed(address, ev)
+	}
 }
 
 // holdAtStop handles the Stop of an agent a budget holds (ADR-0013): it is

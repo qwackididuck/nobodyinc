@@ -1,0 +1,118 @@
+/* The knowledge base option (KnowledgeSetting.tsx), as in
+   docs/mockups/knowledge/knowledge.html, screen 6. */
+
+.knowledge {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.field {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.path {
+  display: flex;
+  align-items: center;
+  min-width: 280px;
+  padding: 5px 8px;
+  border: 2px solid var(--line);
+  background: var(--bg);
+}
+
+.path:focus-within {
+  border-color: var(--accent);
+}
+
+.path span {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.path input {
+  width: 100%;
+  min-width: 80px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  outline: none;
+  font: 16px var(--font-mono);
+}
+
+.status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.status details {
+  margin-top: 4px;
+}
+
+.status summary {
+  cursor: pointer;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.browser {
+  width: min(420px, 100%);
+  border: 2px solid var(--ink-px);
+  background: var(--bg);
+  font-size: 13px;
+}
+
+.browser header {
+  padding: 6px 10px;
+  border-bottom: 2px solid var(--line);
+  color: var(--muted);
+  font: 10px var(--font-label);
+}
+
+.browser ul {
+  max-height: 220px;
+  margin: 0;
+  padding: 4px 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.browser li button {
+  width: 100%;
+  padding: 3px 12px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  text-align: left;
+}
+
+.browser li button:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.browser li button:disabled {
+  color: var(--off);
+  cursor: not-allowed;
+}
+
+.empty {
+  padding: 3px 12px;
+  color: var(--muted);
+}
+
+.browser footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 2px solid var(--line);
+}

@@ -183,6 +183,40 @@ func TestHandleReportsInboxErrors(t *testing.T) {
 	}
 }
 
+func TestEventFilePath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name, input, want string
+	}{
+		{name: "Read, Edit, Write, MultiEdit", input: `{"file_path":"/p/docs/a.md","old_string":"x"}`, want: "/p/docs/a.md"},
+		{name: "NotebookEdit", input: `{"notebook_path":"/p/docs/n.ipynb"}`, want: "/p/docs/n.ipynb"},
+		{name: "no file", input: `{"pattern":"TODO"}`},
+		{name: "no input"},
+		{name: "not JSON", input: `nope`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := (Event{ToolInput: []byte(tt.input)}).FilePath(); got != tt.want {
+				t.Errorf("FilePath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A PreToolUse never gets an answer: the tool always runs.
+func TestHandleIgnoresPreToolUse(t *testing.T) {
+	t.Parallel()
+
+	d, err := Handle(context.Background(), Event{Name: EventPreToolUse}, brokenInbox{})
+	if err != nil || d.Response != nil || len(d.Messages) != 0 {
+		t.Fatalf("Handle(PreToolUse) = %+v, %v; want nothing", d, err)
+	}
+}
+
 func messageIDs(messages []messaging.Message) []string {
 	ids := make([]string, len(messages))
 	for i, m := range messages {

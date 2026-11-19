@@ -329,14 +329,7 @@ func sharedPrompt(o *org.Org, m org.Member) string {
 func changedAgents(before, after *org.Org) []string {
 	var changed []string
 
-	// Every agent gets every MCP server, skill and command: when they change,
-	// every agent is brought in line, resuming its session (MCP servers are
-	// launch flags, skills and commands are read at start-up, and preloaded
-	// skills come from the SessionStart hook, which runs on resume too). A
-	// skill or command whose content changed counts (its Digest).
-	everyone := !reflect.DeepEqual(before.MCP, after.MCP) ||
-		!reflect.DeepEqual(before.Skills.Skills, after.Skills.Skills) ||
-		!reflect.DeepEqual(before.Commands.Commands, after.Commands.Commands)
+	everyone := everyoneChanged(before, after)
 
 	for _, m := range after.Members() {
 		old, ok := before.Member(m.Address)
@@ -352,6 +345,21 @@ func changedAgents(before, after *org.Org) []string {
 	}
 
 	return changed
+}
+
+// everyoneChanged reports whether a change concerns every agent. Every
+// agent gets every MCP server, skill and command: when they change, every
+// agent is brought in line, resuming its session (MCP servers are launch
+// flags, skills and commands are read at start-up, and preloaded skills
+// come from the SessionStart hook, which runs on resume too). A skill or
+// command whose content changed counts (its Digest). So does the knowledge
+// base (ADR-0019): the office MCP's knowledge tools come and go with it,
+// and Claude Code lists a server's tools when a session starts.
+func everyoneChanged(before, after *org.Org) bool {
+	return !reflect.DeepEqual(before.MCP, after.MCP) ||
+		!reflect.DeepEqual(before.Skills.Skills, after.Skills.Skills) ||
+		!reflect.DeepEqual(before.Commands.Commands, after.Commands.Commands) ||
+		before.KnowledgePath() != after.KnowledgePath()
 }
 
 func (s *Service) member(address string) (org.Member, error) {
