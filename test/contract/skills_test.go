@@ -251,9 +251,18 @@ func TestSkillWithHooksAsksPermission(t *testing.T) {
 }
 
 // initSkills starts a session in dir with the agents' flags and the API out
-// of reach, and returns the skills its init event lists. The session is
-// killed as soon as the init event arrives.
+// of reach, and returns the skills its init event lists (sessionInit).
 func initSkills(t *testing.T, dir string, env []string, extraArgs ...string) []string {
+	t.Helper()
+
+	return sessionInit(t, dir, env, extraArgs...).Skills
+}
+
+// sessionInit starts a session in dir with the agents' flags and the API out
+// of reach, and returns its init event, which says what the session loaded.
+// The session is killed as soon as the init event arrives: no model is
+// called.
+func sessionInit(t *testing.T, dir string, env []string, extraArgs ...string) projectInitEvent {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -289,13 +298,13 @@ func initSkills(t *testing.T, dir string, env []string, extraArgs ...string) []s
 	for scanner.Scan() {
 		var ev projectInitEvent
 		if json.Unmarshal(scanner.Bytes(), &ev) == nil && ev.Type == "system" && ev.Subtype == "init" {
-			return ev.Skills
+			return ev
 		}
 	}
 
 	t.Fatalf("no init event before the session ended: %v", scanner.Err())
 
-	return nil
+	return projectInitEvent{}
 }
 
 // writeSkill writes <dir>/<name>/SKILL.md with the given body.

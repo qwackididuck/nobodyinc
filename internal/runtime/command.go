@@ -16,6 +16,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/commands"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -101,13 +102,17 @@ type Launch struct {
 	// MCPConfigDir holds each agent's MCP configuration, <address>.json,
 	// readable by the user only (~/.nobody/projects/<id>/mcp).
 	MCPConfigDir string
-	// SkillsStagingDir links the user's personal skills for the agents
-	// (skills.Stage), given to every agent with --add-dir
-	// (~/.nobody/projects/<id>/skills, ADR-0011); "" gives no personal skill.
+	// SkillsStagingDir links the user's personal skills (skills.Stage) and
+	// commands (commands.Stage) for the agents, given to every agent with
+	// --add-dir (~/.nobody/projects/<id>/skills, ADR-0011 and ADR-0017); ""
+	// gives no personal skill or command.
 	SkillsStagingDir string
 	// PersonalSkillsDir is where the user's personal skills live
 	// (skills.PersonalDir): agents may read them, not write them.
 	PersonalSkillsDir string
+	// PersonalCommandsDir is where the user's personal commands live
+	// (commands.PersonalDir): agents may read them, not write them.
+	PersonalCommandsDir string
 }
 
 // Command builds the claude command for one agent, from its definition
@@ -126,6 +131,9 @@ type Launch struct {
 //     Claude Code's three scopes (org.Org.MCP), written to a private file
 //     (--strict-mcp-config: Claude Code loads nothing else, ADR-0010); the
 //     servers and tools it excludes (mcp_exclude) are disallowed;
+//   - it gets every command (ADR-0017): the project's, and the user's
+//     personal commands, linked in the same staging directory as the
+//     personal skills;
 //   - it gets every skill (ADR-0011): the project's, Claude Code's built-in
 //     ones, and the user's personal skills, linked in a staging directory
 //     given with --add-dir; the skills it excludes (skills_exclude) are
@@ -145,11 +153,13 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume Re
 		return nil, err
 	}
 
-	if err := l.stagePersonalSkills(o); err != nil {
+	if err := l.stagePersonal(o); err != nil {
 		return nil, err
 	}
 
-	settings, err := agentSettings(l.HookPath, m.Agent.Definition, o.ProjectDir, []string{l.SkillsStagingDir, l.PersonalSkillsDir})
+	outside := []string{l.SkillsStagingDir, l.PersonalSkillsDir, l.PersonalCommandsDir}
+
+	settings, err := agentSettings(l.HookPath, m.Agent.Definition, o.ProjectDir, outside)
 	if err != nil {
 		return nil, err
 	}
@@ -407,13 +417,13 @@ func shellCommand(command string) map[string]any {
 }
 
 // stageMu keeps agents started at the same time from staging the personal
-// skills over each other.
+// skills and commands over each other.
 var stageMu sync.Mutex
 
-// stagePersonalSkills brings the staging directory in line with the
-// personal skills agents get, before an agent starts (skills.Stage). It is
-// cheap and idempotent: links already in place are kept.
-func (l Launch) stagePersonalSkills(o *org.Org) error {
+// stagePersonal brings the staging directory in line with the personal
+// skills (skills.Stage) and commands (commands.Stage) agents get, before an
+// agent starts. It is cheap and idempotent: links already in place are kept.
+func (l Launch) stagePersonal(o *org.Org) error {
 	if l.SkillsStagingDir == "" {
 		return nil
 	}
@@ -421,7 +431,15 @@ func (l Launch) stagePersonalSkills(o *org.Org) error {
 	stageMu.Lock()
 	defer stageMu.Unlock()
 
-	return skills.Stage(l.SkillsStagingDir, o.Skills.Personal())
+	if err := skills.Stage(l.SkillsStagingDir, o.Skills.Personal()); err != nil {
+		return err
+	}
+
+	if l.PersonalCommandsDir == "" {
+		return nil
+	}
+
+	return commands.Stage(l.SkillsStagingDir, l.PersonalCommandsDir, o.Commands.Personal())
 }
 
 // writeMCPConfig writes the agent's MCP configuration and returns its path,

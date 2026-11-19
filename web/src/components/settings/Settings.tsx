@@ -7,6 +7,7 @@ import { type Animations, saveAppearance, useAppearance } from "@/lib/appearance
 import { useLive } from "@/lib/live";
 import { CapEditor } from "../budgets/CapEditor";
 import ui from "../ui/ui.module.css";
+import { Commands } from "./Commands";
 import { MCPServers } from "./MCPServers";
 import { Skills } from "./Skills";
 import styles from "./settings.module.css";
@@ -15,6 +16,7 @@ const SECTIONS = [
   { id: "project", label: "Project and daemon" },
   { id: "mcp", label: "MCP servers" },
   { id: "skills", label: "Skills" },
+  { id: "commands", label: "Commands" },
   { id: "budgets", label: "Budgets" },
   { id: "appearance", label: "Appearance" },
 ] as const;
@@ -23,8 +25,9 @@ type Section = (typeof SECTIONS)[number]["id"];
 
 // Settings is a game-like options menu: the project prompt every agent
 // reads, how the daemon runs (read-only, except what to do when a delivery
-// changes .nobody/), the MCP servers (MCPServers.tsx) and the skills
-// (Skills.tsx) every agent gets, and how the office looks on this computer.
+// changes .nobody/), the MCP servers (MCPServers.tsx), the skills
+// (Skills.tsx) and the commands (Commands.tsx) every agent gets, and how the
+// office looks on this computer.
 export function Settings() {
   const [section, setSection] = useState<Section>("project");
 
@@ -41,6 +44,7 @@ export function Settings() {
         {section === "project" && <ProjectSection />}
         {section === "mcp" && <MCPServers />}
         {section === "skills" && <Skills />}
+        {section === "commands" && <Commands />}
         {section === "budgets" && <BudgetsSection />}
         {section === "appearance" && <AppearanceSection />}
       </div>

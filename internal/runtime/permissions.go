@@ -32,9 +32,10 @@ var protectedDirs = []string{".nobody", ".claude"}
 // rules alone would not cover it.
 //
 // The outside directories are protected by absolute path too: the staging
-// directory of the personal skills, which every agent gets with --add-dir,
-// and the personal skills themselves, which its symbolic links lead to. Only
-// the human changes skills (ADR-0011).
+// directory of the personal skills and commands, which every agent gets with
+// --add-dir, and the personal skills and commands themselves, which its
+// symbolic links lead to. Only the human changes skills and commands
+// (ADR-0011, ADR-0017).
 func protectedRules(projectDir string, outside []string) []string {
 	var rules []string
 
