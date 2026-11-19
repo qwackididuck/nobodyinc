@@ -5,7 +5,9 @@
 //   - list_contacts: the current organization chart (chart.go), and who the
 //     agent may start a conversation with;
 //   - the ticket tools (tickets.go): ticket_list, ticket_get, ticket_claim,
-//     ticket_create, ticket_update, ticket_comment, deliverable_add.
+//     ticket_create, ticket_update, ticket_comment, deliverable_add;
+//   - the knowledge tools (knowledge.go), when the project has a knowledge
+//     base: kb_search, kb_read, kb_list.
 //
 // The daemon serves it over HTTP at /mcp/{address}. The address in the URL is
 // the identity of the calling agent: it is set by the daemon in the agent's MCP
@@ -45,7 +47,13 @@ type Office struct {
 	Schedules Schedules
 	// Budgets backs the budget tools (budgets.go); nil disables them.
 	Budgets Budgets
-	Version string
+	// Knowledge backs the knowledge tools (knowledge.go), which an agent
+	// gets only when the project has a knowledge base; nil disables them.
+	Knowledge Knowledge
+	// OnKnowledgeRead, when set, is told each time an agent uses a
+	// knowledge tool: its address, the tool and what it searched or read.
+	OnKnowledgeRead func(agent, tool, subject string)
+	Version         string
 }
 
 // Handler returns the HTTP handler serving one MCP server per agent. It must be
@@ -71,7 +79,7 @@ func ToolNames() []string {
 	return append([]string{
 		"send_message", "list_contacts",
 		"ticket_list", "ticket_get", "ticket_claim", "ticket_create", "ticket_update", "ticket_comment", "deliverable_add",
-	}, slices.Concat(directorToolNames, scheduleToolNames, budgetAgentToolNames, budgetDirectorToolNames)...)
+	}, slices.Concat(directorToolNames, scheduleToolNames, budgetAgentToolNames, budgetDirectorToolNames, knowledgeToolNames)...)
 }
 
 // NewServer builds the MCP server of one agent. The director also gets the
@@ -79,7 +87,7 @@ func ToolNames() []string {
 func NewServer(o *org.Org, office Office, address string) *mcp.Server {
 	t := tools{
 		org: o, sender: office.Sender, tickets: office.Tickets, director: office.Director, schedules: office.Schedules,
-		budgets: office.Budgets, self: address,
+		budgets: office.Budgets, knowledge: office.Knowledge, onKnowledgeRead: office.OnKnowledgeRead, self: address,
 	}
 	version := office.Version
 	server := mcp.NewServer(&mcp.Implementation{Name: "nobody-inc", Version: version}, nil)
@@ -117,17 +125,23 @@ func NewServer(o *org.Org, office Office, address string) *mcp.Server {
 		}
 	}
 
+	if t.knowledge != nil && o.KnowledgePath() != "" {
+		t.addKnowledgeTools(server)
+	}
+
 	return server
 }
 
 type tools struct {
-	org       *org.Org
-	sender    Sender
-	tickets   Tickets
-	director  Director
-	schedules Schedules
-	budgets   Budgets
-	self      string
+	org             *org.Org
+	sender          Sender
+	tickets         Tickets
+	director        Director
+	schedules       Schedules
+	budgets         Budgets
+	knowledge       Knowledge
+	onKnowledgeRead func(agent, tool, subject string)
+	self            string
 }
 
 // SendMessageInput is what an agent provides to send_message.

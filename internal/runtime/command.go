@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/atomicfile"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/commands"
+	"github.com/qwackididuck/nobodyinc/internal/hook"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -348,6 +350,8 @@ func SystemPrompt(o *org.Org, m org.Member, userInstructions string) (string, er
 		"Chart":   officemcp.Chart(o, m.Address),
 		"IsGod":   o.IsGod(m.Address),
 		"God":     officemcp.DirectorOf(o),
+		// The knowledge tools exist only with a knowledge base (ADR-0019).
+		"Knowledge": o.KnowledgePath(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("render system prompt of %s: %w", m.Address, err)
@@ -378,11 +382,16 @@ func allowedTools(tools []string) string {
 // the outside directories it may not write, and the skills it excludes,
 // turned off (ADR-0011).
 func agentSettings(hookPath string, d catalog.Definition, projectDir string, outside []string) (string, error) {
-	run := []map[string]any{{"hooks": []map[string]any{shellCommand(hookPath)}}}
+	relay := shellWord(hookPath)
+	run := []map[string]any{{"hooks": []map[string]any{shellCommand(relay)}}}
 
-	waiting := shellCommand(hookPath)
+	waiting := shellCommand(relay)
 	waiting["timeout"] = int(PermissionHookTimeout.Seconds())
 	permission := []map[string]any{{"hooks": []map[string]any{waiting}}}
+
+	// PreToolUse only for the file tools: the daemon watches the knowledge
+	// base's files (ADR-0019), and no other tool pays for the round trip.
+	fileTools := []map[string]any{{"matcher": hook.FileTools, "hooks": []map[string]any{shellCommand(relay)}}}
 
 	allow, deny := permissionRules(d.Permissions, projectDir, outside)
 
@@ -390,12 +399,13 @@ func agentSettings(hookPath string, d catalog.Definition, projectDir string, out
 		"hooks": map[string]any{
 			"SessionStart":      run,
 			"UserPromptSubmit":  run,
+			"PreToolUse":        fileTools,
 			"PostToolUse":       run,
 			"Stop":              run,
 			"PermissionRequest": permission,
 		},
 		"permissions": map[string]any{"allow": allow, "deny": deny},
-		"statusLine":  shellCommand(hookPath + " statusline"),
+		"statusLine":  shellCommand(relay + " statusline"),
 	}
 
 	if len(d.SkillsExclude) > 0 {
@@ -414,6 +424,22 @@ func agentSettings(hookPath string, d catalog.Definition, projectDir string, out
 // runs a command.
 func shellCommand(command string) map[string]any {
 	return map[string]any{"type": "command", "command": command}
+}
+
+// safeShellWord matches what a POSIX shell reads as one word, as it is.
+var safeShellWord = regexp.MustCompile(`^[A-Za-z0-9_@%+=:,./-]+$`)
+
+// shellWord quotes s as one word of a shell command line. Claude Code runs
+// hooks and the statusLine through /bin/sh: an unquoted path with a space,
+// such as the macOS app bundle's ("Nobody Inc.app"), would be cut in two and
+// every hook would fail with "No such file or directory". A path that needs
+// no quoting is left as it is.
+func shellWord(s string) string {
+	if safeShellWord.MatchString(s) {
+		return s
+	}
+
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // stageMu keeps agents started at the same time from staging the personal

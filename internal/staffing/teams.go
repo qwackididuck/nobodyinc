@@ -3,9 +3,11 @@ package staffing
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
+	"github.com/qwackididuck/nobodyinc/internal/kb"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 )
@@ -91,6 +93,52 @@ func (s *Service) SetProjectPrompt(ctx context.Context, text string) error {
 	defer s.mu.Unlock()
 
 	if err := org.WriteProjectPrompt(s.Org.Current().ProjectDir, text); err != nil {
+		return err
+	}
+
+	return s.reloadAndApply(ctx, "", runtime.ApplyOptions{})
+}
+
+// SetKnowledge sets the project's knowledge base up at path, moves it, or
+// removes it when path is "" (ADR-0019): "knowledge: {path}" in org.yaml.
+// The path is checked with its symbolic links followed (kb.Resolve), and a
+// folder that does not exist is created, empty; removing the knowledge base
+// never touches the files. Every agent restarts once idle, resuming its
+// session: the knowledge tools of the office MCP come and go with it.
+func (s *Service) SetKnowledge(ctx context.Context, path string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current := s.Org.Current()
+
+	if path != "" {
+		clean, err := kb.CheckPath(path)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalid, err)
+		}
+
+		dir, err := kb.Resolve(current.ProjectDir, clean)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalid, err)
+		}
+
+		if err := os.MkdirAll(dir, kb.FolderMode); err != nil {
+			return fmt.Errorf("create the knowledge folder %s: %w", clean, err)
+		}
+
+		path = clean
+	}
+
+	if current.KnowledgePath() == path {
+		return nil
+	}
+
+	candidate := current.WithKnowledge(path)
+	if err := candidate.Validate(); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
+	}
+
+	if err := org.WriteOrgFile(candidate); err != nil {
 		return err
 	}
 

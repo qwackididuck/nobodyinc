@@ -3,14 +3,17 @@
 //
 // The scene is SCENE_WIDTH wide. The wall runs along the top, with the
 // entrance door on the right: newcomers walk in through it, dismissed agents
-// walk out. Below, a fixed column on the left holds the director's office
-// and, under it, the archives, where finished features' tickets are filed on
-// shelves. To its right, rooms are laid out in rows, left to right: one room
-// per team in the order of .nobody/org.yaml, then the plot (an empty lot with
-// a "+" where the next team's room will be built). A room is as wide as its
-// desks need; when a row is full, the next room starts a new row, and the
-// floor grows downwards (the office scrolls). Between two rows runs a
-// corridor, where walkers go.
+// walk out. Below, a column on the left holds, one under the other, the
+// director's office, the library (the project's knowledge base, ADR-0019;
+// only when it has one, with pages) and the archives, where finished
+// features' tickets are filed in cabinets. To its right, rooms are laid out in
+// rows, left to right: one room per team in the order of .nobody/org.yaml,
+// then the plot (an empty lot with a "+" where the next team's room will be
+// built). A room is as wide as its desks need; when a row is full, the next
+// room starts a new row, and the floor grows downwards (the office scrolls).
+// A row that starts below the left column takes the whole width: no empty
+// floor under the archives. Between two rows runs a corridor, where walkers
+// go.
 //
 // A desk position is the top-left corner of its "station" (character, desk,
 // name plate), DESK_WIDTH × DESK_HEIGHT.
@@ -30,7 +33,7 @@ const ROOM_PADDING_BOTTOM = 40;
 const DESK_STEP_X = 150;
 const DESK_STEP_Y = 150;
 const MIN_ROOM_WIDTH = 200;
-const LEFT_COLUMN_WIDTH = 340; // the director's office and the archives
+const LEFT_COLUMN_WIDTH = 340; // the director's office, the library and the archives
 const PLOT_ROOM_WIDTH = 200;
 const FLOOR_BOTTOM = 30;
 
@@ -46,8 +49,8 @@ export interface Point {
 }
 
 export interface Room {
-  id: string; // "director", "plot", "archives" or the team ID
-  kind: "director" | "team" | "plot" | "archives";
+  id: string; // "director", "plot", "library", "archives" or the team ID
+  kind: "director" | "team" | "plot" | "library" | "archives";
   x: number;
   y: number;
   width: number;
@@ -67,9 +70,13 @@ export interface OfficeInput {
   // The director's address, or null while the project has none.
   director: string | null;
   teams: { id: string; members: string[] }[];
+  // Whether the office has a library: the project has a knowledge base with
+  // pages.
+  library?: boolean;
 }
 
-// The teams' area, right of the left column.
+// The teams' area, right of the left column; below it, rows take the whole
+// width.
 const AREA_X = MARGIN_X + LEFT_COLUMN_WIDTH + ROOM_GAP;
 const AREA_WIDTH = SCENE_WIDTH - MARGIN_X - AREA_X;
 // How many desks fit side by side in the widest team room.
@@ -93,28 +100,39 @@ function room(id: string, kind: Room["kind"], x: number, y: number, width: numbe
 export function layoutOffice(input: OfficeInput): OfficeLayout {
   const desks = new Map<string, Point>();
 
-  // The left column: the director's office, the archives under it.
+  // The left column: the director's office, then the library when there is
+  // one, then the archives, with no gap left by a missing library.
   const director = room("director", "director", MARGIN_X, ROW_TOP, LEFT_COLUMN_WIDTH, ONE_ROW_HEIGHT);
   if (input.director) {
     const at = { x: director.x + ROOM_PADDING_X, y: director.y + ROOM_PADDING_TOP };
     director.desks.push({ address: input.director, at });
     desks.set(input.director, at);
   }
-  const archives = room("archives", "archives", MARGIN_X, director.y + director.height + ROW_GAP, LEFT_COLUMN_WIDTH, ONE_ROW_HEIGHT);
+  const column: Room[] = [director];
+  const below = (r: Room) => r.y + r.height + ROW_GAP;
+  if (input.library) column.push(room("library", "library", MARGIN_X, below(column[column.length - 1]), LEFT_COLUMN_WIDTH, ONE_ROW_HEIGHT));
+  const archives = room("archives", "archives", MARGIN_X, below(column[column.length - 1]), LEFT_COLUMN_WIDTH, ONE_ROW_HEIGHT);
+  column.push(archives);
+  const columnBottom = archives.y + archives.height;
   const rooms: Room[] = [director];
 
-  // The teams' area: team rooms, then the plot, in rows.
+  // The teams' area: team rooms, then the plot, in rows. A row starting
+  // below the left column starts at the left edge.
   const wanted = [...input.teams.map((t) => ({ id: t.id, kind: "team" as const, members: t.members })), { id: "plot", kind: "plot" as const, members: [] }];
-  let x = AREA_X;
+  let start = AREA_X;
+  let x = start;
   let y = ROW_TOP;
   let rowHeight = 0;
 
   for (const w of wanted) {
+    // A room is as wide wherever it lands: rows below the left column only
+    // hold more rooms.
     const size = roomSize(w.kind, w.members.length);
-    if (x > AREA_X && x + size.width > AREA_X + AREA_WIDTH) {
-      x = AREA_X;
+    if (x > start && x + size.width > SCENE_WIDTH - MARGIN_X) {
       y += rowHeight + ROW_GAP;
       rowHeight = 0;
+      start = y >= columnBottom ? MARGIN_X : AREA_X;
+      x = start;
     }
 
     const r = room(w.id, w.kind, x, y, size.width, size.height);
@@ -132,8 +150,8 @@ export function layoutOffice(input: OfficeInput): OfficeLayout {
     rowHeight = Math.max(rowHeight, size.height);
   }
 
-  rooms.push(archives);
-  const bottom = Math.max(archives.y + archives.height, y + rowHeight);
+  rooms.push(...column.slice(1));
+  const bottom = Math.max(columnBottom, y + rowHeight);
 
   return { rooms, desks, height: bottom + FLOOR_BOTTOM };
 }

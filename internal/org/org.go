@@ -19,6 +19,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/commands"
+	"github.com/qwackididuck/nobodyinc/internal/kb"
 	"github.com/qwackididuck/nobodyinc/internal/mcpservers"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
 )
@@ -49,6 +50,9 @@ type Org struct {
 	// the human chose not to import as agents (ADR-0018, internal/subagents):
 	// they are no longer offered.
 	IgnoredSubagents []string `yaml:"ignored_subagents,omitempty"`
+	// Knowledge is the project's knowledge base, a folder of the project
+	// (ADR-0019, internal/kb); nil when it has none.
+	Knowledge *Knowledge `yaml:"knowledge,omitempty"`
 	// IgnoredChannels counts the "channels:" entries read from an org.yaml
 	// written before ADR-0009. They are ignored (flows are open by default)
 	// and dropped by the next write of org.yaml; the daemon warns about them.
@@ -92,6 +96,37 @@ type Team struct {
 	Agents []Agent `yaml:"-"`
 }
 
+// Knowledge declares the project's knowledge base (ADR-0019): "knowledge:
+// {path: docs}" in org.yaml.
+type Knowledge struct {
+	// Path is the folder, relative to the project (kb.CheckPath).
+	Path string `yaml:"path"`
+}
+
+// KnowledgePath is the folder of the knowledge base, "" when the project
+// has none.
+func (o *Org) KnowledgePath() string {
+	if o.Knowledge == nil {
+		return ""
+	}
+
+	return o.Knowledge.Path
+}
+
+// WithKnowledge returns a copy of the organization with its knowledge base
+// at path ("" removes it). The receiver is left untouched; validate the
+// copy before using it.
+func (o *Org) WithKnowledge(path string) *Org {
+	c := o.copyTeams()
+	c.Knowledge = nil
+
+	if path != "" {
+		c.Knowledge = &Knowledge{Path: path}
+	}
+
+	return c
+}
+
 // Agent is one member of a team: its name and its definition (role, prompt,
 // model, permissions...), as written in .nobody/teams/<team>/<name>.md.
 type Agent struct {
@@ -112,6 +147,7 @@ func (o *Org) Validate() error {
 	teams, errs := o.validateTeams()
 	errs = append(errs, o.validateGod()...)
 	errs = append(errs, o.validateBlocks(teams)...)
+	errs = append(errs, o.validateKnowledge()...)
 
 	return errors.Join(errs...)
 }
@@ -342,6 +378,20 @@ func (o *Org) validateBlocks(teams map[string]bool) []error {
 	}
 
 	return errs
+}
+
+// validateKnowledge checks the path of the knowledge base, as written
+// (symbolic links are followed by kb.Resolve, when it is read).
+func (o *Org) validateKnowledge() []error {
+	if o.Knowledge == nil {
+		return nil
+	}
+
+	if _, err := kb.CheckPath(o.Knowledge.Path); err != nil {
+		return []error{fmt.Errorf("knowledge: %w", err)}
+	}
+
+	return nil
 }
 
 // Address builds the address of an agent: "<agent>@<team>", or just the

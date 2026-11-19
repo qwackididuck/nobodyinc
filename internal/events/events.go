@@ -45,7 +45,36 @@ const (
 	// BudgetsChanged: the budgets file, a ticket's or feature's budget, a
 	// hold, a budget request or a cap proposal changed (ADR-0013).
 	BudgetsChanged = "budgets.changed"
+	// KBChanged carries a KBChangedData: pages of the knowledge base changed,
+	// or the knowledge base itself (ADR-0019).
+	KBChanged = "kb.changed"
+	// KBRead carries a KBReadData: an agent used a knowledge tool, or is
+	// about to read or change a file of the knowledge base with its own
+	// tools, and the office walks it to the library.
+	KBRead = "kb.read"
 )
+
+// KBChangedData is the data of a KBChanged event.
+type KBChangedData struct {
+	Pages   int `json:"pages"`
+	Added   int `json:"added"`
+	Removed int `json:"removed"`
+	Changed int `json:"changed"`
+	// Reset is true when the folder itself changed (set up, moved, removed):
+	// the control room reloads without announcing new pages.
+	Reset bool `json:"reset"`
+}
+
+// KBReadData is the data of a KBRead event.
+type KBReadData struct {
+	Agent string `json:"agent"`
+	// Tool is kb_search, kb_read or kb_list, or a file tool (Read, Edit,
+	// Write, MultiEdit, NotebookEdit).
+	Tool string `json:"tool"`
+	// Subject is the query, the page or the folder; for a file tool, the
+	// file's path in the knowledge folder.
+	Subject string `json:"subject"`
+}
 
 // Event is one change. Data is encoded as JSON in the stream.
 type Event struct {

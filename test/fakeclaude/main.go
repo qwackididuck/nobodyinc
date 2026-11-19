@@ -26,8 +26,9 @@
 //   - a query gets an inform answer; the query "SYSTEM PROMPT?" is answered
 //     with the system prompt it was started with (--append-system-prompt),
 //     "PRELOADED SKILLS?" with how the session started and what its
-//     SessionStart hook handed over, and "MEMORY?" with what the session
-//     remembers: every prompt and every message it got, across resumes;
+//     SessionStart hook handed over, "MEMORY?" with what the session
+//     remembers: every prompt and every message it got, across resumes, and
+//     "KB? <words>" with what the kb_search tool finds (ADR-0019);
 //   - an inform answering one of its queries is forwarded, as done, to whoever
 //     made the original request;
 //   - when send_message fails, the error is escalated to the human;
@@ -499,17 +500,20 @@ func (a *agent) react(text string) {
 	}
 }
 
-// answer answers a query: with the system prompt when asked for it.
+// answer answers a query: with the system prompt when asked for it, or with
+// what kb_search finds for "KB? <words>".
 func (a *agent) answer(m mail) {
 	body := "answer to: " + m.Body
 
-	switch strings.TrimSpace(m.Body) {
-	case "SYSTEM PROMPT?":
+	switch question := strings.TrimSpace(m.Body); {
+	case question == "SYSTEM PROMPT?":
 		body = a.opts.systemPrompt
-	case "PRELOADED SKILLS?":
+	case question == "PRELOADED SKILLS?":
 		body = a.preloaded
-	case "MEMORY?":
+	case question == "MEMORY?":
 		body = strings.Join(a.session.Memory, "\n")
+	case strings.HasPrefix(question, "KB? "):
+		body = a.searchKnowledge(strings.TrimPrefix(question, "KB? "))
 	}
 
 	a.send(map[string]any{"to": m.From, "act": "inform", "subject": "Re: " + m.Subject, "body": body, "in_reply_to": m.ID})
@@ -648,6 +652,21 @@ func commitWork(ticket string) {
 			return
 		}
 	}
+}
+
+// searchKnowledge calls kb_search (ADR-0019) and returns its answer as
+// text, or the refusal.
+func (a *agent) searchKnowledge(words string) string {
+	res, err := a.mcp.CallTool(context.Background(), &mcp.CallToolParams{Name: "kb_search", Arguments: map[string]any{"query": words}})
+	if err != nil {
+		return "kb_search failed: " + err.Error()
+	}
+
+	if res.IsError {
+		return "kb_search refused: " + textOf(res)
+	}
+
+	return textOf(res)
 }
 
 // call runs an office tool and reports whether it succeeded.

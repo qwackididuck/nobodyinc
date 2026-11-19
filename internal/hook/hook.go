@@ -14,11 +14,14 @@
 //     on it before ending its turn for real. (Claude Code labels such a block
 //     "Stop hook error" in its UI; nothing is wrong, see docs/hooks.md.)
 //
-// Any other event is ignored here. Two events are not about mail and are
+// Any other event is ignored here. Three events are not about mail and are
 // handled by the daemon itself: PermissionRequest (the approval queue,
-// docs/approvals.md) and SessionStart, which hands the agent the skills it
+// docs/approvals.md), SessionStart, which hands the agent the skills it
 // preloads (ADR-0011) and, when a project opens again, its current
-// organization (ADR-0015); see SessionStartResponse.
+// organization (ADR-0015), see SessionStartResponse; and PreToolUse, run
+// only for the file tools (FileTools), which tells the daemon an agent is
+// about to read or change a file of the knowledge base (ADR-0019,
+// docs/knowledge.md). PostToolUse tells it too, once the tool ran.
 //
 // Delivery is "at least once": Handle only decides what to say. The messages
 // are marked delivered once nobody-hook confirms it printed the answer, so a
@@ -46,14 +49,27 @@ const (
 	// EventSessionStart is not about mail either: the daemon hands the agent
 	// the skills it preloads, see SessionStartResponse.
 	EventSessionStart = "SessionStart"
+	// EventPreToolUse is not about mail: an agent is about to use a file
+	// tool (FileTools); the daemon looks whether it touches the knowledge
+	// base, and always lets the tool run.
+	EventPreToolUse = "PreToolUse"
 )
+
+// FileTools are the tools whose PreToolUse runs nobody-hook, as a Claude
+// Code matcher: those reading or changing one file, named in their input
+// (file_path, or notebook_path). Other tools never pay for the hook.
+const FileTools = "Read|Edit|Write|MultiEdit|NotebookEdit"
+
+// WritingTools are the FileTools that change their file.
+var WritingTools = []string{"Edit", "Write", "MultiEdit", "NotebookEdit"}
 
 // Event is the part of the JSON sent by Claude Code on stdin that we use.
 type Event struct {
 	Name      string `json:"hook_event_name"`
 	SessionID string `json:"session_id"`
 	Cwd       string `json:"cwd"`
-	// ToolName and ToolInput are set for PostToolUse and PermissionRequest.
+	// ToolName and ToolInput are set for PreToolUse, PostToolUse and
+	// PermissionRequest.
 	ToolName  string          `json:"tool_name,omitempty"`
 	ToolInput json.RawMessage `json:"tool_input,omitempty"`
 	// StopHookActive is true when the agent is already continuing because a
@@ -62,6 +78,25 @@ type Event struct {
 	StopHookActive bool `json:"stop_hook_active,omitempty"`
 	// Source is set for SessionStart: startup, resume, clear or compact.
 	Source string `json:"source,omitempty"`
+}
+
+// FilePath is the file a file tool's input names ("" when none): file_path,
+// or notebook_path for NotebookEdit.
+func (ev Event) FilePath() string {
+	var input struct {
+		FilePath     string `json:"file_path"`
+		NotebookPath string `json:"notebook_path"`
+	}
+
+	if len(ev.ToolInput) == 0 || json.Unmarshal(ev.ToolInput, &input) != nil {
+		return ""
+	}
+
+	if input.FilePath != "" {
+		return input.FilePath
+	}
+
+	return input.NotebookPath
 }
 
 // Response is what nobody-hook prints on stdout for Claude Code.
