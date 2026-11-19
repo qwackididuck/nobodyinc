@@ -349,6 +349,8 @@ func SystemPrompt(o *org.Org, m org.Member, userInstructions string) (string, er
 		"Chart":   officemcp.Chart(o, m.Address),
 		"IsGod":   o.IsGod(m.Address),
 		"God":     officemcp.DirectorOf(o),
+		// The knowledge tools exist only with a knowledge base (ADR-0019).
+		"Knowledge": o.KnowledgePath(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("render system prompt of %s: %w", m.Address, err)

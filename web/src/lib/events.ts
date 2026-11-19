@@ -22,7 +22,12 @@ export type DaemonEvent =
   // Agents spent (at most once a second), and budgets, holds, requests or
   // cap proposals changed (ADR-0013).
   | { type: "spend.changed" }
-  | { type: "budgets.changed" };
+  | { type: "budgets.changed" }
+  // Pages of the knowledge base changed, or the knowledge base itself
+  // (reset: set up, moved, removed), and an agent used a knowledge tool
+  // (ADR-0019).
+  | { type: "kb.changed"; data: { pages: number; added: number; removed: number; changed: number; reset: boolean } }
+  | { type: "kb.read"; data: { agent: string; tool: "kb_search" | "kb_read" | "kb_list"; subject: string } };
 
 export type EventType = DaemonEvent["type"];
 
@@ -40,6 +45,8 @@ const EVENT_TYPES: EventType[] = [
   "schedules.changed",
   "spend.changed",
   "budgets.changed",
+  "kb.changed",
+  "kb.read",
 ];
 
 // connectEvents opens the stream and calls onEvent for each event, and

@@ -748,6 +748,8 @@ paths:
         - `schedules.changed`: `{}` (a schedule, one of its occurrences or a proposal changed)
         - `spend.changed`: `{}` (agents spent; sent at most once a second, ADR-0013)
         - `budgets.changed`: `{}` (the budgets file, a ticket's or feature's budget, a hold, a budget request or a cap proposal changed)
+        - `kb.changed`: KnowledgeChangedEvent (pages of the knowledge base changed, or the knowledge base itself, ADR-0019)
+        - `kb.read`: KnowledgeReadEvent (an agent used a knowledge tool: the office walks it to the library)
       responses:
         "200":
           description: The event stream, until the client or the daemon closes it
@@ -1232,6 +1234,147 @@ paths:
               schema:
                 $ref: "#/components/schemas/SubagentList"
         "400":
+          $ref: "#/components/responses/Error"
+
+  /api/kb:
+    get:
+      operationId: getKnowledge
+      summary: The knowledge base's settings and overview
+      description: |
+        The project's knowledge base (ADR-0019, docs/knowledge.md): a folder
+        of the project declared in .nobody/org.yaml (`knowledge: {path}`).
+        Without one, `path` is empty and nothing else is set. The folder is
+        scanned again when the last scan is older than two seconds.
+      responses:
+        "200":
+          description: Settings and overview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeOverview"
+    put:
+      operationId: setKnowledge
+      summary: Set the knowledge base up, move it or remove it
+      description: |
+        Writes `knowledge: {path}` in .nobody/org.yaml (an empty path removes
+        the key, never the files). The path is relative to the project; it is
+        refused when absolute, with "..", leading out of the project through
+        a symbolic link, the project itself, or in .nobody, .claude or .git.
+        A folder that does not exist is created, empty. Every agent restarts
+        once idle, resuming its session: the knowledge tools of the office MCP
+        come and go with the knowledge base.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KnowledgeSettings"
+      responses:
+        "200":
+          description: Saved; the overview after the change
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeOverview"
+        "400":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+
+  /api/kb/tree:
+    get:
+      operationId: getKnowledgeTree
+      summary: The knowledge base as a tree of folders and pages
+      description: |
+        Folders holding pages first, then pages, each sorted by name; folders
+        without any page are left out. Hidden files and folders are skipped.
+        404 when the project has no knowledge base.
+      responses:
+        "200":
+          description: The tree
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeTree"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/kb/pages/{path}:
+    get:
+      operationId: getKnowledgePage
+      summary: One page, rendered, with its links and backlinks
+      description: |
+        The page's HTML is rendered by the daemon (goldmark, GitHub's
+        flavour); raw HTML in the page is not rendered. Links to pages and
+        anchors are written `kb:<path>[#anchor]`, images and other files of
+        the folder `kb-asset:<path>`, for the control room to turn into
+        navigation and into GET /api/kb/assets/{path} URLs. Each link has a
+        class: kb-page, kb-asset or kb-external, plus kb-broken when it leads
+        to nothing.
+      parameters:
+        - $ref: "#/components/parameters/KnowledgePath"
+      responses:
+        "200":
+          description: The page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgePage"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/kb/search:
+    get:
+      operationId: searchKnowledge
+      summary: Full-text search of the knowledge base
+      description: |
+        Every word must be found (accents ignored); the last one may be the
+        beginning of a word. Best first: the title weighs more than the body.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      responses:
+        "200":
+          description: Results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeSearch"
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/kb/assets/{path}:
+    get:
+      operationId: getKnowledgeAsset
+      summary: An image of the knowledge folder, for a page
+      description: |
+        Read-only, images only (png, jpg, gif, webp, svg, avif), up to 10 MB,
+        under the same path rules as pages (no "..", no hidden file, no
+        symbolic link leading out of the folder). Served with a sandboxing
+        Content-Security-Policy.
+      parameters:
+        - $ref: "#/components/parameters/KnowledgePath"
+      responses:
+        "200":
+          description: The image
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/Error"
+        "415":
           $ref: "#/components/responses/Error"
 
   /api/commands/personal/{name}/copy-to-project:
@@ -2270,6 +2413,15 @@ paths:
 
 components:
   parameters:
+    KnowledgePath:
+      name: path
+      in: path
+      required: true
+      description: A path in the knowledge folder; it may hold slashes (adr/0003-isolate-agents.md).
+      schema:
+        type: string
+        example: adr/0003-isolate-agents.md
+
     Project:
       name: project
       in: path
@@ -3019,6 +3171,251 @@ components:
           description: Names of the subagents to dismiss.
           items:
             type: string
+
+    KnowledgeSettings:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path:
+          type: string
+          description: The folder, relative to the project ("docs"); empty removes the knowledge base.
+          example: docs
+
+    KnowledgeOverview:
+      type: object
+      required: [path, suggested]
+      properties:
+        path:
+          type: string
+          description: The folder declared in org.yaml; empty when the project has no knowledge base.
+        suggested:
+          type: string
+          description: The folder to suggest when setting one up.
+          example: docs
+        exists:
+          type: boolean
+          description: False when the declared folder is missing (deleted by hand, another branch).
+        error:
+          type: string
+          description: Why the folder cannot be read (a path the rules refuse...).
+        pages:
+          type: integer
+        home:
+          type: string
+          description: index.md, else README.md, at the root of the folder; empty when neither exists.
+        folders:
+          type: array
+          description: The top-level folders holding pages.
+          items:
+            type: object
+            required: [path, pages]
+            properties:
+              path:
+                type: string
+              pages:
+                type: integer
+        recent:
+          type: array
+          description: The pages changed last, newest first.
+          items:
+            $ref: "#/components/schemas/KnowledgePageRef"
+        broken:
+          type: array
+          items:
+            type: object
+            required: [page, target, text]
+            properties:
+              page:
+                type: string
+              target:
+                type: string
+                description: The destination as written in the page.
+              text:
+                type: string
+        orphans:
+          type: array
+          description: Pages no other page links to, the home page aside.
+          items:
+            $ref: "#/components/schemas/KnowledgePageRef"
+        errors:
+          type: array
+          description: Pages that could not be read (too large, unreadable, a link leading out of the folder).
+          items:
+            type: object
+            required: [path, error]
+            properties:
+              path:
+                type: string
+              error:
+                type: string
+
+    KnowledgePageRef:
+      type: object
+      required: [path, title]
+      properties:
+        path:
+          type: string
+          example: adr/0003-isolate-agents.md
+        title:
+          type: string
+        modified:
+          type: string
+          format: date-time
+
+    KnowledgeTree:
+      type: object
+      required: [path, home, root]
+      properties:
+        path:
+          type: string
+        home:
+          type: string
+        root:
+          $ref: "#/components/schemas/KnowledgeNode"
+
+    KnowledgeNode:
+      type: object
+      required: [name, path, dir]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+          description: Relative to the knowledge folder; empty for the root.
+        dir:
+          type: boolean
+        title:
+          type: string
+          description: A page's title.
+        error:
+          type: string
+          description: Why a page could not be read.
+        pages:
+          type: integer
+          description: A folder's number of pages, sub-folders included.
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeNode"
+
+    KnowledgePage:
+      type: object
+      required: [path, title, header, html, size, modified, links, backlinks]
+      properties:
+        path:
+          type: string
+        title:
+          type: string
+        header:
+          type: array
+          description: The page's YAML header, in order.
+          items:
+            type: object
+            required: [key, value]
+            properties:
+              key:
+                type: string
+              value:
+                type: string
+        html:
+          type: string
+        size:
+          type: integer
+        modified:
+          type: string
+          format: date-time
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgeLink"
+        backlinks:
+          type: array
+          items:
+            $ref: "#/components/schemas/KnowledgePageRef"
+
+    KnowledgeLink:
+      type: object
+      required: [target, text, kind, broken]
+      properties:
+        target:
+          type: string
+          description: The destination as written.
+        text:
+          type: string
+        kind:
+          type: string
+          enum: [page, asset, external, anchor]
+        path:
+          type: string
+          description: Where a page or asset link leads in the knowledge folder.
+        anchor:
+          type: string
+        title:
+          type: string
+          description: The title of the page a page link leads to.
+        image:
+          type: boolean
+        broken:
+          type: boolean
+
+    KnowledgeSearch:
+      type: object
+      required: [query, results]
+      properties:
+        query:
+          type: string
+        results:
+          type: array
+          items:
+            type: object
+            required: [path, title, snippet]
+            properties:
+              path:
+                type: string
+              title:
+                type: string
+              snippet:
+                type: array
+                description: A piece of the page's text around the matches.
+                items:
+                  type: object
+                  required: [text]
+                  properties:
+                    text:
+                      type: string
+                    match:
+                      type: boolean
+                      description: True for a word found.
+
+    KnowledgeChangedEvent:
+      type: object
+      required: [pages, added, removed, changed, reset]
+      properties:
+        pages:
+          type: integer
+        added:
+          type: integer
+        removed:
+          type: integer
+        changed:
+          type: integer
+        reset:
+          type: boolean
+          description: True when the folder itself changed (set up, moved, removed), to reload without announcing new pages.
+
+    KnowledgeReadEvent:
+      type: object
+      required: [agent, tool, subject]
+      properties:
+        agent:
+          type: string
+        tool:
+          type: string
+          enum: [kb_search, kb_read, kb_list]
+        subject:
+          type: string
+          description: The query, the page or the folder.
 
     NewCommandName:
       type: string

@@ -773,6 +773,113 @@ export async function importSubagents(choice: SubagentImport): Promise<Subagent[
   return (await postJSON<{ subagents: Subagent[] }>("/api/subagents/import", choice)).subagents;
 }
 
+// --- The knowledge base (ADR-0019, docs/knowledge.md) ---
+
+export interface KnowledgePageRef {
+  path: string;
+  title: string;
+  modified?: string;
+}
+
+// The knowledge base's settings and overview: path is empty when the project
+// has none (the office then shows no library).
+export interface KnowledgeOverview {
+  path: string;
+  // The folder to suggest when setting one up.
+  suggested: string;
+  // False when the declared folder is missing.
+  exists?: boolean;
+  // Why the folder cannot be read.
+  error?: string;
+  pages?: number;
+  // index.md, else README.md; empty for a generated home.
+  home?: string;
+  folders?: { path: string; pages: number }[];
+  recent?: KnowledgePageRef[];
+  broken?: { page: string; target: string; text: string }[];
+  orphans?: KnowledgePageRef[];
+  errors?: { path: string; error: string }[];
+}
+
+export interface KnowledgeNode {
+  name: string;
+  path: string;
+  dir: boolean;
+  title?: string;
+  error?: string;
+  pages?: number;
+  children?: KnowledgeNode[];
+}
+
+export interface KnowledgeTree {
+  path: string;
+  home: string;
+  root: KnowledgeNode;
+}
+
+export interface KnowledgeLink {
+  target: string;
+  text: string;
+  kind: "page" | "asset" | "external" | "anchor";
+  path?: string;
+  anchor?: string;
+  title?: string;
+  image?: boolean;
+  broken: boolean;
+}
+
+// A page: its HTML is rendered by the daemon, raw HTML escaped; links to
+// pages are "kb:<path>[#anchor]", images and files "kb-asset:<path>".
+export interface KnowledgePage {
+  path: string;
+  title: string;
+  header: { key: string; value: string }[];
+  html: string;
+  size: number;
+  modified: string;
+  links: KnowledgeLink[];
+  backlinks: KnowledgePageRef[];
+}
+
+export interface KnowledgeResult {
+  path: string;
+  title: string;
+  snippet: { text: string; match?: boolean }[];
+}
+
+export function getKnowledge(): Promise<KnowledgeOverview> {
+  return getJSON<KnowledgeOverview>("/api/kb");
+}
+
+// setKnowledge sets the knowledge base up (creating its folder), moves it, or
+// removes it with "" (never its files). Every agent restarts once idle,
+// resuming its session.
+export function setKnowledge(path: string): Promise<KnowledgeOverview> {
+  return sendJSON<KnowledgeOverview>("PUT", "/api/kb", { path });
+}
+
+export function getKnowledgeTree(): Promise<KnowledgeTree> {
+  return getJSON<KnowledgeTree>("/api/kb/tree");
+}
+
+export function getKnowledgePage(path: string): Promise<KnowledgePage> {
+  return getJSON<KnowledgePage>(`/api/kb/pages/${encodeKnowledgePath(path)}`);
+}
+
+export async function searchKnowledge(query: string): Promise<KnowledgeResult[]> {
+  return (await getJSON<{ results: KnowledgeResult[] }>(`/api/kb/search?q=${encodeURIComponent(query)}`)).results;
+}
+
+// knowledgeAssetURL is where an image of the knowledge folder is served.
+export function knowledgeAssetURL(path: string): string {
+  return projectPath(`/api/kb/assets/${encodeKnowledgePath(path)}`);
+}
+
+// encodeKnowledgePath encodes each segment of a path, keeping its slashes.
+function encodeKnowledgePath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
+
 export async function sendMessage(draft: HumanDraft): Promise<Message> {
   const res = await daemonFetch("/api/messages", {
     method: "POST",

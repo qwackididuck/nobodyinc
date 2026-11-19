@@ -13,10 +13,14 @@
 //   - a new team gets its room built; a removed team's room is taken down;
 //     the plot, an empty lot after the teams, opens the team dialog;
 //   - a finished feature: its tickets fly from the director's board to the
-//     archives' shelves.
+//     archives' cabinets;
+//   - an agent using a knowledge tool walks to the library's reading table,
+//     shows what it reads, and walks back (kb.read); new pages make spines
+//     sparkle on the library's shelves (kb.changed).
 // Rooms can be clicked (not the desks in them): a team's room opens its
-// dialog, the director's office its chat, the archives their panel.
-// Paper planes are launched by the event stream (message.sent).
+// dialog, the director's office its chat, the library its reader, the
+// archives their panel. Paper planes are launched by the event stream
+// (message.sent).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -34,8 +38,10 @@ import { ClockPanel } from "./ClockPanel";
 import { FeatureReview } from "./FeatureReview";
 import { SpendPanel } from "./SpendPanel";
 import { TeamDialog } from "../teams/TeamDialog";
-import { addWalker, celebrate, dismantle, fileTickets, flyPlane, site, walk, works } from "./effects";
+import { Reader } from "../knowledge/Reader";
+import { addWalker, celebrate, dismantle, fileTickets, flyPlane, popText, site, walk, works } from "./effects";
 import { BIN, DOOR, DOOR_STATION, headOf, layoutOffice, type Point, type Room, SCENE_WIDTH, WALL_HEIGHT } from "./layout";
+import { ArchivesFurniture, LibraryFurniture } from "./rooms";
 import styles from "./office.module.css";
 
 interface Props {
@@ -63,12 +69,35 @@ interface Seen {
   teams: Team[];
 }
 
-function inputOf(agents: Agent[], teams: Team[], hidden: Set<string> = new Set()) {
+function inputOf(agents: Agent[], teams: Team[], library: boolean, hidden: Set<string> = new Set()) {
   const shown = agents.filter((a) => !hidden.has(a.address));
   return {
     director: shown.find(isDirector)?.address ?? null,
     teams: teams.map((t) => ({ id: t.id, members: shown.filter((a) => a.team === t.id).map((a) => a.address) })),
+    library,
   };
+}
+
+// How long the spines of new pages sparkle on the library's shelves.
+const FRESH_MS = 6000;
+// How long a visiting agent stays at the reading table.
+const READING_MS = 1600;
+// Where a visiting agent walks down the left column (from the column's right
+// edge), and where it stands at the reading table (from the library's right
+// edge), in station positions.
+const DESK_EDGE = 60;
+const TABLE_OFFSET = 150;
+
+// readLabel says what an agent reads at the library.
+function readLabel(tool: "kb_search" | "kb_read" | "kb_list", subject: string): string {
+  switch (tool) {
+    case "kb_search":
+      return `searching "${subject}"`;
+    case "kb_read":
+      return `reading ${subject}`;
+    case "kb_list":
+      return `browsing ${subject || "the shelves"}`;
+  }
 }
 
 const orgKey = (agents: Agent[], teams: Team[]) =>
@@ -80,7 +109,10 @@ const orgKey = (agents: Agent[], teams: Team[]) =>
 let nextSceneID = 1;
 
 export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSeen, onClockSeen }: Props) {
-  const { agents, teams, tickets, features, loaded, scheduleRuns, spend } = useLive();
+  const { agents, teams, tickets, features, loaded, scheduleRuns, spend, knowledge } = useLive();
+  // The library stands only when the project has a knowledge base with pages.
+  const pages = knowledge?.path ? (knowledge.pages ?? 0) : 0;
+  const library = pages > 0;
   const appearance = useAppearance();
   const moving = appearance.animations === "full";
   const layer = useRef<HTMLDivElement>(null);
@@ -101,6 +133,11 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
   const [seenFinished, setSeenFinished] = useState<string | null>(null);
   const [clockOpen, setClockOpen] = useState(false);
   const [spendOpen, setSpendOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  // Agents away at the library (their desk is empty), and how many spines of
+  // new pages sparkle.
+  const [reading, setReading] = useState<Set<string>>(new Set());
+  const [fresh, setFresh] = useState(0);
   // The occurrences already done when last rendered, and how many times the
   // clock rang: a scheduled task newly done rings it (the alarm replays when
   // the count changes). Nothing rings for what was done before the page
@@ -126,7 +163,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
     if (seen) {
       const before = new Map(seen.agents.map((a) => [a.address, a]));
       const now = new Set(agents.map((a) => a.address));
-      const previous = layoutOffice(inputOf(seen.agents, seen.teams));
+      const previous = layoutOffice(inputOf(seen.agents, seen.teams, library));
       const added = agents.filter((a) => !before.has(a.address));
       const removed = seen.agents.filter((a) => !now.has(a.address));
       const teamIDs = new Set(teams.map((t) => t.id));
@@ -163,9 +200,9 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
   }
 
   const walking = useMemo(() => new Set([...arrivals].filter(([, phase]) => phase === "walking").map(([a]) => a)), [arrivals]);
-  const layout = useMemo(() => layoutOffice(inputOf(agents, teams, walking)), [agents, teams, walking]);
+  const layout = useMemo(() => layoutOffice(inputOf(agents, teams, library, walking)), [agents, teams, library, walking]);
   // Where everyone will sit once every walker has arrived.
-  const full = useMemo(() => layoutOffice(inputOf(agents, teams)), [agents, teams]);
+  const full = useMemo(() => layoutOffice(inputOf(agents, teams, library)), [agents, teams, library]);
 
   // Effects read the latest layouts without restarting.
   const current = useRef({ layout, full, moving, appearance });
@@ -250,9 +287,67 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
       if (!archives || !office) return;
 
       await fileTickets(el, { x: office.x + 220, y: office.y + 80 }, { x: archives.x + archives.width / 2 - 17, y: archives.y + 90 }, motion);
-      celebrate(el, "ARCHIVED!", `${feature.id} is on the shelves`, { x: archives.x + archives.width / 2, y: archives.y + 40 }, motion);
+      celebrate(el, "ARCHIVED!", `${feature.id} is filed in the cabinets`, { x: archives.x + archives.width / 2, y: archives.y + 40 }, motion);
     }
   }, [scenes]);
+
+  // An agent using a knowledge tool walks to the library's reading table,
+  // shows what it reads, and walks back. One walk at a time per agent: calls
+  // made during a walk do not queue more walks.
+  const visiting = useRef(new Set<string>());
+
+  async function visitLibrary(el: HTMLDivElement, agent: Agent, desk: Point, home: Room, lib: Room, label: string, motion: boolean) {
+    // Along the corridor above its room, down the left column's edge, along
+    // the corridor above the library, then into it, to the reading table.
+    const edge = lib.x + lib.width - DESK_EDGE;
+    const table = { x: lib.x + lib.width - TABLE_OFFSET, y: lib.y + 40 };
+    const path = [desk, { x: desk.x, y: home.corridorY }, { x: edge, y: home.corridorY }, { x: edge, y: lib.corridorY }, { x: table.x, y: lib.corridorY }, table];
+
+    setReading((r) => new Set(r).add(agent.address));
+    const walker = addWalker(el, lookOf(agent.address, isDirector(agent)), desk);
+    await walk(walker, path, motion);
+    popText(el, styles.readBubble, label, { x: table.x - 40, y: table.y - 18 }, READING_MS);
+    await pause(motion ? READING_MS : 0);
+    await walk(walker, [...path].reverse(), motion);
+    walker.remove();
+    setReading((r) => {
+      const next = new Set(r);
+      next.delete(agent.address);
+      return next;
+    });
+  }
+
+  useDaemonEvents((e) => {
+    const el = layer.current;
+    const { layout: now, moving: motion, appearance: look } = current.current;
+    if (e.type !== "kb.read" || !el || look.animations === "off" || visiting.current.has(e.data.agent)) return;
+
+    const desk = now.desks.get(e.data.agent);
+    const home = now.rooms.find((r) => r.desks.some((d) => d.address === e.data.agent));
+    const lib = now.rooms.find((r) => r.kind === "library");
+    const agent = agents.find((a) => a.address === e.data.agent);
+    if (!desk || !home || !lib || !agent) return;
+
+    visiting.current.add(agent.address);
+    void visitLibrary(el, agent, desk, home, lib, readLabel(e.data.tool, e.data.subject), motion).finally(() =>
+      visiting.current.delete(agent.address),
+    );
+  });
+
+  // New pages: their spines sparkle for a while, and "+N PAGES" floats up
+  // over the library. A reset (the knowledge base set up or moved) announces
+  // nothing.
+  useDaemonEvents((e) => {
+    const el = layer.current;
+    const { layout: now, appearance: look } = current.current;
+    if (e.type !== "kb.changed" || e.data.reset || e.data.added <= 0) return;
+    setFresh(e.data.added);
+    setTimeout(() => setFresh(0), FRESH_MS);
+    const lib = now.rooms.find((r) => r.kind === "library");
+    if (el && lib && look.animations !== "off") {
+      popText(el, styles.pagesPop, `+${e.data.added} PAGE${e.data.added === 1 ? "" : "S"}`, { x: lib.x + 200, y: lib.y + 16 }, 2400);
+    }
+  });
 
   // Paper planes: a message between two agents flies from desk to desk.
   useDaemonEvents((e) => {
@@ -290,6 +385,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
       {archivesOpen && <ArchivesPanel onClose={() => setArchivesOpen(false)} onOpenChat={onSelectAgent} />}
       {clockOpen && <ClockPanel onClose={() => setClockOpen(false)} onSeen={onClockSeen} />}
       {spendOpen && <SpendPanel onClose={() => setSpendOpen(false)} />}
+      {libraryOpen && <Reader onClose={() => setLibraryOpen(false)} />}
       <div className={styles.wrap}>
         <div className={styles.scene} style={{ width: SCENE_WIDTH, height: Math.max(layout.height, full.height) }}>
           <Wall
@@ -312,13 +408,17 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
               building={building.has(room.id)}
               queue={room.kind === "team" ? queue(room.id) : 0}
               gauges={room.kind === "team" ? teamGauge(room.id) : []}
+              sign={room.kind === "library" ? `${knowledge?.path ?? ""}/ · ${pages} PAGE${pages === 1 ? "" : "S"}` : undefined}
+              hint={room.kind === "library" ? libraryHint(pages, knowledge?.broken?.length ?? 0) : undefined}
               onOpen={() => {
                 if (room.kind === "team") setEditingTeam(teams.find((t) => t.id === room.id) ?? null);
+                if (room.kind === "library") setLibraryOpen(true);
                 if (room.kind === "archives") setArchivesOpen(true);
                 if (room.kind === "director" && director) onSelectAgent(director.address);
               }}
             >
-              {room.kind === "archives" && <Shelves count={features.filter((f) => f.status === "finished").length} />}
+              {room.kind === "library" && <LibraryFurniture pages={pages} fresh={fresh} />}
+              {room.kind === "archives" && <ArchivesFurniture count={features.filter((f) => f.status === "finished").length} />}
               {room.kind === "director" && (
                 <DirectorProps
                   proposals={proposals}
@@ -341,6 +441,7 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
                   ticket={working.get(address)}
                   selected={selected === address}
                   arriving={arrivals.get(address) === "seating"}
+                  reading={reading.has(address)}
                   gauges={covering(agent, gauges, tickets)}
                   onSelect={() => onSelectAgent(address)}
                 />
@@ -403,6 +504,10 @@ interface RoomViewProps {
   queue: number;
   // A team's cap, if it has one.
   gauges: BudgetGauge[];
+  // What the sign says after the room's name, and what hovering it says,
+  // when not the defaults.
+  sign?: string;
+  hint?: string;
   // Clicking the room (its floor, frame or sign; desks are above it) opens
   // what it is about.
   onOpen: () => void;
@@ -413,18 +518,34 @@ interface RoomViewProps {
 const ROOM_HINT: Record<Room["kind"], string> = {
   team: "Edit the team ▸",
   director: "Open the chat ▸",
+  library: "Open the library ▸",
   archives: "Open the archives ▸",
   plot: "",
 };
 
-function RoomView({ room, carpet, building, queue, gauges, onOpen, children }: RoomViewProps) {
-  const name = room.kind === "director" ? "director" : room.kind === "archives" ? "the archives" : `team ${room.id}`;
+// The floor of the rooms that are not a team's: the director's rug, the
+// library's carpet (carpetOf), the archives' concrete.
+const FLOOR_CLASS: Partial<Record<Room["kind"], string>> = {
+  director: styles.rug,
+  library: styles.library,
+  archives: styles.records,
+};
+
+// libraryHint is what hovering the library says.
+function libraryHint(pages: number, broken: number): string {
+  const parts = [ROOM_HINT.library, `${pages} page${pages === 1 ? "" : "s"}`];
+  if (broken > 0) parts.push(`${broken} broken link${broken === 1 ? "" : "s"}`);
+  return parts.join(" · ");
+}
+
+function RoomView({ room, carpet, building, queue, gauges, sign, hint, onOpen, children }: RoomViewProps) {
+  const name = room.kind === "team" ? `team ${room.id}` : room.kind === "director" ? "director" : `the ${room.kind}`;
   return (
     <div
       role="button"
       tabIndex={0}
       aria-label={`${name}: ${ROOM_HINT[room.kind].replace(" ▸", "").toLowerCase()}`}
-      className={`${styles.room} ${styles.clickable} ${room.kind === "director" ? styles.rug : ""} ${building ? styles.building : ""}`}
+      className={`${styles.room} ${styles.clickable} ${FLOOR_CLASS[room.kind] ?? ""} ${building ? styles.building : ""}`}
       style={{ left: room.x, top: room.y, width: room.width, height: room.height, background: carpet }}
       onClick={onOpen}
       onKeyDown={(e) => {
@@ -437,25 +558,27 @@ function RoomView({ room, carpet, building, queue, gauges, onOpen, children }: R
       <span className={styles.sign}>
         {room.kind === "director" ? "DIRECTOR" : room.id.toUpperCase()}
         {room.kind === "team" && <em> Q{queue}</em>}
+        {sign && <em> · {sign.toUpperCase()}</em>}
       </span>
       <MiniGauge gauges={gauges} className={styles.roomGauge} />
-      <span className={styles.plant} />
+      {room.kind !== "library" && room.kind !== "archives" && <span className={styles.plant} />}
       {children}
       <span className={styles.roomHint} aria-hidden="true">
-        {ROOM_HINT[room.kind]}
+        {hint ?? ROOM_HINT[room.kind]}
       </span>
     </div>
   );
 }
 
-// The archives' floor: a quiet library green, whatever the teams.
-const ARCHIVES_CARPET = "#9fae98";
+// The library's floor: a quiet reading green, whatever the teams.
+const LIBRARY_CARPET = "#7d9a72";
 
-// carpetOf is a room's floor: each team its colour (the same as in the
-// kanban), the archives their own, the director its rug.
+// carpetOf is a room's floor colour: each team its colour (the same as in
+// the kanban), the library its own; the director's rug and the archives'
+// concrete are classes (FLOOR_CLASS).
 function carpetOf(room: Room, teams: Team[]): string | undefined {
   if (room.kind === "team") return teamColors(teams.findIndex((t) => t.id === room.id)).carpet;
-  if (room.kind === "archives") return ARCHIVES_CARPET;
+  if (room.kind === "library") return LIBRARY_CARPET;
   return undefined;
 }
 
@@ -509,37 +632,4 @@ function bounce(scene: HTMLElement | null, address: string) {
   desk.classList.remove(styles.got);
   void desk.offsetWidth;
   desk.classList.add(styles.got);
-}
-
-// Shelves fill the archives: three bookcases, one box per finished feature
-// (filled shelf by shelf), and a few books for the look.
-const BOOKCASES = 3;
-const SHELVES_PER_CASE = 3;
-const BOXES_PER_SHELF = 3;
-const BOOK_COLORS = ["#3f6fa5", "#b34a4a", "#4f8a5b", "#c9973f", "#7a5aa0"];
-
-function Shelves({ count }: { count: number }) {
-  const perCase = SHELVES_PER_CASE * BOXES_PER_SHELF;
-  return (
-    <span className={styles.shelves} aria-label={`${count} finished feature${count === 1 ? "" : "s"} in the archives`}>
-      {Array.from({ length: BOOKCASES }, (_, c) => (
-        <span key={c} className={styles.bookcase}>
-          {Array.from({ length: SHELVES_PER_CASE }, (_, row) => {
-            const first = c * perCase + row * BOXES_PER_SHELF;
-            const boxes = Math.max(0, Math.min(BOXES_PER_SHELF, count - first));
-            return (
-              <span key={row} className={styles.shelf}>
-                {Array.from({ length: boxes }, (_, i) => (
-                  <span key={i} className={styles.box} />
-                ))}
-                {Array.from({ length: BOXES_PER_SHELF - boxes }, (_, i) => (
-                  <span key={`b${i}`} className={styles.books} style={{ background: BOOK_COLORS[(c + row + i) % BOOK_COLORS.length] }} />
-                ))}
-              </span>
-            );
-          })}
-        </span>
-      ))}
-    </span>
-  );
 }

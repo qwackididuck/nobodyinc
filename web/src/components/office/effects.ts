@@ -133,6 +133,15 @@ export function works(layer: HTMLElement, desk: Point, moving: boolean): void {
   }
 }
 
+// popText shows a short text (what an agent reads at the library, "+2
+// PAGES") at a point for duration milliseconds. The text is set as text,
+// never as HTML: it may come from an agent.
+export function popText(layer: HTMLElement, className: string, text: string, at: Point, duration: number): void {
+  const el = add(layer, className, at);
+  el.textContent = text;
+  setTimeout(() => el.remove(), duration);
+}
+
 // celebrate shows a pixel toast, with confetti when things move.
 export function celebrate(layer: HTMLElement, title: string, text: string, at: Point, moving: boolean): void {
   const toast = add(layer, styles.toast, at, `<strong></strong><span></span>`);

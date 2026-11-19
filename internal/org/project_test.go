@@ -191,6 +191,85 @@ func TestIgnoredSubagentsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestKnowledgeInOrgFile(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		orgYAML string
+		want    string // KnowledgePath after loading
+		wantErr bool
+	}{
+		{name: "no key, no knowledge base", orgYAML: "teams: []\n"},
+		{name: "a folder", orgYAML: "knowledge: {path: docs}\n", want: "docs"},
+		{name: "a nested folder", orgYAML: "knowledge:\n  path: docs/kb\n", want: "docs/kb"},
+		{name: "an absolute path is refused", orgYAML: "knowledge: {path: /etc}\n", wantErr: true},
+		{name: "leaving the project is refused", orgYAML: "knowledge: {path: ../x}\n", wantErr: true},
+		{name: "inside .nobody is refused", orgYAML: "knowledge: {path: .nobody}\n", wantErr: true},
+		{name: "an unknown key is refused", orgYAML: "knowledge: {path: docs, roots: [a]}\n", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			writeFile(t, filepath.Join(dir, ".nobody", "org.yaml"), tt.orgYAML)
+
+			o, err := LoadProject(dir)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("loaded %+v, want an error", o.Knowledge)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := o.KnowledgePath(); got != tt.want {
+				t.Errorf("KnowledgePath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestWithKnowledgeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, ".nobody", "org.yaml"), "teams: [{id: dev}]\n")
+
+	o, err := LoadProject(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	set := o.WithKnowledge("docs")
+	if o.Knowledge != nil {
+		t.Fatal("WithKnowledge changed its receiver")
+	}
+
+	if err := WriteOrgFile(set); err != nil {
+		t.Fatal(err)
+	}
+
+	again, err := LoadProject(dir)
+	if err != nil || again.KnowledgePath() != "docs" {
+		t.Fatalf("read back %v, %v; want docs", again, err)
+	}
+
+	if err := WriteOrgFile(again.WithKnowledge("")); err != nil {
+		t.Fatal(err)
+	}
+
+	if data, _ := os.ReadFile(filepath.Join(dir, ".nobody", "org.yaml")); strings.Contains(string(data), "knowledge") {
+		t.Fatalf("knowledge base removed, yet org.yaml has the key:\n%s", data)
+	}
+}
+
 func TestLoadProjectWithoutConfigIsErrNoConfig(t *testing.T) {
 	t.Parallel()
 

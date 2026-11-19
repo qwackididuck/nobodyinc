@@ -19,6 +19,7 @@ import {
   type BudgetRequest,
   type BudgetSettings,
   type Feature,
+  type KnowledgeOverview,
   type Message,
   type ScheduleProposal,
   type ScheduleRun,
@@ -30,6 +31,7 @@ import {
   type Template,
   type Ticket,
   getBudgets,
+  getKnowledge,
   getSettings,
   getSpend,
   listAgents,
@@ -75,6 +77,8 @@ interface Resources {
   budgetProposals: BudgetProposal[];
   // The project's Claude Code subagents and where each stands (ADR-0018).
   subagents: Subagent[];
+  // The knowledge base's settings and overview (ADR-0019).
+  knowledge: KnowledgeOverview | null;
 }
 
 export type Resource = keyof Resources;
@@ -96,6 +100,7 @@ const EMPTY: Resources = {
   budgetRequests: [],
   budgetProposals: [],
   subagents: [],
+  knowledge: null,
 };
 
 const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
@@ -115,6 +120,7 @@ const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
   budgetRequests: listBudgetRequests,
   budgetProposals: listBudgetProposals,
   subagents: listSubagents,
+  knowledge: getKnowledge,
 };
 
 // What each invalidation event makes stale.
@@ -124,8 +130,9 @@ const STALE: Partial<Record<DaemonEvent["type"], Resource[]>> = {
   "features.changed": ["features"],
   "catalog.changed": ["templates"],
   // A schedule's warning depends on its target's profile; a subagent's
-  // status on the agents and org.yaml.
-  "org.changed": ["agents", "teams", "schedules", "subagents"],
+  // status on the agents and org.yaml, and so does the knowledge base.
+  "org.changed": ["agents", "teams", "schedules", "subagents", "knowledge"],
+  "kb.changed": ["knowledge"],
   "schedules.changed": ["schedules", "scheduleRuns", "scheduleProposals"],
   // Tickets, features and occurrences carry what they spent.
   "spend.changed": ["spend", "tickets", "features", "scheduleRuns"],

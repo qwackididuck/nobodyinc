@@ -15,6 +15,7 @@
 //   - schedules.go: /api/schedule*   scheduled tasks (ADR-0012);
 //   - budgets.go:   /api/spend       costs and budgets (ADR-0013), and the
 //     agents' statusLine reports;
+//   - knowledge.go: /api/kb*         the project's knowledge base (ADR-0019);
 //   - hooks.go:     /internal/*      for nobody-hook, called by Claude Code hooks.
 package server
 
@@ -30,6 +31,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
 	"github.com/qwackididuck/nobodyinc/internal/hook"
+	"github.com/qwackididuck/nobodyinc/internal/kb"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
@@ -97,6 +99,9 @@ type Deps struct {
 	// BudgetOffice backs the budget requests and cap proposals
 	// (budgets.go); nil answers 501.
 	BudgetOffice BudgetOffice
+	// Knowledge is the project's knowledge base (knowledge.go, ADR-0019);
+	// nil answers 404 on /api/kb/* but GET and PUT /api/kb.
+	Knowledge *kb.Service
 	// SessionStarted is told about an agent's SessionStart hook: it returns
 	// the context to add for a session resumed because the project opened
 	// again, and the status the agent settles in ("" for unchanged; idle or
@@ -167,6 +172,7 @@ func New(d Deps) http.Handler {
 	s.routeClaudeConfig(mux)
 	s.routeSchedules(mux)
 	s.routeBudgets(mux)
+	s.routeKnowledge(mux)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.decideApproval)
 

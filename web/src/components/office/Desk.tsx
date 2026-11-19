@@ -14,6 +14,9 @@ interface Props {
   selected: boolean;
   // While its walker comes to sit down, the seated character is hidden.
   arriving: boolean;
+  // Away at the library (a knowledge tool, ADR-0019): its chair is empty
+  // until its walker comes back.
+  reading?: boolean;
   // The budgets that cover the agent (ADR-0013): the gauge shows the one
   // closest to its threshold, the tooltip lists them all.
   gauges: BudgetGauge[];
@@ -24,9 +27,10 @@ interface Props {
 // its status, its name plate, and a small gauge of its tightest budget. An
 // agent on leave left an empty chair and a note; one on budget hold shows an
 // empty wallet.
-export function Desk({ agent, at, ticket, selected, arriving, gauges, onSelect }: Props) {
+export function Desk({ agent, at, ticket, selected, arriving, reading = false, gauges, onSelect }: Props) {
   const away = agent.on_leave;
   const off = agent.status === "stopped" || agent.status === "exited";
+  const hidden = arriving || reading;
 
   return (
     <button
@@ -43,10 +47,10 @@ export function Desk({ agent, at, ticket, selected, arriving, gauges, onSelect }
         <span className={styles.chair} />
       ) : (
         <>
-          <span className={styles.char} data-off={off} style={{ visibility: arriving ? "hidden" : undefined }}>
+          <span className={styles.char} data-off={off} style={{ visibility: hidden ? "hidden" : undefined }}>
             <Sprite look={lookOf(agent.address, isDirector(agent))} />
           </span>
-          {!arriving && <Bubble status={agent.status} />}
+          {!hidden && <Bubble status={agent.status} />}
         </>
       )}
       <span className={styles.deskTop}>
@@ -55,7 +59,7 @@ export function Desk({ agent, at, ticket, selected, arriving, gauges, onSelect }
       </span>
       {away && <span className={styles.note}>ON LEAVE</span>}
       <span className={styles.plate}>
-        {agent.name} <em>{away ? "away" : (ticket ?? (isDirector(agent) ? "boss" : off ? "off" : ""))}</em>
+        {agent.name} <em>{away ? "away" : reading ? "library" : (ticket ?? (isDirector(agent) ? "boss" : off ? "off" : ""))}</em>
       </span>
       <MiniGauge gauges={gauges} className={styles.deskGauge} />
     </button>

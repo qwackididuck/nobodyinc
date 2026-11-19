@@ -1139,52 +1139,263 @@
   box-shadow: inset 0 0 0 2px #8f6a48;
 }
 
-/* ---- Archives ---------------------------------------------------------------- */
+/* ---- Library (ADR-0019) ------------------------------------------------------
+   Warm wood and coloured spines on a green reading carpet (rooms.tsx), a
+   reading table with a lamp where visiting agents stand. */
 
-.shelves {
-  position: absolute;
-  left: 24px;
-  right: 56px;
-  top: 52px;
-  display: flex;
-  gap: 12px;
+.library {
+  background-image: repeating-linear-gradient(90deg, #0000 0 30px, #7393690f 30px 32px);
 }
 
-.bookcase {
-  display: grid;
-  flex: 1;
+.bookcases {
+  position: absolute;
+  left: 20px;
+  top: 34px;
+  display: flex;
   gap: 8px;
-  padding: 6px;
+}
+
+.libraryCase {
+  display: grid;
+  gap: 5px;
+  width: 74px;
+  padding: 5px;
   background: #5a3d26;
   box-shadow: inset 0 0 0 4px #3e2a1a;
 }
 
-.shelf {
+.libraryShelf {
   display: flex;
   align-items: flex-end;
-  justify-content: center;
-  gap: 3px;
-  height: 28px;
-  padding: 0 2px;
+  gap: 1px;
+  height: 24px;
+  padding: 0 3px;
   border-bottom: 4px solid #8a6040;
 }
 
-/* Three book spines fill each place a box does not use yet. */
-.books {
-  width: 18px;
-  height: 20px;
+.spine {
+  width: 6px;
   box-shadow:
-    inset -6px 0 0 #e3d3a8,
-    inset -12px 0 0 #6b4a2e;
+    inset -2px 0 0 #0003,
+    inset 0 3px 0 #fff3;
 }
 
-.box {
-  width: 18px;
-  height: 20px;
+.spine[data-fresh="true"] {
+  animation: sparkle 0.8s steps(2) infinite;
+}
+
+@keyframes sparkle {
+  50% {
+    background: var(--warn) !important;
+    box-shadow: 0 0 6px var(--warn);
+  }
+}
+
+.readingTable {
+  position: absolute;
+  right: 26px;
+  top: 118px;
+  width: 92px;
+  height: 34px;
+  background: var(--wood);
+  box-shadow:
+    inset 0 5px 0 var(--wood-light),
+    inset 0 -4px 0 var(--wood-dark);
+}
+
+/* An open book on the reading table. */
+.readingTable::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: -8px;
+  width: 26px;
+  height: 10px;
+  background: var(--paper);
+  box-shadow:
+    inset 13px 0 0 #e6d6b0,
+    0 0 0 2px var(--ink-px);
+}
+
+.lamp {
+  position: absolute;
+  right: 36px;
+  top: 84px;
+  width: 16px;
+  height: 34px;
+}
+
+.lamp::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 16px;
+  height: 10px;
+  background: #4f8a5b;
+  box-shadow:
+    0 0 0 2px var(--ink-px),
+    0 10px 18px #ffe9a080;
+}
+
+.lamp::after {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 10px;
+  width: 3px;
+  height: 24px;
+  background: var(--ink-px);
+}
+
+/* What a visiting agent reads, over the reading table. */
+.readBubble {
+  position: absolute;
+  z-index: 6;
+  max-width: 220px;
+  padding: 3px 7px;
+  overflow: hidden;
+  border: 2px solid var(--ink-px);
+  background: var(--paper);
+  color: var(--ink-px);
+  box-shadow: 2px 2px 0 #0005;
+  font: 10px var(--font-label);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.pagesPop {
+  position: absolute;
+  z-index: 6;
+  color: var(--warn);
+  text-shadow: 2px 2px 0 var(--ink-px);
+  font: 12px var(--font-label);
+  pointer-events: none;
+  animation: pagesFloat 2.4s steps(8) forwards;
+}
+
+@keyframes pagesFloat {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+  }
+  to {
+    transform: translateY(-18px);
+    opacity: 0;
+  }
+}
+
+/* ---- Archives ----------------------------------------------------------------
+   A records room, not a library: grey concrete with a safety line, steel
+   filing cabinets (a label on one drawer per finished feature), cardboard
+   boxes on a pallet. */
+
+.records {
+  background-color: #8e8a94;
+  background-image:
+    linear-gradient(90deg, #0000 0 63px, #7f7b86 63px 64px),
+    linear-gradient(#0000 0 63px, #7f7b86 63px 64px);
+  background-size: 64px 64px;
+}
+
+.safetyLine {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 26px;
+  height: 4px;
+  background: repeating-linear-gradient(90deg, var(--warn) 0 12px, var(--ink-px) 12px 20px);
+  opacity: 0.8;
+}
+
+.cabinets {
+  position: absolute;
+  left: 22px;
+  top: 36px;
+  display: flex;
+  gap: 6px;
+}
+
+.cabinet {
+  display: grid;
+  gap: 4px;
+  width: 50px;
+  padding: 4px;
+  background: #6c7a89;
+  box-shadow:
+    inset 0 0 0 3px #46525f,
+    3px 3px 0 #0004;
+}
+
+.drawer {
+  position: relative;
+  height: 26px;
+  background: #8796a6;
+  box-shadow: inset 0 0 0 2px #46525f;
+}
+
+/* The drawer's handle. */
+.drawer::before {
+  content: "";
+  position: absolute;
+  left: 17px;
+  top: 15px;
+  width: 12px;
+  height: 4px;
+  background: #2f3842;
+}
+
+/* A label: a finished feature is filed in this drawer. */
+.drawer[data-filed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 5px;
+  width: 20px;
+  height: 7px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px #46525f;
+}
+
+.pallet {
+  position: absolute;
+  right: 30px;
+  bottom: 34px;
+  width: 96px;
+  height: 10px;
+  background: var(--wood-dark);
+  box-shadow: inset 0 3px 0 var(--wood);
+}
+
+.cardboard {
+  position: absolute;
+  width: 30px;
+  height: 24px;
   background: #c9a46a;
   box-shadow:
     inset 0 -4px 0 #a07d48,
-    inset 0 6px 0 -3px #e3c48c;
+    inset 0 0 0 2px #7a5a30;
+}
+
+.cardboard::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 0;
+  width: 6px;
+  height: 8px;
+  background: #e3c48c;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spine[data-fresh="true"],
+  .pagesPop {
+    animation: none;
+  }
 }
 
 .card {

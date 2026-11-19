@@ -612,3 +612,60 @@ func TestDeleteTeam(t *testing.T) {
 		t.Fatalf("applied %q, want the member stopped at once", a.last())
 	}
 }
+
+func TestSetKnowledge(t *testing.T) {
+	t.Parallel()
+
+	s, a := newService(t)
+	ctx := context.Background()
+	project := s.Org.Current().ProjectDir
+
+	if err := os.Symlink(t.TempDir(), filepath.Join(project, "outside")); err != nil {
+		t.Fatal(err)
+	}
+
+	steps := []struct {
+		name     string
+		path     string
+		wantErr  error
+		wantPath string // in org.yaml once done
+		restarts bool   // every agent is applied, resuming its session
+	}{
+		{name: "set up a folder that does not exist yet", path: "docs/", wantPath: "docs", restarts: true},
+		{name: "the same folder changes nothing", path: "docs", wantPath: "docs"},
+		{name: "leaving the project is refused", path: "../x", wantErr: ErrInvalid, wantPath: "docs"},
+		{name: "a link leaving the project is refused", path: "outside/docs", wantErr: ErrInvalid, wantPath: "docs"},
+		{name: ".nobody is refused", path: ".nobody", wantErr: ErrInvalid, wantPath: "docs"},
+		{name: "remove it", path: "", wantPath: "", restarts: true},
+	}
+
+	for _, step := range steps {
+		before := a.count()
+
+		err := s.SetKnowledge(ctx, step.path)
+		if !errors.Is(err, step.wantErr) {
+			t.Fatalf("%s: SetKnowledge(%q) = %v, want %v", step.name, step.path, err, step.wantErr)
+		}
+
+		reloaded, err := org.LoadProject(project)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := reloaded.KnowledgePath(); got != step.wantPath {
+			t.Errorf("%s: org.yaml has %q, want %q", step.name, got, step.wantPath)
+		}
+
+		if restarted := a.count() > before; restarted != step.restarts {
+			t.Errorf("%s: agents applied = %v, want %v (calls %v)", step.name, restarted, step.restarts, a.calls)
+		}
+
+		if step.restarts && a.last() != "dev1@dev" {
+			t.Errorf("%s: last apply %q, want dev1@dev resuming its session", step.name, a.last())
+		}
+	}
+
+	if info, err := os.Stat(filepath.Join(project, "docs")); err != nil || !info.IsDir() {
+		t.Errorf("the folder was not created, or removing the knowledge base deleted it: %v", err)
+	}
+}
