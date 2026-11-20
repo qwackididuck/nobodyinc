@@ -92,10 +92,20 @@ export function addWalker(layer: HTMLElement, look: Look, at: Point): HTMLElemen
   return add(layer, `${styles.walker} ${styles.walking}`, at, `<span class="${styles.char}">${spriteSVG(look)}</span>`);
 }
 
-// walk moves a walker along station positions (the first one is where it
-// was added) at a steady pace, and resolves when it arrives.
+// walk moves a walker along station positions at a steady pace, and resolves
+// when it arrives. The walker starts at the first position, wherever it was
+// added or stopped: a walker that walked before stands where its last walk
+// left it (an animation filled forwards), so it is first put at the first
+// position for good (left and top), its earlier animation dropped, and the
+// new one moves it from there. Without that, the walk back from the
+// library jumped to the desk the walker was added at, and went on from
+// there.
 export function walk(walker: HTMLElement, path: Point[], moving: boolean): Promise<void> {
   const origin = path[0];
+  for (const earlier of walker.getAnimations()) earlier.cancel();
+  walker.style.left = `${origin.x}px`;
+  walker.style.top = `${origin.y}px`;
+
   const lengths = path.slice(1).map((p, i) => Math.hypot(p.x - path[i].x, p.y - path[i].y));
   const total = lengths.reduce((s, l) => s + l, 0) || 1;
   let acc = 0;
