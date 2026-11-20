@@ -51,6 +51,19 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 
 The wiring is in `internal/daemon/daemon.go` (`announce` and `New`); the bus is `internal/events`.
 
+## In the office: paper planes and speech bubbles
+
+What the office shows of the messages between agents (`web/src/components/office/`):
+
+- A message between two agents of **different teams**, or with the director, flies as a **paper plane** from desk to desk (`message.sent`), labelled with who writes to whom and the subject unless Settings turns the labels off.
+- A message between two **teammates** (same team) is a **speech bubble** above its sender instead, in place of the sender's status bubble, with the act, the recipient, the subject and the start of the body (the whole message when hovering it). Its recipient hops a moment later. The rules (`speech.ts`):
+  - a message that expects an answer (`request`, `query`, `propose`) keeps its bubble, with an orange border, until it is answered, however long that takes: a conversation that is stuck shows;
+  - one that expects none (`inform`, `agree`, `refuse`, `done`) lasts 2 seconds;
+  - an answered message lasts 2 seconds more after its first answer (the answer has a green border), so that, when the answer expects none, question and answer go away together;
+  - new bubbles come under the older ones; an agent shows its latest three (two lines of text each), the oldest saying how many more there are;
+  - a message to or from an agent that left the organization has no bubble; a deleted message (the wastebasket, `messages.deleted`) loses its.
+- The bubbles are computed from the recent messages the control room holds, not from events: a page reloaded shows the same ones. They are a state (who waits for whom), so they also show with animations set to "off", only without the pop-in.
+
 ## Adding an event
 
 1. Add the type to `internal/events` (and its data type if it carries any).

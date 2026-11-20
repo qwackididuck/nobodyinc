@@ -289,7 +289,10 @@ function AppearanceSection() {
     <section className={styles.section}>
       <h2 className={ui.title}>Appearance</h2>
       <p className={ui.sub}>How the office looks on this computer. When your system asks for less motion, Full behaves like Reduced.</p>
-      <Option label="Animations" help="Reduced keeps statuses and paper planes on straight paths, without walking, loops or confetti.">
+      <Option
+        label="Animations"
+        help="Reduced keeps statuses and paper planes on straight paths, without walking, loops or confetti. Off moves nothing; the speech bubbles of teammates still show, as they tell who waits for an answer."
+      >
         <Segment<Animations>
           label="Animations"
           values={[
@@ -301,7 +304,7 @@ function AppearanceSection() {
           onPick={(v) => saveAppearance({ ...appearance, animations: v })}
         />
       </Option>
-      <Option label="Labels on paper planes" help="Who writes to whom, and the subject.">
+      <Option label="Labels on paper planes" help="Who writes to whom, and the subject, on the planes between teams. Teammates talk in speech bubbles, which always hold their message.">
         <button
           type="button"
           role="switch"

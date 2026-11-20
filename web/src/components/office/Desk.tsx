@@ -2,6 +2,8 @@ import type { Agent, BudgetGauge } from "@/lib/api";
 import { gaugeText, progress, tightest } from "@/lib/budgets";
 import { lookOf } from "@/lib/look";
 import { isDirector, statusLabel } from "../chat/agents";
+import { Dialogue } from "./Dialogue";
+import type { Talking } from "./speech";
 import type { Point } from "./layout";
 import styles from "./office.module.css";
 import { Sprite } from "./sprite";
@@ -17,6 +19,10 @@ interface Props {
   // Away at the library (a knowledge tool, ADR-0019): its chair is empty
   // until its walker comes back.
   reading?: boolean;
+  // What the agent says to its teammates (speech.ts): speech bubbles in
+  // place of its status bubble while it talks. Whether they pop in.
+  talking?: Talking;
+  animate?: boolean;
   // The budgets that cover the agent (ADR-0013): the gauge shows the one
   // closest to its threshold, the tooltip lists them all.
   gauges: BudgetGauge[];
@@ -27,10 +33,12 @@ interface Props {
 // its status, its name plate, and a small gauge of its tightest budget. An
 // agent on leave left an empty chair and a note; one on budget hold shows an
 // empty wallet.
-export function Desk({ agent, at, ticket, selected, arriving, reading = false, gauges, onSelect }: Props) {
+export function Desk({ agent, at, ticket, selected, arriving, reading = false, talking, animate = true, gauges, onSelect }: Props) {
   const away = agent.on_leave;
   const off = agent.status === "stopped" || agent.status === "exited";
   const hidden = arriving || reading;
+  // Nobody talks from an empty chair, or before it has sat down.
+  const speaking = !away && !arriving && talking !== undefined && talking.bubbles.length > 0;
 
   return (
     <button
@@ -39,6 +47,7 @@ export function Desk({ agent, at, ticket, selected, arriving, reading = false, g
       style={{ left: at.x, top: at.y }}
       data-address={agent.address}
       data-status={away ? "on_leave" : agent.status}
+      data-talking={speaking}
       aria-pressed={selected}
       aria-label={`${agent.name}, ${agent.role || "agent"}, ${statusLabel(agent)}`}
       onClick={onSelect}
@@ -50,9 +59,10 @@ export function Desk({ agent, at, ticket, selected, arriving, reading = false, g
           <span className={styles.char} data-off={off} style={{ visibility: hidden ? "hidden" : undefined }}>
             <Sprite look={lookOf(agent.address, isDirector(agent))} />
           </span>
-          {!hidden && <Bubble status={agent.status} />}
+          {!hidden && !speaking && <Bubble status={agent.status} />}
         </>
       )}
+      {speaking && talking && <Dialogue talking={talking} animate={animate} />}
       <span className={styles.deskTop}>
         <span className={styles.laptop} />
         <span className={styles.mug} />

@@ -12,9 +12,11 @@ export type Animations = "full" | "reduced" | "off";
 
 export interface Appearance {
   // full: walks, loops, confetti; reduced: statuses and straight paper
-  // planes only; off: nothing moves.
+  // planes only; off: nothing moves (the speech bubbles of teammates still
+  // show: they are a state, who waits for an answer).
   animations: Animations;
-  // Show who writes to whom, and the subject, next to each paper plane.
+  // Show who writes to whom, and the subject, next to each paper plane (the
+  // planes between teams: teammates' speech bubbles always hold the message).
   planeLabels: boolean;
 }
 

@@ -1,7 +1,8 @@
 "use client";
 
 // The office: every team in its room, every agent at its desk with its
-// status, paper planes flying between agents as they write to each other.
+// status, paper planes flying between teams as agents write to each other,
+// and speech bubbles above teammates who talk (speech.ts).
 //
 // The scene itself is React (rooms, desks, props), positioned by
 // layoutOffice. What happens is played on top of it by comparing the
@@ -32,6 +33,8 @@ import { lookOf, teamColors } from "@/lib/look";
 import { betweenAgents, isDirector } from "../chat/agents";
 import { Banner } from "./Banner";
 import { Desk, MiniGauge } from "./Desk";
+import { useSpeeches } from "./Dialogue";
+import { sameTeam } from "./speech";
 import { endedAt, isEnded } from "../schedules/scheduling";
 import { ArchivesPanel } from "./ArchivesPanel";
 import { ClockPanel } from "./ClockPanel";
@@ -82,6 +85,8 @@ function inputOf(agents: Agent[], teams: Team[], library: boolean, hidden: Set<s
 const FRESH_MS = 6000;
 // How long a visiting agent stays at the reading table.
 const READING_MS = 1600;
+// How long after a teammate's bubble came up its recipient hops.
+const HEARD_DELAY_MS = 500;
 // Where a visiting agent walks down the left column (from the column's right
 // edge), and where it stands at the reading table (from the library's right
 // edge), in station positions.
@@ -113,7 +118,9 @@ const orgKey = (agents: Agent[], teams: Team[]) =>
 let nextSceneID = 1;
 
 export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSeen, onClockSeen }: Props) {
-  const { agents, teams, tickets, features, loaded, scheduleRuns, spend, knowledge } = useLive();
+  const { agents, teams, tickets, features, loaded, scheduleRuns, spend, knowledge, messages } = useLive();
+  // What teammates say to each other, in speech bubbles (speech.ts).
+  const talking = useSpeeches(messages, agents);
   // The library stands only when the project has a knowledge base with pages.
   const pages = knowledge?.path ? (knowledge.pages ?? 0) : 0;
   const library = pages > 0;
@@ -354,14 +361,20 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
   });
 
   // Paper planes: a message between two agents flies from desk to desk.
+  // Teammates talk in speech bubbles instead (speech.ts): only the
+  // recipient hops, a moment after the bubble came up.
   useDaemonEvents((e) => {
     const el = layer.current;
     const { layout: now, appearance: look } = current.current;
     if (e.type !== "message.sent" || !el || look.animations === "off" || !betweenAgents(e.data)) return;
-    const from = now.desks.get(e.data.from);
-    const to = now.desks.get(e.data.to);
-    if (!from || !to) return;
     const m = e.data;
+    if (sameTeam(m.from, m.to)) {
+      setTimeout(() => bounce(el.parentElement, m.to), HEARD_DELAY_MS);
+      return;
+    }
+    const from = now.desks.get(m.from);
+    const to = now.desks.get(m.to);
+    if (!from || !to) return;
     void flyPlane(el, headOf(from), headOf(to), {
       natural: look.animations === "full",
       label: look.planeLabels ? `${m.from.split("@")[0]} → ${m.to.split("@")[0]}: ${m.subject || m.act}` : null,
@@ -446,6 +459,8 @@ export function Office({ selected, binUnread, onSelectAgent, onOpenBin, clockSee
                   selected={selected === address}
                   arriving={arrivals.get(address) === "seating"}
                   reading={reading.has(address)}
+                  talking={talking.get(address)}
+                  animate={appearance.animations !== "off"}
                   gauges={covering(agent, gauges, tickets)}
                   onSelect={() => onSelectAgent(address)}
                 />

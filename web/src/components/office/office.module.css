@@ -890,6 +890,108 @@
   transform: skewX(30deg);
 }
 
+/* Teammates talking (Dialogue.tsx): a stack of speech bubbles above the
+   head, oldest on top, the newest nearest the head with a tail. A bubble
+   waiting for an answer has an orange border; an answer, a green one. */
+.desk[data-talking="true"] {
+  z-index: 5;
+}
+
+.speeches {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - 8px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 140px;
+  transform: translateX(-50%);
+}
+
+.speech {
+  position: relative;
+  display: block;
+  padding: 3px 6px 4px;
+  border: 2px solid var(--ink-px);
+  background: #fff;
+  color: var(--ink-px);
+  font: 11px/1.25 var(--font-ui);
+  text-align: left;
+  white-space: normal;
+}
+
+.speech[data-reply="true"] {
+  border-color: var(--ok);
+}
+
+.speech[data-waiting="true"] {
+  border-color: var(--accent);
+}
+
+.speech:last-child::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  bottom: -7px;
+  width: 6px;
+  height: 6px;
+  background: #fff;
+  border: solid var(--ink-px);
+  border-width: 0 2px 2px 0;
+  border-color: inherit;
+  transform: skewX(30deg);
+}
+
+.speechAct {
+  display: block;
+  color: #6b5a44;
+  font: 9px/1.3 var(--font-label);
+}
+
+.speechText {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow-wrap: anywhere;
+}
+
+/* A full stack shows less of each message: it has to fit above the desks of
+   the first row, under the scene's top edge. */
+.speeches[data-dense="true"] .speechText {
+  -webkit-line-clamp: 2;
+}
+
+/* How many older bubbles are not shown. */
+.speechMore {
+  position: absolute;
+  top: -9px;
+  right: -4px;
+  padding: 0 4px;
+  background: var(--ink-px);
+  color: var(--paper);
+  font: 9px/1.5 var(--font-label);
+}
+
+.speeches[data-animate="true"] .speech {
+  transform-origin: bottom center;
+  animation: speechIn 0.25s steps(3) both;
+}
+
+@keyframes speechIn {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speeches[data-animate="true"] .speech {
+    animation: none;
+  }
+}
+
 .sayWorking {
   display: flex;
   gap: 3px;
