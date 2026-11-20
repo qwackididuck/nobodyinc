@@ -51,9 +51,13 @@ type desktop struct {
 	launch  *launcher.Launcher
 	baseURL string
 	logger  *slog.Logger
+	// srv serves the launcher; quitting closes it (quit.go).
+	srv *http.Server
 
 	mu      sync.Mutex
 	windows map[string]*application.WebviewWindow
+	// quit says where quitting stands (quit.go).
+	quit quitState
 }
 
 // options are the app's command-line flags, for development: an app started
@@ -110,6 +114,7 @@ func run(opts options) error {
 	})
 
 	srv := &http.Server{Handler: d.launch.Handler, ReadHeaderTimeout: 10 * time.Second}
+	d.srv = srv
 
 	go func() {
 		if err := srv.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -129,7 +134,13 @@ func run(opts options) error {
 			// Launching the app again opens a window (Windows, Linux).
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) { d.newWindow("") },
 		},
-		// Every project daemon stops before the process ends.
+		// Quitting first stops the project daemons in the background, behind
+		// a "closing" window if it takes a while (quit.go): Wails runs
+		// OnShutdown on the main thread, which would freeze the window.
+		ShouldQuit: d.shouldQuit,
+		// Every project daemon stops before the process ends. Already done
+		// by shouldQuit; this is for the ways of quitting that do not ask
+		// (a signal).
 		OnShutdown: func() {
 			_ = srv.Close() // only the listener is left to close
 			d.launch.Close()
@@ -172,8 +183,17 @@ func (d *desktop) menu() *application.Menu {
 	return menu
 }
 
-// newWindow opens a window on a project, or on the projects page ("").
+// newWindow opens a window on a project, or on the projects page (""). None
+// opens while the app quits.
 func (d *desktop) newWindow(project string) {
+	d.mu.Lock()
+	quitting := d.quit != notQuitting
+	d.mu.Unlock()
+
+	if quitting {
+		return
+	}
+
 	id := newWindowID()
 
 	query := url.Values{"window": {id}, "desktop": {"1"}}

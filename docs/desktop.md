@@ -44,7 +44,19 @@ What the app adds to the launcher (`launcher.Options`, ADR-0016):
 | `OpenWindow(project)` | `POST /api/windows` (only routed in the app) | Opens a window on the project, or on the projects page. The page calls it instead of `window.open` (a web view has no tabs). |
 | `UI` | Any `GET` outside the API | Serves the control room (`webui.Handler`). `nobodyd` sets it too. |
 
-Quitting (the last window, Cmd+Q, SIGTERM) runs Wails' `OnShutdown`: the launcher's server closes, then `Launcher.Close` stops every project daemon and waits for them.
+### Quitting
+
+Stopping the project daemons takes a moment, and Wails runs its `OnShutdown` hook **on the app's main thread, before it closes the windows**: stopping there would leave the window up and frozen, with no sign of what is happening. So the app does it itself, first (`desktop/quit.go`):
+
+1. A request to quit (the last window closed, Cmd+Q, the Quit menu) reaches `ShouldQuit` (`desktop.shouldQuit`). The first one answers *not yet* and starts stopping in the background; the ones during it answer *not yet* too; once everything is stopped it answers yes.
+2. Every window closes at once (each releases its project), and no new window opens meanwhile.
+3. The launcher's server closes and `Launcher.Close` stops every project daemon, while the interface stays alive.
+4. If that takes more than 0.4 seconds, a small frameless window, over everything, says **"Closing Nobody Inc… Stopping your agents. Their sessions are kept."** (`desktop/closing.go`: a page of its own, with no server and no script, since the launcher's has closed). Stopping usually takes milliseconds: then no window flashes by.
+5. The app quits for good (`App.Quit`).
+
+`OnShutdown` still stops everything too (`Launcher.Close` is safe to call twice): it is for the ways of quitting that do not ask, a signal. How long stopping took is in `desktop.log` ("quitting: the project daemons stopped", "project daemons stopped"), with a warning about a daemon that took more than a second.
+
+A project daemon stops on SIGTERM: its agents are killed (`Supervisor.StopAll`, which does not wait) and its HTTP server shuts down gracefully, waiting up to 10 seconds for the requests still open. An agent waiting for your approval holds one open (its `PermissionRequest` hook, `docs/approvals.md`), so the daemon abandons the pending approvals when it is told to stop (`approval.Queue.Close`): the agents fall back to their terminal, as after a restart, and quitting no longer waits for them (`test/e2e/quit_test.go`).
 
 ## The control room as a static site
 

@@ -146,6 +146,11 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	statuses := runtime.NewStatuses()
 	approvals := approval.NewQueue()
+	// When the daemon is told to stop, the agents waiting for the human fall
+	// back to their terminal at once: their open requests would otherwise
+	// hold the HTTP server's shutdown up to its timeout, the agents being
+	// stopped only after it.
+	context.AfterFunc(ctx, approvals.Close)
 	announce(bus, st, statuses, approvals)
 
 	git := &gitWorkspace{

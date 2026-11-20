@@ -116,3 +116,42 @@ func TestPendingIsOldestFirstAndDecidedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Closing the queue (the daemon stops) abandons what waits, at once, and what
+// is asked later: the agents fall back to their terminal.
+func TestCloseAbandonsEveryRequest(t *testing.T) {
+	t.Parallel()
+
+	q := NewQueue()
+	answers := make(chan error, 2)
+
+	for _, id := range []string{"a1", "a2"} {
+		go func() {
+			_, err := q.Ask(context.Background(), request(id, time.Now()))
+			answers <- err
+		}()
+	}
+
+	waitPending(t, q, 2)
+	q.Close()
+	q.Close() // twice is harmless
+
+	for range 2 {
+		select {
+		case err := <-answers:
+			if !errors.Is(err, ErrNoDecision) {
+				t.Fatalf("a waiting request ended with %v, want ErrNoDecision", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("a waiting request was not abandoned by Close")
+		}
+	}
+
+	if _, err := q.Ask(context.Background(), request("a3", time.Now())); !errors.Is(err, ErrNoDecision) {
+		t.Fatalf("a request asked after Close ended with %v, want ErrNoDecision", err)
+	}
+
+	if n := len(q.Pending()); n != 0 {
+		t.Fatalf("%d requests still pending after Close", n)
+	}
+}

@@ -8,7 +8,9 @@
 //     and Linux (one instance: the second process hands over and exits).
 //   - Closing a window releases its project at once: its daemon stops.
 //   - Opening a project another window holds brings that window to the front.
-//   - Closing the last window quits the app, which stops every project.
+//   - Closing the last window quits the app, which stops every project: its
+//     windows go at once, and a "closing" window shows if stopping takes a
+//     moment (quit.go).
 //
 // The project daemons are the nobodyd binary shipped next to this one, with
 // nobody-hook for the agents' hooks (in the macOS app bundle, both are in

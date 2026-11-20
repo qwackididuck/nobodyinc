@@ -45,6 +45,8 @@ type Decision struct {
 type Queue struct {
 	mu      sync.Mutex
 	pending map[string]*waiting
+	// closed is closed by Close: every request is then abandoned.
+	closed chan struct{}
 	// OnChange, when set, is called after a request is added or removed.
 	OnChange func()
 }
@@ -56,12 +58,36 @@ type waiting struct {
 
 // NewQueue returns an empty queue.
 func NewQueue() *Queue {
-	return &Queue{pending: map[string]*waiting{}}
+	return &Queue{pending: map[string]*waiting{}, closed: make(chan struct{})}
 }
 
-// Ask files a request and blocks until the human decides or ctx ends. In the
-// latter case it returns ErrNoDecision and the request leaves the queue.
+// Close abandons every pending request, and any asked afterwards: each Ask
+// returns ErrNoDecision, and the agent falls back to its terminal prompt, as
+// after a daemon restart. The daemon calls it when it stops: an agent waiting
+// for the human holds an HTTP request open on the daemon, which a graceful
+// shutdown would otherwise wait for, up to its timeout, with the control
+// room's window frozen. It is safe to call more than once.
+func (q *Queue) Close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	select {
+	case <-q.closed:
+	default:
+		close(q.closed)
+	}
+}
+
+// Ask files a request and blocks until the human decides, ctx ends or the
+// queue is closed. In the last two cases it returns ErrNoDecision and the
+// request leaves the queue.
 func (q *Queue) Ask(ctx context.Context, req Request) (Decision, error) {
+	select {
+	case <-q.closed:
+		return Decision{}, ErrNoDecision
+	default:
+	}
+
 	w := &waiting{req: req, decision: make(chan Decision, 1)}
 
 	q.mu.Lock()
@@ -80,6 +106,8 @@ func (q *Queue) Ask(ctx context.Context, req Request) (Decision, error) {
 	case d := <-w.decision:
 		return d, nil
 	case <-ctx.Done():
+		return Decision{}, ErrNoDecision
+	case <-q.closed:
 		return Decision{}, ErrNoDecision
 	}
 }

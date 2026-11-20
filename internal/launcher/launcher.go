@@ -94,8 +94,9 @@ type Launcher struct {
 	ctx    context.Context //nolint:containedctx // the launcher's lifetime, not a request's
 	cancel context.CancelFunc
 
-	mu       sync.Mutex
-	projects map[string]*project
+	mu        sync.Mutex
+	projects  map[string]*project
+	closeOnce sync.Once
 }
 
 // New returns a launcher with these options, defaults filled in.
@@ -135,8 +136,31 @@ func New(opts Options) *Launcher {
 	return l
 }
 
-// Close stops every project daemon.
+// slowStop is how long stopping a project daemon takes before it is worth a
+// warning: quitting the desktop app waits for it, on the app's main thread,
+// with its window frozen (docs/desktop.md).
+const slowStop = time.Second
+
+// Close stops every project daemon, and logs how long it took. It is safe to
+// call more than once: the desktop app stops the daemons before it quits, and
+// its shutdown hook calls it again (a second call waits for the first).
 func (l *Launcher) Close() {
+	l.closeOnce.Do(l.closeAll)
+}
+
+// Release lets go at once of the project a window holds, if any: the
+// desktop app closed the window (ADR-0016). Its daemon stops, without the
+// grace period a dropped connection gets.
+func (l *Launcher) Release(window string) {
+	if l.leases.releaseWindow(window) {
+		l.opts.Logger.Info("window closed: project released", "window", window)
+	}
+}
+
+// closeAll is what Close does, once.
+func (l *Launcher) closeAll() {
+	begun := time.Now()
+
 	l.cancel()
 
 	l.mu.Lock()
@@ -148,20 +172,21 @@ func (l *Launcher) Close() {
 	l.mu.Unlock()
 
 	var wg sync.WaitGroup
+
 	for _, p := range all {
-		wg.Go(p.stop)
+		wg.Go(func() {
+			stopping := time.Now()
+
+			p.stop()
+
+			if took := time.Since(stopping); took > slowStop {
+				l.opts.Logger.Warn("a project daemon was slow to stop", "project", p.id, "took", took.Round(time.Millisecond))
+			}
+		})
 	}
 
 	wg.Wait()
-}
-
-// Release lets go at once of the project a window holds, if any: the
-// desktop app closed the window (ADR-0016). Its daemon stops, without the
-// grace period a dropped connection gets.
-func (l *Launcher) Release(window string) {
-	if l.leases.releaseWindow(window) {
-		l.opts.Logger.Info("window closed: project released", "window", window)
-	}
+	l.opts.Logger.Info("project daemons stopped", "projects", len(all), "took", time.Since(begun).Round(time.Millisecond))
 }
 
 func (l *Launcher) routes() http.Handler {
