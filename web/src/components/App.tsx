@@ -16,6 +16,7 @@ import { Schedules } from "./schedules/Schedules";
 import { StaffScreen } from "./staff/StaffScreen";
 import { pendingSubagents, SubagentImport } from "./staff/SubagentImport";
 import { Settings } from "./settings/Settings";
+import { ShellDrawer } from "./shell/ShellDrawer";
 import styles from "./shell/shell.module.css";
 import { type Tab, TopBar } from "./shell/TopBar";
 
@@ -60,6 +61,19 @@ function ControlRoom({ setup }: { setup: boolean }) {
   const { settings, messages, subagents, loaded } = useLive();
   const [tab, setTab] = useState<Tab>("office");
   const [importing, setImporting] = useState(false);
+  // The terminal drawer is shown or hidden from any tab, by the top bar's
+  // button or Ctrl+` (captured, so that a focused terminal does not swallow it).
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.metaKey && !e.altKey && e.key === "`") {
+        e.preventDefault();
+        setTerminalOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
   // Closing the window ends the first opening's offer: afterwards, the STAFF
   // badge and the Staff screen's notice lead to it.
   const [setupDone, setSetupDone] = useState(false);
@@ -87,7 +101,7 @@ function ControlRoom({ setup }: { setup: boolean }) {
     <ScheduleNav value={openSchedules}>
     <div className={styles.app}>
       <LeaveGuard />
-      <TopBar tab={tab} onTab={setTab} />
+      <TopBar tab={tab} onTab={setTab} terminalOpen={terminalOpen} onToggleTerminal={() => setTerminalOpen((open) => !open)} />
       <ChatPanel target={target} onTarget={setTarget} marks={marks} markSeen={markSeen} />
       <main className={styles.main}>
         {tab === "office" && (
@@ -105,6 +119,7 @@ function ControlRoom({ setup }: { setup: boolean }) {
         {tab === "staff" && <StaffScreen onOpenChat={openChat} onImportSubagents={() => setImporting(true)} />}
         {tab === "settings" && <Settings />}
       </main>
+      <ShellDrawer open={terminalOpen} onOpenChange={setTerminalOpen} />
       {showImport && (
         <SubagentImport
           onClose={() => {

@@ -19,11 +19,15 @@ export type Tab = (typeof TABS)[number]["id"];
 interface Props {
   tab: Tab;
   onTab: (tab: Tab) => void;
+  // The terminal drawer (ShellDrawer): whether it is shown, and the button's action.
+  terminalOpen: boolean;
+  onToggleTerminal: () => void;
 }
 
 // TopBar shows the project (and its menu, to switch project), the tabs and
-// whether the live connection to the project's daemon is up.
-export function TopBar({ tab, onTab }: Props) {
+// whether the live connection to the project's daemon is up, and the button
+// of the terminal drawer.
+export function TopBar({ tab, onTab, terminalOpen, onToggleTerminal }: Props) {
   const { settings, connected, schedules, scheduleProposals, subagents } = useLive();
   // Schedules in alert and the director's proposals wait for the human; so
   // do the project's subagents not imported nor dismissed yet (ADR-0018).
@@ -61,6 +65,15 @@ export function TopBar({ tab, onTab }: Props) {
       <span className={styles.daemon} data-connected={connected} title={connected ? "Live updates on" : "Reconnecting to the daemon…"}>
         {connected ? "Live" : "Reconnecting…"}
       </span>
+      <button
+        type="button"
+        className={styles.terminalToggle}
+        aria-pressed={terminalOpen}
+        onClick={onToggleTerminal}
+        title="A terminal in the project's folder (Ctrl+`)"
+      >
+        &gt;_ Terminal
+      </button>
     </header>
   );
 }

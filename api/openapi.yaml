@@ -633,6 +633,66 @@ paths:
         "404":
           description: Agent is not running
 
+  /api/shells:
+    get:
+      operationId: listShells
+      summary: The plain terminals open in the project
+      description: |
+        A shell is the user's own shell, started in the project's folder, with
+        no agent behind it (ADR-0021). Oldest first. They live as long as the
+        project's daemon: reloading the control room finds them again.
+      responses:
+        "200":
+          description: The open shells
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Shell"
+    post:
+      operationId: openShell
+      summary: Open a shell
+      description: 409 when too many shells are open (8) or the daemon is shutting down.
+      responses:
+        "201":
+          description: The new shell
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Shell"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/shells/{id}:
+    delete:
+      operationId: closeShell
+      summary: Close a shell
+      description: The shell gets a hangup, like a closed terminal window, and is killed if it stays.
+      parameters:
+        - $ref: "#/components/parameters/ShellID"
+      responses:
+        "204":
+          description: Shell closed
+        "404":
+          $ref: "#/components/responses/Error"
+
+  /api/shells/{id}/terminal:
+    get:
+      operationId: attachShell
+      summary: WebSocket streaming a shell's terminal
+      description: |
+        Same protocol as an agent's terminal (attachTerminal). The server
+        closes the connection when the shell ends, and the shell is then gone
+        from the list.
+      parameters:
+        - $ref: "#/components/parameters/ShellID"
+      responses:
+        "101":
+          description: Switching to the WebSocket protocol
+        "404":
+          $ref: "#/components/responses/Error"
+
   /api/messages:
     get:
       operationId: listMessages
@@ -2493,6 +2553,14 @@ paths:
 
 components:
   parameters:
+    ShellID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        example: sh1
+
     KnowledgePath:
       name: path
       in: path
@@ -2708,6 +2776,20 @@ components:
               project:
                 type: string
                 description: The id of the known project in this folder.
+
+    Shell:
+      type: object
+      required: [id, name, started]
+      properties:
+        id:
+          type: string
+          example: sh1
+        name:
+          type: string
+          example: Shell 1
+        started:
+          type: string
+          format: date-time
 
     Error:
       type: object

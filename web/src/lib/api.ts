@@ -464,6 +464,34 @@ export function terminalURL(address: string): string {
   return `${launcherWS()}${projectPath(`/api/agents/${encodeURIComponent(address)}/terminal`)}`;
 }
 
+// Shell is a plain terminal of the project: the user's shell in the project's
+// folder, with no agent behind it (ADR-0021).
+export interface Shell {
+  id: string;
+  name: string;
+  started: string;
+}
+
+export function shellTerminalURL(id: string): string {
+  return `${launcherWS()}${projectPath(`/api/shells/${encodeURIComponent(id)}/terminal`)}`;
+}
+
+export function listShells(): Promise<Shell[]> {
+  return getJSON<Shell[]>("/api/shells");
+}
+
+export async function openShell(): Promise<Shell> {
+  const res = await daemonFetch("/api/shells", { method: "POST" });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+  return (await res.json()) as Shell;
+}
+
+export function closeShell(id: string): Promise<void> {
+  return send("DELETE", `/api/shells/${encodeURIComponent(id)}`);
+}
+
 export function listAgents(): Promise<Agent[]> {
   return getJSON<Agent[]>("/api/agents");
 }

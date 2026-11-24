@@ -35,24 +35,49 @@ func TerminalHandler(s *Supervisor, allowedOrigins []string, logger *slog.Logger
 			return
 		}
 
-		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: allowedOrigins})
-		if err != nil {
-			logger.Warn("terminal websocket refused", "agent", address, "err", err)
-
-			return
-		}
-		defer conn.CloseNow() //nolint:errcheck // closing an already closed connection is harmless
-
-		ctx, cancel := context.WithCancel(r.Context())
-		defer cancel()
-
-		backlog, updates, unsubscribe := output.Subscribe()
-		defer unsubscribe()
-
-		go streamOutput(ctx, cancel, conn, backlog, updates)
-
-		readControls(ctx, conn, s, address, logger)
+		serveTerminal(w, r, terminal{
+			output:  output,
+			input:   func(data []byte) error { return s.Input(address, data) },
+			resize:  func(rows, cols uint16) error { return s.Resize(address, rows, cols) },
+			ended:   sessionEnded,
+			subject: address,
+		}, allowedOrigins, logger)
 	})
+}
+
+// terminal is what the WebSocket protocol drives: the output to stream and
+// how to type into, and resize, the pseudo-terminal behind it. An agent's
+// terminal (TerminalHandler) and a shell (ShellsHandler) both are one.
+type terminal struct {
+	output *Output
+	input  func([]byte) error
+	resize func(rows, cols uint16) error
+	// ended is the close reason sent when the output ends.
+	ended string
+	// subject names the terminal in the logs.
+	subject string
+}
+
+// serveTerminal upgrades the request to a WebSocket and runs the protocol
+// described on TerminalHandler until the viewer leaves or the output ends.
+func serveTerminal(w http.ResponseWriter, r *http.Request, t terminal, allowedOrigins []string, logger *slog.Logger) {
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: allowedOrigins})
+	if err != nil {
+		logger.Warn("terminal websocket refused", "terminal", t.subject, "err", err)
+
+		return
+	}
+	defer conn.CloseNow() //nolint:errcheck // closing an already closed connection is harmless
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	backlog, updates, unsubscribe := t.output.Subscribe()
+	defer unsubscribe()
+
+	go streamOutput(ctx, cancel, conn, backlog, updates, t.ended)
+
+	readControls(ctx, conn, t, logger)
 }
 
 // sessionEnded is the close reason sent when the agent's process ends (or
@@ -63,7 +88,9 @@ const sessionEnded = "the agent's session ended"
 // streamOutput sends the backlog then the live output to the browser. It is
 // the only goroutine writing to the connection. When the output ends, the
 // connection is closed with sessionEnded.
-func streamOutput(ctx context.Context, done context.CancelFunc, conn *websocket.Conn, backlog []byte, updates <-chan []byte) {
+func streamOutput(
+	ctx context.Context, done context.CancelFunc, conn *websocket.Conn, backlog []byte, updates <-chan []byte, reason string,
+) {
 	defer done()
 
 	if len(backlog) > 0 {
@@ -79,7 +106,7 @@ func streamOutput(ctx context.Context, done context.CancelFunc, conn *websocket.
 	}
 
 	if ctx.Err() == nil {
-		_ = conn.Close(websocket.StatusNormalClosure, sessionEnded) // the browser may already be gone
+		_ = conn.Close(websocket.StatusNormalClosure, reason) // the browser may already be gone
 	}
 }
 
@@ -92,7 +119,7 @@ type control struct {
 }
 
 // readControls applies the browser's keystrokes and resizes until it leaves.
-func readControls(ctx context.Context, conn *websocket.Conn, s *Supervisor, address string, logger *slog.Logger) {
+func readControls(ctx context.Context, conn *websocket.Conn, t terminal, logger *slog.Logger) {
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -101,27 +128,27 @@ func readControls(ctx context.Context, conn *websocket.Conn, s *Supervisor, addr
 
 		var c control
 		if err := json.Unmarshal(data, &c); err != nil {
-			logger.Warn("bad terminal control message", "agent", address, "err", err)
+			logger.Warn("bad terminal control message", "terminal", t.subject, "err", err)
 
 			continue
 		}
 
-		if err := apply(s, address, c); err != nil && !errors.Is(err, ErrNotRunning) {
-			logger.Warn("terminal control", "agent", address, "type", c.Type, "err", err)
+		if err := apply(t, c); err != nil && !errors.Is(err, ErrNotRunning) {
+			logger.Warn("terminal control", "terminal", t.subject, "type", c.Type, "err", err)
 		}
 	}
 }
 
-func apply(s *Supervisor, address string, c control) error {
+func apply(t terminal, c control) error {
 	switch c.Type {
 	case "input":
-		return s.Input(address, []byte(c.Data))
+		return t.input([]byte(c.Data))
 	case "resize":
 		if c.Rows == 0 || c.Cols == 0 {
 			return errors.New("resize needs rows and cols")
 		}
 
-		return s.Resize(address, c.Rows, c.Cols)
+		return t.resize(c.Rows, c.Cols)
 	default:
 		return errors.New("unknown control type " + c.Type)
 	}

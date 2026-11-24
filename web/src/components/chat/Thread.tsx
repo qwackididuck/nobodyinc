@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { type Agent, type Approval, HUMAN, type Message, listConversation, startAgent } from "@/lib/api";
+import { type Agent, type Approval, HUMAN, type Message, listConversation, startAgent, terminalURL } from "@/lib/api";
 import { useLive } from "@/lib/live";
 import { TerminalView } from "./TerminalView";
 import { isAnswered, isDirector, statusKey, statusLabel, teamLabel, timeOf, withHuman } from "./agents";
@@ -113,7 +113,7 @@ export function Thread({ agent, onSeen }: Props) {
               Reduce (Esc)
             </button>
           )}
-          <TerminalView address={agent.address} status={agent.status} />
+          <TerminalView url={terminalURL(agent.address)} status={agent.status} />
         </div>
       ) : (
         <>

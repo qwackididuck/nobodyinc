@@ -4,7 +4,7 @@
   height: 100%;
   display: grid;
   grid-template-columns: 76px minmax(320px, 380px) 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto 1fr auto; /* top bar, panels, terminal drawer */
 }
 
 .topbar {
@@ -112,4 +112,157 @@
 .placeholder strong {
   color: var(--text);
   font: 700 22px var(--font-display);
+}
+
+/* ---- Terminal drawer ---------------------------------------------------- *
+   Plain shells (ShellDrawer, ADR-0021): a drawer along the bottom of the
+   control room, under the chat panel and the main area. Expanded, it takes
+   the place of the main area and the drawer row, below the top bar. */
+
+.drawer {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--term-bg);
+  border-top: 2px solid var(--ink-px);
+}
+
+.drawer[hidden] {
+  display: none;
+}
+
+.drawer[data-maximized="true"] {
+  grid-row: 2 / 4;
+  z-index: 20;
+}
+
+.drawerHandle {
+  position: absolute;
+  inset: -5px 0 auto;
+  height: 9px;
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 1;
+}
+
+.drawerHandle:hover {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.drawerBar {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 32px;
+  padding-right: 8px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.shellTabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.shellTab {
+  display: flex;
+  align-items: center;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+}
+
+.shellTab[data-active="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.shellTabName,
+.shellTabClose,
+.shellAdd,
+.drawerBtn {
+  border: 0;
+  background: none;
+  color: inherit;
+  font: 12px var(--font-label);
+  white-space: nowrap;
+}
+
+.shellTabName {
+  padding: 0 4px 0 12px;
+  align-self: stretch;
+}
+
+.shellTabClose {
+  padding: 0 8px 0 4px;
+  align-self: stretch;
+  font-size: 15px;
+}
+
+.shellTabClose:hover {
+  color: var(--danger);
+}
+
+.shellAdd {
+  padding: 0 12px;
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.shellAdd:hover,
+.drawerBtn:hover {
+  color: var(--text);
+}
+
+.drawerBtn {
+  padding: 0 8px;
+  color: var(--muted);
+}
+
+.drawerError {
+  align-self: center;
+  color: var(--danger);
+  font: 11px var(--font-label);
+}
+
+.drawerBody {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shellPane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px 8px;
+}
+
+.shellPane[hidden] {
+  display: none;
+}
+
+/* The top bar's button showing and hiding the drawer. */
+.terminalToggle {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  font: 12px var(--font-label);
+  white-space: nowrap;
+}
+
+.terminalToggle:hover,
+.terminalToggle[aria-pressed="true"] {
+  color: var(--text);
+  border-color: var(--accent);
 }

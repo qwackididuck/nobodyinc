@@ -7,6 +7,7 @@ package daemon
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -109,6 +110,8 @@ type Daemon struct {
 	Statuses   *runtime.Statuses
 	Approvals  *approval.Queue
 	Supervisor *runtime.Supervisor
+	// Shells are the plain terminals the human opens in the control room.
+	Shells *runtime.Shells
 	// Events announces changes to the control room (GET /api/events).
 	Events *events.Bus
 	// Staff changes agents; nil when the organization is fixed.
@@ -167,6 +170,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	// Sessions are remembered across restarts and resumed (sessions.go).
 	supervisor := newSupervisor(ctx, opts, st, statuses, git, env)
+	// The plain terminals of the control room (ADR-0021), in the project's folder.
+	shells := &runtime.Shells{Dir: opts.Org.Current().ProjectDir, Logger: opts.Logger}
 
 	messages := &messaging.Service{
 		Store:  st,
@@ -286,14 +291,14 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 			ClaudePath:  opts.ClaudePath,
 			StartAgents: opts.StartAgents,
 		},
-		Extra: map[string]http.Handler{
+		Extra: withHandlers(runtime.ShellsHandlers(shells, opts.Origins, opts.Logger), map[string]http.Handler{
 			"/mcp/{address}": officemcp.Handler(officemcp.Office{
 				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules, Budgets: budgetOffice,
 				Knowledge: knowledge.Service, OnKnowledgeRead: announceKnowledgeRead(bus),
 				Version: opts.Version,
 			}),
 			"GET /api/agents/{address}/terminal": runtime.TerminalHandler(supervisor, opts.Origins, opts.Logger),
-		},
+		}),
 	})
 
 	stopScheduler, schedulerDone := startScheduler(ctx, schedules.scheduler)
@@ -306,6 +311,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Statuses:   statuses,
 		Approvals:  approvals,
 		Supervisor: supervisor,
+		Shells:     shells,
 		Events:     bus,
 		Staff:      staffService,
 		WorkDir:    git.workDir,
@@ -317,6 +323,13 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Knowledge:     knowledge.Service,
 		knowledge:     knowledge,
 	}, nil
+}
+
+// withHandlers adds extra routes to a set of handlers.
+func withHandlers(extra, handlers map[string]http.Handler) map[string]http.Handler {
+	maps.Copy(handlers, extra)
+
+	return handlers
 }
 
 // userSettingsOf is the user's settings the daemon starts with: the
@@ -472,6 +485,7 @@ func (d *Daemon) Close() error {
 	d.budgets.stop()
 	<-d.budgets.done
 	d.background.Wait()
+	d.Shells.CloseAll()
 	d.Supervisor.StopAll()
 
 	return d.Store.Close()
