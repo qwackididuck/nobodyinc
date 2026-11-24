@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"os"
 	"os/exec"
 	"slices"
 	"time"
@@ -28,12 +27,13 @@ var ErrUnsupported = errors.New("unsupported MCP server type")
 
 // ListTools starts the server (stdio) or reaches it (http, sse), with its
 // ${VARIABLE} references expanded from lookup, asks for its tools and stops
-// it. It lets the human choose the tools an agent does not get.
-func ListTools(ctx context.Context, cfg Config, lookup func(string) (string, bool)) ([]Tool, error) {
+// it. A stdio server runs with environ as its environment. It lets the human
+// choose the tools an agent does not get.
+func ListTools(ctx context.Context, cfg Config, lookup func(string) (string, bool), environ []string) ([]Tool, error) {
 	ctx, cancel := context.WithTimeout(ctx, ListTimeout)
 	defer cancel()
 
-	transport, err := transportFor(ctx, cfg, lookup)
+	transport, err := transportFor(ctx, cfg, lookup, environ)
 	if err != nil {
 		return nil, err
 	}
@@ -66,10 +66,10 @@ func ListTools(ctx context.Context, cfg Config, lookup func(string) (string, boo
 }
 
 // transportFor builds the client transport of a server, its values expanded.
-func transportFor(ctx context.Context, cfg Config, lookup func(string) (string, bool)) (mcp.Transport, error) {
+func transportFor(ctx context.Context, cfg Config, lookup func(string) (string, bool), environ []string) (mcp.Transport, error) {
 	switch kind := TypeOf(cfg); kind {
 	case "stdio":
-		cmd, err := command(ctx, cfg, lookup)
+		cmd, err := command(ctx, cfg, lookup, environ)
 		if err != nil {
 			return nil, err
 		}
@@ -98,8 +98,9 @@ func transportFor(ctx context.Context, cfg Config, lookup func(string) (string, 
 }
 
 // command is the process of a stdio server: its command and arguments, with
-// the daemon's environment plus the server's own env.
-func command(ctx context.Context, cfg Config, lookup func(string) (string, bool)) (*exec.Cmd, error) {
+// environ (the daemon's environment, with the project's variables) plus the
+// server's own env.
+func command(ctx context.Context, cfg Config, lookup func(string) (string, bool), environ []string) (*exec.Cmd, error) {
 	name, err := Expand(stringField(cfg, "command"), lookup)
 	if err != nil {
 		return nil, err
@@ -125,7 +126,7 @@ func command(ctx context.Context, cfg Config, lookup func(string) (string, bool)
 
 	// The command is the user's own server configuration, run as they would.
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Env = os.Environ()
+	cmd.Env = slices.Clone(environ)
 
 	for _, key := range slices.Sorted(maps.Keys(env)) {
 		cmd.Env = append(cmd.Env, key+"="+env[key])

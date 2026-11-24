@@ -50,6 +50,9 @@ type Forker struct {
 	Send          func(ctx context.Context, d messaging.Draft) (messaging.Message, error)
 	MarkDelivered func(ctx context.Context, recipient string, ids []string, at time.Time) error
 	Requeue       func(ctx context.Context, recipient string, ids []string) error
+	// ProjectEnv adds the project's environment variables to the fork's
+	// process, like Launch.ProjectEnv does for the agent; nil adds none.
+	ProjectEnv func(base []string) []string
 	// Run runs claude and returns its stdout; replaceable in tests.
 	Run func(ctx context.Context, dir string, args []string) ([]byte, error)
 	// RecordCost, when set, is told what each fork cost (its -p output's
@@ -187,6 +190,10 @@ func (f *Forker) run(ctx context.Context, q messaging.Message, args []string) ([
 	cmd := exec.CommandContext(ctx, claude, args...)
 	cmd.Dir = f.WorkDir(q.To)
 	cmd.Env = withoutParentSession(os.Environ())
+
+	if f.ProjectEnv != nil {
+		cmd.Env = f.ProjectEnv(cmd.Env)
+	}
 
 	return cmd.Output()
 }

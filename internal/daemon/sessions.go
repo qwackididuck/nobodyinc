@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 
+	"github.com/qwackididuck/nobodyinc/internal/projectenv"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/store"
 )
@@ -14,13 +15,15 @@ import (
 
 // newLaunch describes how the daemon starts its agents' Claude Code
 // sessions.
-func newLaunch(opts Options, git *gitWorkspace) runtime.Launch {
+func newLaunch(opts Options, git *gitWorkspace, env *projectenv.Store) runtime.Launch {
 	return runtime.Launch{
 		ClaudePath:   opts.ClaudePath,
 		HookPath:     opts.HookPath,
 		DaemonURL:    opts.DaemonURL,
 		WorkDir:      git.workDir,
 		MCPConfigDir: opts.MCPConfigDir,
+		// The project's variables (ADR-0020) reach the agents only.
+		ProjectEnv: env.Overlay,
 		// Personal skills and commands reach agents through the staging
 		// directory.
 		SkillsStagingDir:    opts.SkillsStagingDir,
@@ -36,8 +39,10 @@ func newLaunch(opts Options, git *gitWorkspace) runtime.Launch {
 // sessions in the database, from what the hooks tell (their ID, and whether
 // the agent is mid-turn), and resumes them when the project opens again.
 // The status observer already set (announce) keeps running first.
-func newSupervisor(ctx context.Context, opts Options, st *store.Store, statuses *runtime.Statuses, git *gitWorkspace) *runtime.Supervisor {
-	launch := newLaunch(opts, git)
+func newSupervisor(
+	ctx context.Context, opts Options, st *store.Store, statuses *runtime.Statuses, git *gitWorkspace, env *projectenv.Store,
+) *runtime.Supervisor {
+	launch := newLaunch(opts, git, env)
 	supervisor := &runtime.Supervisor{
 		Org:           opts.Org,
 		Statuses:      statuses,

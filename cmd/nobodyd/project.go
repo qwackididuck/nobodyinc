@@ -20,6 +20,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/commands"
 	"github.com/qwackididuck/nobodyinc/internal/daemon"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/projectenv"
 	"github.com/qwackididuck/nobodyinc/internal/projects"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
@@ -244,6 +245,7 @@ func daemonOptions(logger *slog.Logger, opts projectOptions, organization *org.O
 		DBPath:       filepath.Join(state, "nobody.db"),
 		WorktreesDir: filepath.Join(state, "worktrees"),
 		MCPConfigDir: filepath.Join(state, "mcp"),
+		EnvFile:      filepath.Join(state, projectenv.FileName),
 		// ADR-0011, ADR-0017: personal skills and commands, linked for the
 		// agents.
 		SkillsStagingDir:    filepath.Join(state, "skills"),

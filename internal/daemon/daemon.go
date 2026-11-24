@@ -21,6 +21,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/officemcp"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/projectenv"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/schedule"
 	"github.com/qwackididuck/nobodyinc/internal/server"
@@ -66,6 +67,10 @@ type Options struct {
 	// MCPConfigDir holds each agent's MCP configuration, readable by the user
 	// only (~/.nobody/projects/<id>/mcp, ADR-0010).
 	MCPConfigDir string
+	// EnvFile holds the project's environment variables, readable by the
+	// user only (~/.nobody/projects/<id>/env.yaml, ADR-0020); "" gives the
+	// project none.
+	EnvFile string
 	// SkillsStagingDir links the user's personal skills and commands for the
 	// agents (~/.nobody/projects/<id>/skills, ADR-0011, ADR-0017); "" gives
 	// them none.
@@ -132,7 +137,7 @@ type Daemon struct {
 // When ctx ends, the event streams end too (an HTTP server's Shutdown would
 // wait for them otherwise).
 func New(ctx context.Context, opts Options) (*Daemon, error) {
-	st, err := store.Open(ctx, opts.DBPath)
+	st, env, err := openStores(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +166,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	restoreActiveFeature(ctx, st, git, opts.Logger)
 
 	// Sessions are remembered across restarts and resumed (sessions.go).
-	supervisor := newSupervisor(ctx, opts, st, statuses, git)
+	supervisor := newSupervisor(ctx, opts, st, statuses, git, env)
 
 	messages := &messaging.Service{
 		Store:  st,
@@ -178,6 +183,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Logger:        opts.Logger,
 		ClaudePath:    opts.ClaudePath,
 		WorkDir:       git.workDir,
+		ProjectEnv:    env.Overlay,
 		Send:          messages.Send,
 		MarkDelivered: st.MarkDelivered,
 		Requeue:       st.Requeue,
@@ -242,7 +248,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	budgetOffice := newBudgetOffice(budgets, st, tickets, messages, opts, bus)
 	director := &directorOffice{org: opts.Org, staff: staffService, catalog: cat, tickets: tickets, statuses: statuses}
 
-	builtinSkills := discoverBuiltinSkills(ctx, opts)
+	builtinSkills := discoverBuiltinSkills(ctx, opts, env)
 	knowledge := startKnowledge(ctx, opts, st, bus)
 
 	handler := server.New(server.Deps{
@@ -260,6 +266,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Origins:   opts.Origins,
 		Events:    bus,
 		Settings:  liveSettings,
+		Env:       env,
 		// Claude Code's built-in skills, discovered in the background.
 		BuiltinSkills: builtinSkills,
 		Schedules:     schedules,
@@ -553,7 +560,7 @@ func newStaffing(ctx context.Context, opts Options, deps staffingDeps) *staffing
 // filled in the background: discovering them starts claude, without the
 // model, which takes a few seconds (skills.DiscoverBuiltin). The control room
 // can refresh it (POST /api/skills/builtin/refresh).
-func discoverBuiltinSkills(ctx context.Context, opts Options) *skills.Builtin {
+func discoverBuiltinSkills(ctx context.Context, opts Options, env *projectenv.Store) *skills.Builtin {
 	builtin := skills.NewBuiltin(func(ctx context.Context) ([]string, error) {
 		o := opts.Org.Current()
 
@@ -561,7 +568,7 @@ func discoverBuiltinSkills(ctx context.Context, opts Options) *skills.Builtin {
 			ClaudePath: opts.ClaudePath,
 			Args:       runtime.SettingSources,
 			Dir:        o.ProjectDir,
-			Env:        runtime.CleanEnvironment(os.Environ()),
+			Env:        env.Overlay(runtime.CleanEnvironment(os.Environ())),
 		}, o.Skills)
 	})
 

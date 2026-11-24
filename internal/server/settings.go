@@ -6,6 +6,14 @@ import (
 	"slices"
 )
 
+// routeSettings mounts how the daemon runs: its settings, and the project's
+// environment variables (env.go).
+func (s *server) routeSettings(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PUT /api/settings", s.updateSettings)
+	s.routeEnv(mux)
+}
+
 // DaemonInfo describes how the daemon was launched, for the control room's
 // Settings tab. These are launch options: the API does not change them.
 type DaemonInfo struct {

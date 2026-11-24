@@ -28,7 +28,9 @@
 //     "PRELOADED SKILLS?" with how the session started and what its
 //     SessionStart hook handed over, "MEMORY?" with what the session
 //     remembers: every prompt and every message it got, across resumes, and
-//     "KB? <words>" with what the kb_search tool finds (ADR-0019);
+//     "KB? <words>" with what the kb_search tool finds (ADR-0019),
+//     "ENV? <NAME>" with the value of that environment variable in its own
+//     process, or "unset" (the project's variables, ADR-0020);
 //   - an inform answering one of its queries is forwarded, as done, to whoever
 //     made the original request;
 //   - when send_message fails, the error is escalated to the human;
@@ -500,6 +502,16 @@ func (a *agent) react(text string) {
 	}
 }
 
+// environmentValue is what "ENV? <name>" answers: the variable's value in the
+// fake agent's own environment.
+func environmentValue(name string) string {
+	if value, ok := os.LookupEnv(strings.TrimSpace(name)); ok {
+		return value
+	}
+
+	return "unset"
+}
+
 // answer answers a query: with the system prompt when asked for it, or with
 // what kb_search finds for "KB? <words>".
 func (a *agent) answer(m mail) {
@@ -512,6 +524,8 @@ func (a *agent) answer(m mail) {
 		body = a.preloaded
 	case question == "MEMORY?":
 		body = strings.Join(a.session.Memory, "\n")
+	case strings.HasPrefix(question, "ENV? "):
+		body = environmentValue(strings.TrimPrefix(question, "ENV? "))
 	case strings.HasPrefix(question, "KB? "):
 		body = a.searchKnowledge(strings.TrimPrefix(question, "KB? "))
 	}

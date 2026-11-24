@@ -803,7 +803,7 @@ paths:
         own files and merged, the project winning on a name conflict
         (ADR-0010). No value is ever returned in clear: only the names of the
         environment variables a server refers to (`${NAME}`) and whether the
-        daemon's environment sets them, the command without its arguments,
+        project's variables (ADR-0020) or the daemon's environment set them, the command without its arguments,
         or the URL without its query. The office server `nobody` is not
         listed: every agent gets it.
       responses:
@@ -942,7 +942,8 @@ paths:
       summary: The tools an MCP server offers
       description: |
         The daemon starts the server (or reaches it), with its environment
-        variables expanded from the daemon's environment, asks for its tools
+        variables expanded from the daemon's environment and the project's
+        (ADR-0020; the project's win), asks for its tools
         and stops it. Used to choose the tools an agent does not get
         (mcp_exclude). Fails when a variable it needs is not set, or when the
         server does not answer in time.
@@ -970,6 +971,85 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
         "502":
+          $ref: "#/components/responses/Error"
+
+  /api/env:
+    get:
+      operationId: listEnv
+      summary: The project's environment variables, by name
+      description: |
+        The variables the agents' processes get on top of the daemon's own
+        environment, replacing those of the same name (ADR-0020,
+        docs/projectenv.md): the Claude key, the token of an MCP server...
+        They are kept in the project's state directory
+        (`~/.nobody/projects/<id>/env.yaml`, readable by the user only). A
+        value is never returned: only the names.
+      responses:
+        "200":
+          description: Names, sorted
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnvVariable"
+        "501":
+          $ref: "#/components/responses/Error"
+
+  /api/env/{name}:
+    put:
+      operationId: setEnv
+      summary: Set a project environment variable
+      description: |
+        Adds or replaces a variable. Refused: a name that is not a valid
+        identifier, a name Nobody Inc sets itself (`NOBODY_*`, `GIT_AUTHOR_*`,
+        `GIT_COMMITTER_*`) or removes from agents (the markers of a parent
+        Claude Code session, ADR-0003), an empty value. Every agent then
+        restarts once idle, resuming its session, to get the new
+        environment; no turn is interrupted. The user's shell and the other
+        projects are not affected.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvValue"
+      responses:
+        "200":
+          description: Variable set; the names after the change
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EnvVariable"
+        "400":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+    delete:
+      operationId: deleteEnv
+      summary: Remove a project environment variable
+      description: Every agent restarts once idle, as for a change.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Variable removed
+        "404":
+          $ref: "#/components/responses/Error"
+        "501":
           $ref: "#/components/responses/Error"
 
   /api/skills:
@@ -2970,6 +3050,23 @@ components:
           description: The env and headers values written in clear, as "env.NAME" or "headers.NAME".
           items:
             type: string
+
+    EnvVariable:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    EnvValue:
+      type: object
+      required: [value]
+      additionalProperties: false
+      properties:
+        value:
+          type: string
+          minLength: 1
+          description: Never returned by the API.
 
     MCPServer:
       type: object

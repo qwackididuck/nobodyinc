@@ -249,7 +249,7 @@ func TestListTools(t *testing.T) {
 
 	cfg := Config{"type": "http", "url": srv.URL, "headers": map[string]any{"Authorization": "Bearer ${TOKEN}"}}
 
-	tools, err := ListTools(context.Background(), cfg, func(name string) (string, bool) { return "t0k", name == "TOKEN" })
+	tools, err := ListTools(context.Background(), cfg, func(name string) (string, bool) { return "t0k", name == "TOKEN" }, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestListTools(t *testing.T) {
 		t.Fatalf("tools = %+v, want delete_document then search", tools)
 	}
 
-	if _, err := ListTools(context.Background(), cfg, func(string) (string, bool) { return "", false }); !errors.Is(err, ErrMissingVariable) {
+	if _, err := ListTools(context.Background(), cfg, func(string) (string, bool) { return "", false }, nil); !errors.Is(err, ErrMissingVariable) {
 		t.Fatalf("without TOKEN: %v, want ErrMissingVariable", err)
 	}
 }

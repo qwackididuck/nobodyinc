@@ -9,6 +9,7 @@
 //   - events.go:    /api/events      changes pushed to the control room (SSE);
 //   - settings.go:  /api/settings    how the daemon runs;
 //   - mcp.go:       /api/mcp*        MCP servers (ADR-0010);
+//   - env.go:       /api/env*        the project's environment variables (ADR-0020);
 //   - skills.go:    /api/skills*     skills (ADR-0011);
 //   - commands.go:  /api/commands*   commands (ADR-0017);
 //   - subagents.go: /api/subagents*  the project's subagents, imported as agents (ADR-0018);
@@ -34,6 +35,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/kb"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
+	"github.com/qwackididuck/nobodyinc/internal/projectenv"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/settings"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
@@ -78,6 +80,9 @@ type Deps struct {
 	Settings *settings.Live
 	// Info describes how the daemon was launched (GET /api/settings).
 	Info DaemonInfo
+	// Env is the project's environment variables (env.go, ADR-0020); nil
+	// answers 501 on /api/env.
+	Env *projectenv.Store
 	// LookupEnv tells whether an environment variable is set
 	// (GET /api/mcp); nil means os.LookupEnv.
 	LookupEnv func(string) (string, bool)
@@ -171,8 +176,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/tickets/{id}/comments", s.commentTicketAsHuman)
 	mux.HandleFunc("POST /api/tickets/{id}/status", s.setTicketStatusAsHuman)
 	mux.HandleFunc("GET /api/events", s.streamEvents)
-	mux.HandleFunc("GET /api/settings", s.getSettings)
-	mux.HandleFunc("PUT /api/settings", s.updateSettings)
+	s.routeSettings(mux)
 	s.routeClaudeConfig(mux)
 	s.routeSchedules(mux)
 	s.routeBudgets(mux)
@@ -190,7 +194,13 @@ func New(d Deps) http.Handler {
 	return GuardCrossSite(d.Origins, mux)
 }
 
+// lookupEnv tells whether a variable is set for the project's processes: the
+// project's own first, then the daemon's.
 func (s *server) lookupEnv(name string) (string, bool) {
+	if v, ok := s.Env.Lookup(name); ok {
+		return v, true
+	}
+
 	if s.LookupEnv != nil {
 		return s.LookupEnv(name)
 	}

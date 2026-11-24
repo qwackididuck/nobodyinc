@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"sort"
 
@@ -172,7 +173,7 @@ func (s *server) listMCPTools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tools, err := mcpservers.ListTools(r.Context(), srv.Config, s.lookupEnv)
+	tools, err := mcpservers.ListTools(r.Context(), srv.Config, s.lookupEnv, s.Env.Overlay(os.Environ()))
 	if err != nil {
 		// The server, not the request, failed: a missing variable, a server
 		// that does not start or does not answer.

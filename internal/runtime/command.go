@@ -115,6 +115,11 @@ type Launch struct {
 	// PersonalCommandsDir is where the user's personal commands live
 	// (commands.PersonalDir): agents may read them, not write them.
 	PersonalCommandsDir string
+	// ProjectEnv adds the project's environment variables (ADR-0020,
+	// internal/projectenv) to the environment of an agent's process, over
+	// the daemon's: they replace the variables of the same name. Read at
+	// each launch. Nil adds none.
+	ProjectEnv func(base []string) []string
 }
 
 // Command builds the claude command for one agent, from its definition
@@ -180,7 +185,15 @@ func (l Launch) Command(ctx context.Context, o *org.Org, m org.Member, resume Re
 
 	cmd := exec.CommandContext(ctx, claude, args...)
 	cmd.Dir = l.WorkDir(m.Address)
-	cmd.Env = agentEnvironment(cmd.Environ(), m.Address, l.DaemonURL)
+	base := cmd.Environ()
+
+	if l.ProjectEnv != nil {
+		base = l.ProjectEnv(base)
+	}
+
+	// The agent's own variables come last: the project cannot change them
+	// (projectenv refuses their names).
+	cmd.Env = agentEnvironment(base, m.Address, l.DaemonURL)
 
 	return cmd, nil
 }
