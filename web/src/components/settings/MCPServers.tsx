@@ -62,7 +62,7 @@ export function MCPServers() {
     const missing = list.find((s) => s.name === name)?.env.filter((v) => !v.set).map((v) => v.name) ?? [];
     setNote(
       missing.length > 0
-        ? `${name} ${verb}. Set ${missing.join(", ")} in the environment you start the daemon from, then restart it: agents restart once idle.`
+        ? `${name} ${verb}. Set ${missing.join(", ")} in the Environment section, or in the environment you start the daemon from.`
         : `${name} ${verb}: every agent restarts once its turn is over to get it.`,
     );
   }
@@ -125,7 +125,7 @@ export function MCPServers() {
           </button>
         </div>
       )}
-      <p className={styles.foot}>Secrets are never written: they stay in environment variables, written as ${"{NAME}"}, and are set outside Nobody Inc.</p>
+      <p className={styles.foot}>Secrets are never written to these files: they stay in environment variables, written as ${"{NAME}"}, and are set in the Environment section or outside Nobody Inc.</p>
     </section>
   );
 }
@@ -153,7 +153,7 @@ function ServerCard({ server, onEdit, onRemove }: { server: MCPServer; onEdit: (
         <div className={styles.env}>
           {server.env.map((v) => (
             <span key={v.name} className={v.set ? styles.envSet : styles.envMissing}>
-              {v.set ? "✓" : "✗"} {v.name} {v.set ? "set" : "missing from the daemon's environment"}
+              {v.set ? "✓" : "✗"} {v.name} {v.set ? "set" : "missing from the project's variables and the daemon's environment"}
             </span>
           ))}
         </div>
@@ -311,8 +311,8 @@ function ServerForm({ editing, onSaved, onCancel }: { editing?: MCPServerDetail;
       <div className={ui.label}>
         {stdio ? "ENVIRONMENT" : "HEADERS"}
         <span className={styles.scopeHelp}>
-          Values refer to environment variables, never to a secret: {stdio ? "${GITLAB_TOKEN}" : "Bearer ${API_KEY}"}. Their values come from the environment
-          you start the daemon from: to change one, change it there and restart the daemon. Nobody Inc never sees nor writes them.
+          Values refer to environment variables, never to a secret: {stdio ? "${GITLAB_TOKEN}" : "Bearer ${API_KEY}"}. Their values come from the project&apos;s
+          variables (Settings, Environment) or from the environment you start the daemon from. They are never written to the server&apos;s file.
         </span>
         {pairs.map((p, i) => (
           <div key={i} className={styles.pair}>

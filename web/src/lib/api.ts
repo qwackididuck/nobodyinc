@@ -518,6 +518,27 @@ export function setConfigProtection(value: ConfigProtection): Promise<Settings> 
   return sendJSON<Settings>("PUT", "/api/settings", { config_protection: value });
 }
 
+// --- The project's environment variables (GET/PUT/DELETE /api/env, ADR-0020) ---
+
+// An environment variable of the project: only its name, never its value.
+export interface EnvVariable {
+  name: string;
+}
+
+export function listEnv(): Promise<EnvVariable[]> {
+  return getJSON<EnvVariable[]>("/api/env");
+}
+
+// setEnv adds or replaces a variable; every agent restarts once idle to get
+// it. The daemon refuses the names it sets itself (NOBODY_*, GIT_AUTHOR_*...).
+export function setEnv(name: string, value: string): Promise<EnvVariable[]> {
+  return sendJSON<EnvVariable[]>("PUT", `/api/env/${encodeURIComponent(name)}`, { value });
+}
+
+export function deleteEnv(name: string): Promise<void> {
+  return send("DELETE", `/api/env/${encodeURIComponent(name)}`);
+}
+
 // Claude Code's MCP scopes (ADR-0010): project is .mcp.json, committed; local
 // is the user on this project only; user is the user on all their projects.
 export type MCPScope = "project" | "local" | "user";
