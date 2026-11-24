@@ -285,6 +285,21 @@
   margin: 0 8px 8px;
 }
 
+/* Expanded: the terminal covers the whole window. */
+.terminalExpanded {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  margin: 0;
+  padding: 8px;
+  background: var(--panel);
+}
+
+.terminalReduce {
+  align-self: flex-end;
+  margin-bottom: 6px;
+}
+
 /* The xterm.js container (TerminalView). */
 /* The terminal and, while its session is gone, a banner over it (TerminalView). */
 .terminalFrame {

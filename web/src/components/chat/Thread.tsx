@@ -25,6 +25,8 @@ type Item = { at: string; message: Message } | { at: string; approval: Approval 
 export function Thread({ agent, onSeen }: Props) {
   const live = useLive();
   const [view, setView] = useState<"chat" | "terminal">("chat");
+  // The terminal fills the whole window while expanded; Escape brings it back.
+  const [expanded, setExpanded] = useState(false);
   const [history, setHistory] = useState<Message[]>([]);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +53,13 @@ export function Thread({ agent, onSeen }: Props) {
   useEffect(() => {
     if (latest && view === "chat") onSeen(latest);
   }, [latest, view, onSeen]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setExpanded(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
 
   const canStart = !agent.on_leave && (agent.status === "stopped" || agent.status === "exited");
 
@@ -91,9 +100,19 @@ export function Thread({ agent, onSeen }: Props) {
             {v === "chat" ? "Chat" : "Terminal"}
           </button>
         ))}
+        {view === "terminal" && (
+          <button type="button" className={styles.toggleBtn} onClick={() => setExpanded((e) => !e)} aria-pressed={expanded}>
+            {expanded ? "Reduce (Esc)" : "Expand"}
+          </button>
+        )}
       </div>
       {view === "terminal" ? (
-        <div className={styles.terminal}>
+        <div className={expanded ? `${styles.terminal} ${styles.terminalExpanded}` : styles.terminal}>
+          {expanded && (
+            <button type="button" className={`${styles.btn} ${styles.terminalReduce}`} onClick={() => setExpanded(false)}>
+              Reduce (Esc)
+            </button>
+          )}
           <TerminalView address={agent.address} status={agent.status} />
         </div>
       ) : (
