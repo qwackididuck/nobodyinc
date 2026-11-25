@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/launcher"
 	"github.com/qwackididuck/nobodyinc/internal/org"
 	"github.com/qwackididuck/nobodyinc/internal/schedule"
+	"github.com/qwackididuck/nobodyinc/internal/updates"
 )
 
 // testLauncher is the real launcher (ADR-0014) on a local port, starting
@@ -54,6 +56,9 @@ func startLauncherWith(t *testing.T, change func(*launcher.Options)) *testLaunch
 		ProjectArgs: []string{"-claude", fakeClaude, "-hook", hookBinary},
 		Output:      io.Discard,
 		Clock:       clock,
+		// Tests never ask the real GitHub: the update check is off unless a
+		// test turns it on with a fake one.
+		NoUpdateCheck: true,
 	}
 	change(&opts)
 
@@ -498,4 +503,115 @@ func (tl *testLauncher) list(t *testing.T) []launcherProject {
 	decodeBody(t, tl.do(t, http.MethodGet, "/api/projects", "", http.StatusOK), &list)
 
 	return list
+}
+
+// fakeGitHub answers GitHub's "latest release" request with a tag the test
+// can change, and counts the requests it got.
+type fakeGitHub struct {
+	srv      *httptest.Server
+	mu       sync.Mutex
+	tag      string
+	requests int
+}
+
+func newFakeGitHub(t *testing.T, tag string) *fakeGitHub {
+	t.Helper()
+
+	g := &fakeGitHub{tag: tag}
+	g.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+
+		g.requests++
+
+		_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": g.tag, "html_url": "https://github.com/qwackididuck/nobodyinc/releases/tag/" + g.tag})
+	}))
+	t.Cleanup(g.srv.Close)
+
+	return g
+}
+
+func (g *fakeGitHub) publish(tag string) {
+	g.mu.Lock()
+	g.tag = tag
+	g.mu.Unlock()
+}
+
+func (g *fakeGitHub) seen() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	return g.requests
+}
+
+// TestLauncherReportsNewRelease: the launcher checks GitHub's latest release
+// when it starts, reports a newer one, and checks again when asked.
+func TestLauncherReportsNewRelease(t *testing.T) {
+	t.Parallel()
+
+	gh := newFakeGitHub(t, "v1.1.0")
+
+	tl := startLauncherWith(t, func(o *launcher.Options) {
+		o.NoUpdateCheck = false
+		o.Updates = updates.New(updates.Options{Current: "v1.0.0", URL: gh.srv.URL})
+	})
+
+	var status updates.Status
+
+	// The start-up check runs in the background.
+	eventually(t, "the start-up check", func() bool {
+		if err := json.Unmarshal(tl.do(t, http.MethodGet, "/api/update", "", http.StatusOK), &status); err != nil {
+			t.Fatal(err)
+		}
+
+		return status.CheckedAt != nil
+	})
+
+	if !status.Available || status.Latest != "v1.1.0" || status.Current != "v1.0.0" {
+		t.Fatalf("status = %+v, want v1.1.0 available over v1.0.0", status)
+	}
+
+	// A newer release comes out: only a check made on purpose sees it.
+	gh.publish("v1.2.0")
+
+	if got := tl.do(t, http.MethodGet, "/api/update", "", http.StatusOK); !strings.Contains(string(got), "v1.1.0") {
+		t.Fatalf("GET /api/update must not ask GitHub again: %s", got)
+	}
+
+	if err := json.Unmarshal(tl.do(t, http.MethodPost, "/api/update/check", "", http.StatusOK), &status); err != nil {
+		t.Fatal(err)
+	}
+
+	if status.Latest != "v1.2.0" || !status.Available {
+		t.Fatalf("after the check: %+v, want v1.2.0", status)
+	}
+}
+
+// TestLauncherUpdateCheckCanBeOff: with the start-up check off, GitHub is
+// not asked until the human asks.
+func TestLauncherUpdateCheckCanBeOff(t *testing.T) {
+	t.Parallel()
+
+	gh := newFakeGitHub(t, "v1.1.0")
+
+	tl := startLauncherWith(t, func(o *launcher.Options) {
+		o.Updates = updates.New(updates.Options{Current: "v1.0.0", URL: gh.srv.URL}) // NoUpdateCheck stays true
+	})
+
+	var status updates.Status
+	if err := json.Unmarshal(tl.do(t, http.MethodGet, "/api/update", "", http.StatusOK), &status); err != nil {
+		t.Fatal(err)
+	}
+
+	if status.CheckedAt != nil || status.Available || gh.seen() != 0 {
+		t.Fatalf("nothing should have been checked: %+v, %d requests", status, gh.seen())
+	}
+
+	if err := json.Unmarshal(tl.do(t, http.MethodPost, "/api/update/check", "", http.StatusOK), &status); err != nil {
+		t.Fatal(err)
+	}
+
+	if !status.Available || gh.seen() != 1 {
+		t.Fatalf("the manual check should work: %+v, %d requests", status, gh.seen())
+	}
 }

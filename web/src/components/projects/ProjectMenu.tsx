@@ -3,6 +3,7 @@
 import { type MouseEvent, useEffect, useRef, useState } from "react";
 
 import { listProjects, type Project } from "@/lib/launcher";
+import { checkNow, useUpdate } from "@/lib/update";
 import { projectURL } from "@/lib/window";
 import ui from "../ui/ui.module.css";
 import { DeleteProject } from "./DeleteProject";
@@ -27,6 +28,7 @@ export function ProjectMenu({ path }: Props) {
   const [browsing, setBrowsing] = useState<"open" | "create" | null>(null);
   const [deleting, setDeleting] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  const updates = useUpdate();
 
   useEffect(() => {
     if (!open) return;
@@ -118,6 +120,19 @@ export function ProjectMenu({ path }: Props) {
             }}
           >
             + New project
+          </button>
+          <div className={styles.sep} />
+          <button
+            type="button"
+            role="menuitem"
+            className={`${styles.item} ${styles.cmd}`}
+            disabled={updates.checking}
+            onClick={() => {
+              setOpen(false);
+              void checkNow();
+            }}
+          >
+            Check for updates…
           </button>
           <div className={styles.sep} />
           <button

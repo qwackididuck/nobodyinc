@@ -40,11 +40,15 @@ type Settings struct {
 	// never allowed to change their own configuration (ADR-0004); this says
 	// how strictly a delivery that does so anyway is treated.
 	ConfigProtection string `yaml:"config_protection"`
+	// CheckUpdates asks GitHub for a newer release when the launcher starts
+	// (default true, docs/updates.md). The control room's "Check for
+	// updates" works either way.
+	CheckUpdates bool `yaml:"check_updates"`
 }
 
 // Defaults are the settings without a settings file.
 func Defaults() Settings {
-	return Settings{ConfigProtection: ProtectBlock}
+	return Settings{ConfigProtection: ProtectBlock, CheckUpdates: true}
 }
 
 // fileTemplate is the settings file: written with the defaults when the
@@ -58,11 +62,17 @@ const fileTemplate = `# Nobody Inc settings for this user, used by every project
 #   block: the delivery is refused until the agent undoes the change;
 #   warn:  the delivery goes through and the human is warned.
 config_protection: %s
+
+# Look for a newer Nobody Inc release when it starts (an anonymous request to
+# GitHub; nothing is downloaded, a banner links to the release page):
+#   true:  check at every start;
+#   false: only when you ask ("Check for updates").
+check_updates: %t
 `
 
 // render returns the content of the settings file for s.
 func render(s Settings) []byte {
-	return fmt.Appendf(nil, fileTemplate, s.ConfigProtection)
+	return fmt.Appendf(nil, fileTemplate, s.ConfigProtection, s.CheckUpdates)
 }
 
 // Load reads home/settings.yaml. Unset values keep their default; unknown

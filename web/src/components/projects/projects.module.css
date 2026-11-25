@@ -658,3 +658,8 @@
   color: var(--muted);
   font-size: 13px;
 }
+
+/* The lobby's "Check for updates", at the right end of the top bar. */
+.pushRight {
+  margin-left: auto;
+}

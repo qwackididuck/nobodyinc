@@ -1,0 +1,38 @@
+/* The notice of a newer release, and the answer to "Check for updates": a
+   card in the bottom-left corner of the window. */
+.notice {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 50;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 2px solid var(--ink-px);
+  background: var(--panel);
+  box-shadow: 0 3px 0 var(--ink-px);
+  font-size: 13px;
+}
+
+.notice[data-kind="available"] {
+  border-color: var(--accent);
+}
+
+.notice[data-kind="error"] {
+  border-color: var(--danger);
+}
+
+.text {
+  flex: 1 1 200px;
+}
+
+.text strong {
+  color: var(--accent);
+}
+
+.notice a {
+  text-decoration: none;
+}

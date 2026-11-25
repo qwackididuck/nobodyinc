@@ -34,6 +34,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/launcher"
 	"github.com/qwackididuck/nobodyinc/internal/projects"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
 	"github.com/qwackididuck/nobodyinc/internal/webui"
 )
 
@@ -99,11 +100,17 @@ func runLauncher(logger *slog.Logger) error {
 		return err
 	}
 
+	prefs, err := settings.Load(home)
+	if err != nil {
+		return err
+	}
+
 	l := launcher.New(launcher.Options{
-		Version:    version,
-		Logger:     logger,
-		Home:       home,
-		Executable: executable,
+		NoUpdateCheck: !prefs.CheckUpdates,
+		Version:       version,
+		Logger:        logger,
+		Home:          home,
+		Executable:    executable,
 		ProjectArgs: []string{
 			"-claude", *claudePath, "-hook", hook, "-start=" + strconv.FormatBool(*start),
 		},

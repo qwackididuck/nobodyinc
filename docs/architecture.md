@@ -42,7 +42,8 @@ Nobody Inc runs an organisation of Claude Code agents. This page describes the p
 | `internal/server` | The HTTP API described in `api/openapi.yaml`. |
 | `internal/daemon` | Wires all of the above together, turns ticket events into notices, picks the member of a team that gets team-addressed work; `cmd/nobodyd/project.go` adds flags, the lock and the socket handed over by the launcher. |
 | `internal/projects` | Where projects live (`projects.md`): `~/.nobody`, state directories and their lock, the registry of known projects, setting a folder up, removing Nobody Inc from a project. |
-| `internal/launcher` | The launcher (`projects.md`, ADR-0014): known projects and folders, the windows' holds, project daemons as child processes, the proxy, deleting a project. |
+| `internal/updates` | Asks GitHub for the latest release and compares versions (`updates.md`, ADR-0022). |
+| `internal/launcher` | The launcher (`projects.md`, ADR-0014): known projects and folders, the windows' holds, project daemons as child processes, the proxy, deleting a project, the check for a newer release (`updates.md`). |
 | `internal/budget` | Costs and budgets (ADR-0013, `budgets.md`): turns the agents' running costs into spend records, the budgets file, gauges, which budgets cover which agents. |
 | `internal/kb` | The project's knowledge base (ADR-0019, `knowledge.md`): a folder of the project declared in `org.yaml`, its pages parsed with goldmark (titles, links, backlinks, broken links), rendered for the control room, and a full-text index (SQLite FTS5) derived from the files. |
 | `cmd/nobody-hook` | Relay run by Claude Code on hooks: forwards the event to the daemon, prints the answer, acknowledges. As every agent's statusLine (`nobody-hook statusline`), it posts the session's running cost and prints nothing. |

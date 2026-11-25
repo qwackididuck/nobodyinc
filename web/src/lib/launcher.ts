@@ -114,6 +114,28 @@ export async function projectActivity(id: string): Promise<ProjectActivity> {
   };
 }
 
+// UpdateStatus is what the launcher knows about newer releases
+// (GET /api/update, docs/updates.md).
+export interface UpdateStatus {
+  current: string;
+  latest?: string;
+  url?: string;
+  available: boolean;
+  checked_at?: string;
+  error?: string;
+}
+
+// getUpdate reads the result of the last check, the one made at start-up.
+export function getUpdate(): Promise<UpdateStatus> {
+  return request<UpdateStatus>("GET", "/api/update");
+}
+
+// checkUpdate asks GitHub for the latest release now. A failed check comes
+// back in error, not as a rejection.
+export function checkUpdate(): Promise<UpdateStatus> {
+  return request<UpdateStatus>("POST", "/api/update/check");
+}
+
 // attachURL is the WebSocket through which window holds the project.
 export function attachURL(project: string, window: string, takeover: boolean): string {
   const params = new URLSearchParams({ window });

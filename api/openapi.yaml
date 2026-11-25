@@ -248,6 +248,41 @@ paths:
         "400":
           $ref: "#/components/responses/Error"
 
+  /api/update:
+    get:
+      operationId: getUpdate
+      tags: [launcher]
+      summary: What the launcher knows about newer releases
+      description: |
+        The result of the last check against GitHub's latest release: the one
+        made when the launcher started (unless `check_updates: false` in
+        settings.yaml), or the last `POST /api/update/check`. Before any
+        check, `checked_at` is absent and `available` is false.
+      responses:
+        "200":
+          description: The last check's result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateStatus"
+
+  /api/update/check:
+    post:
+      operationId: checkUpdate
+      tags: [launcher]
+      summary: Look for a newer release now
+      description: |
+        Asks GitHub for the latest release (anonymous, nothing about the user
+        is sent), whatever `check_updates` says, and returns the result. A
+        failed check is not an HTTP error: it is reported in `error`.
+      responses:
+        "200":
+          description: The check's result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateStatus"
+
   /api/agents:
     get:
       operationId: listAgents
@@ -2689,6 +2724,30 @@ components:
           enum: [ok]
         version:
           type: string
+
+    UpdateStatus:
+      type: object
+      required: [current, available]
+      properties:
+        current:
+          type: string
+          description: This build's version; `dev` or a `git describe` string for a development build, which is never compared.
+        latest:
+          type: string
+          description: Tag of GitHub's latest release, e.g. `v1.4.0`. Absent before a successful check.
+        url:
+          type: string
+          description: The latest release's page.
+        available:
+          type: boolean
+          description: The latest release is newer than `current`.
+        checked_at:
+          type: string
+          format: date-time
+          description: When the last check ended. Absent before any check.
+        error:
+          type: string
+          description: Why the last check failed (offline, repository not public yet, rate limit…).
 
     Project:
       type: object

@@ -22,6 +22,7 @@ import (
 
 	"github.com/qwackididuck/nobodyinc/internal/launcher"
 	"github.com/qwackididuck/nobodyinc/internal/projects"
+	"github.com/qwackididuck/nobodyinc/internal/settings"
 	"github.com/qwackididuck/nobodyinc/internal/webui"
 )
 
@@ -99,18 +100,24 @@ func run(opts options) error {
 		return err
 	}
 
+	prefs, err := settings.Load(home)
+	if err != nil {
+		return err
+	}
+
 	d := &desktop{baseURL: "http://" + listener.Addr().String(), logger: logger, windows: map[string]*application.WebviewWindow{}}
 
 	d.launch = launcher.New(launcher.Options{
-		Version:     version,
-		Logger:      logger,
-		Home:        home,
-		Executable:  binaries.nobodyd,
-		ProjectArgs: []string{"-claude", claude, "-hook", binaries.hook},
-		Output:      logs,
-		UI:          webui.Handler(),
-		OnHeld:      d.focus,
-		OpenWindow:  d.openWindow,
+		Version:       version,
+		NoUpdateCheck: !prefs.CheckUpdates,
+		Logger:        logger,
+		Home:          home,
+		Executable:    binaries.nobodyd,
+		ProjectArgs:   []string{"-claude", claude, "-hook", binaries.hook},
+		Output:        logs,
+		UI:            webui.Handler(),
+		OnHeld:        d.focus,
+		OpenWindow:    d.openWindow,
 	})
 
 	srv := &http.Server{Handler: d.launch.Handler, ReadHeaderTimeout: 10 * time.Second}
@@ -162,14 +169,16 @@ func run(opts options) error {
 	return d.app.Run()
 }
 
-// menu is the application menu: App (macOS), File (New Window, Close
-// Window), Edit (copy and paste in a web view need it on macOS), Window.
+// menu is the application menu: App (macOS), File (New Window, Check for
+// Updates, Close Window), Edit (copy and paste in a web view need it on macOS), Window.
 func (d *desktop) menu() *application.Menu {
 	menu := d.app.NewMenu()
 	menu.AddRole(application.AppMenu)
 
 	file := menu.AddSubmenu("File")
 	file.Add("New Window").SetAccelerator("CmdOrCtrl+N").OnClick(func(*application.Context) { d.newWindow("") })
+	file.AddSeparator()
+	file.Add("Check for Updates…").OnClick(func(*application.Context) { go d.checkForUpdates() })
 	file.AddSeparator()
 	file.Add("Close Window").SetAccelerator("CmdOrCtrl+W").OnClick(func(*application.Context) {
 		if w := d.app.Window.Current(); w != nil {

@@ -20,6 +20,7 @@ import { Settings } from "./settings/Settings";
 import { ShellDrawer } from "./shell/ShellDrawer";
 import styles from "./shell/shell.module.css";
 import { type Tab, TopBar } from "./shell/TopBar";
+import { UpdateNotice } from "./shell/UpdateNotice";
 
 // What the chat panel shows: an agent's thread (by address), or the
 // wastebasket of messages between agents.
@@ -39,13 +40,21 @@ export function App() {
 
   const params = new URLSearchParams(search);
   const project = params.get("project");
-  if (!project) return <Lobby />;
+  if (!project) {
+    return (
+      <>
+        <Lobby />
+        <UpdateNotice />
+      </>
+    );
+  }
 
   return (
     <ProjectWindow project={project} takeover={params.get("takeover") === "1"}>
       <LiveProvider>
         <ControlRoom setup={params.get("setup") === "1"} />
       </LiveProvider>
+      <UpdateNotice />
     </ProjectWindow>
   );
 }

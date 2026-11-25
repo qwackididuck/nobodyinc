@@ -7,6 +7,8 @@
 //   - the known projects (GET/POST /api/projects, DELETE
 //     /api/projects/{project}), kept in ~/.nobody/projects.yaml;
 //   - the folders of the machine, to choose a project (GET /api/fs/dirs);
+//   - whether a newer release exists (GET /api/update, POST
+//     /api/update/check; update.go, docs/updates.md);
 //   - the windows' holds (GET /api/projects/{project}/attach, a WebSocket):
 //     a project runs only while a window holds it (leases);
 //   - each running project's API, /p/{project}/api/..., proxied to its
@@ -32,6 +34,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/projects"
 	"github.com/qwackididuck/nobodyinc/internal/schedule"
 	"github.com/qwackididuck/nobodyinc/internal/server"
+	"github.com/qwackididuck/nobodyinc/internal/updates"
 )
 
 // Defaults of Options.
@@ -79,6 +82,13 @@ type Options struct {
 	// OpenWindow, when set, opens a new window of the desktop app, on a
 	// project or on the projects page (""): POST /api/windows (windows.go).
 	OpenWindow func(project string) error
+	// Updates looks for newer releases; default one asks GitHub about this
+	// Version (docs/updates.md). Tests give it a fake GitHub.
+	Updates *updates.Checker
+	// NoUpdateCheck skips the check made when the launcher starts
+	// (`check_updates: false` in settings.yaml). The control room can still
+	// ask for one.
+	NoUpdateCheck bool
 }
 
 // Launcher runs the projects' daemons. Build it with New, serve Handler,
@@ -87,6 +97,7 @@ type Launcher struct {
 	Handler http.Handler
 
 	opts     Options
+	updates  *updates.Checker
 	registry *projects.Registry
 	leases   *leases
 	// ctx outlives requests: project daemons start with it, and are asked to
@@ -121,10 +132,15 @@ func New(opts Options) *Launcher {
 		opts.StartTimeout = DefaultStartTimeout
 	}
 
+	if opts.Updates == nil {
+		opts.Updates = updates.New(updates.Options{Current: opts.Version})
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	l := &Launcher{
 		opts:     opts,
+		updates:  opts.Updates,
 		registry: projects.NewRegistry(opts.Home),
 		ctx:      ctx,
 		cancel:   cancel,
@@ -132,6 +148,10 @@ func New(opts Options) *Launcher {
 	}
 	l.leases = newLeases(opts.Clock, opts.Grace, l.stopUnlessHeld)
 	l.Handler = l.routes()
+
+	if !opts.NoUpdateCheck {
+		l.checkAtStart()
+	}
 
 	return l
 }
@@ -197,6 +217,8 @@ func (l *Launcher) routes() http.Handler {
 	mux.HandleFunc("DELETE /api/projects/{project}", l.deleteProject)
 	mux.HandleFunc("GET /api/projects/{project}/attach", l.attach)
 	mux.HandleFunc("GET /api/fs/dirs", l.listDirs)
+	mux.HandleFunc("GET /api/update", l.getUpdate)
+	mux.HandleFunc("POST /api/update/check", l.checkUpdate)
 	mux.HandleFunc("/p/{project}/", l.proxyToProject)
 
 	if l.opts.OpenWindow != nil {
