@@ -39,6 +39,8 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 | `message.delivered` | `{recipient, ids}` | messages are handed to their recipient (hook, fork, hand-over) | `store.Store.OnDelivered` |
 | `messages.deleted` | `{ids}` | the wastebasket was emptied: finished conversations between agents deleted (`DELETE /api/messages?scope=agents`) | `server/api.go` |
 | `approvals.changed` | `{}` | a permission request is added or answered | `approval.Queue.OnChange` |
+| `automation.changed` | `{}` | the automatic mode was switched on or off | `automation.Mode.OnChange` |
+| `decisions.changed` | `{}` | the director reported a decision taken in the human's place, or the human acknowledged some | `daemon/nobody.go`, `server/automation.go` |
 | `tickets.changed` | `{id}` | a ticket is created or changed, commented, or gets a deliverable | the ticket service's store, wrapped in `daemon/events.go` |
 | `features.changed` | `{id}` | a feature is proposed, started, refused or activated | the same wrapper |
 | `org.changed` | `{}` | the organization is reloaded after a change: an agent recruited, created, edited, put on leave, brought back or dismissed (director included); a team created, edited (goal, prompt, block list) or deleted; the project prompt changed; an MCP server added, edited or removed through the API; the project's subagents imported or dismissed (the control room then reloads `GET /api/subagents` too) | `staffing.Service.OnReload` |

@@ -45,6 +45,9 @@ type Office struct {
 	// Schedules backs the director's scheduled-task tools (schedules.go);
 	// nil disables them.
 	Schedules Schedules
+	// Decisions backs the director's decision tool (decisions.go); nil
+	// disables it.
+	Decisions Decisions
 	// Budgets backs the budget tools (budgets.go); nil disables them.
 	Budgets Budgets
 	// Knowledge backs the knowledge tools (knowledge.go), which an agent
@@ -79,7 +82,9 @@ func ToolNames() []string {
 	return append([]string{
 		"send_message", "list_contacts",
 		"ticket_list", "ticket_get", "ticket_claim", "ticket_create", "ticket_update", "ticket_comment", "deliverable_add",
-	}, slices.Concat(directorToolNames, scheduleToolNames, budgetAgentToolNames, budgetDirectorToolNames, knowledgeToolNames)...)
+	}, slices.Concat(
+		directorToolNames, scheduleToolNames, decisionToolNames, budgetAgentToolNames, budgetDirectorToolNames, knowledgeToolNames,
+	)...)
 }
 
 // NewServer builds the MCP server of one agent. The director also gets the
@@ -87,7 +92,8 @@ func ToolNames() []string {
 func NewServer(o *org.Org, office Office, address string) *mcp.Server {
 	t := tools{
 		org: o, sender: office.Sender, tickets: office.Tickets, director: office.Director, schedules: office.Schedules,
-		budgets: office.Budgets, knowledge: office.Knowledge, onKnowledgeRead: office.OnKnowledgeRead, self: address,
+		decisions: office.Decisions,
+		budgets:   office.Budgets, knowledge: office.Knowledge, onKnowledgeRead: office.OnKnowledgeRead, self: address,
 	}
 	version := office.Version
 	server := mcp.NewServer(&mcp.Implementation{Name: "nobody-inc", Version: version}, nil)
@@ -113,8 +119,8 @@ func NewServer(o *org.Org, office Office, address string) *mcp.Server {
 		t.addDirectorTools(server)
 	}
 
-	if o.IsGod(address) && t.schedules != nil {
-		t.addScheduleTools(server)
+	if o.IsGod(address) {
+		t.addScheduleAndDecisionTools(server)
 	}
 
 	if t.budgets != nil {
@@ -138,6 +144,7 @@ type tools struct {
 	tickets         Tickets
 	director        Director
 	schedules       Schedules
+	decisions       Decisions
 	budgets         Budgets
 	knowledge       Knowledge
 	onKnowledgeRead func(agent, tool, subject string)

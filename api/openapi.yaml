@@ -843,6 +843,8 @@ paths:
         - `message.delivered`: MessagesDeliveredEvent
         - `messages.deleted`: MessagesDeleted (the wastebasket was emptied)
         - `approvals.changed`: `{}`
+        - `automation.changed`: `{}` (the automatic mode was switched; read `GET /api/automation`)
+        - `decisions.changed`: `{}` (a decision was reported or acknowledged; read `GET /api/decisions`)
         - `tickets.changed`: ChangedEvent (ticket ID)
         - `features.changed`: ChangedEvent (feature ID)
         - `org.changed`: `{}` (an agent was recruited, edited, put on leave, brought back or dismissed)
@@ -2519,6 +2521,80 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/automation:
+    get:
+      operationId: getAutomation
+      summary: The project's automatic mode
+      responses:
+        "200":
+          description: Current level
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+    put:
+      operationId: setAutomation
+      summary: Switch the automatic mode
+      description: |
+        With `auto`, the daemon allows every permission request itself, the
+        ones already waiting included; no agent restarts. Claude Code's deny
+        rules still win, because it evaluates them before asking. The level is
+        kept in the daemon's memory only: it is `off` after a restart.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Automation"
+      responses:
+        "200":
+          description: The new level
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+
+  /api/decisions:
+    get:
+      operationId: listDecisions
+      summary: Decisions the director took in the human's place (Nobody mode), newest first
+      responses:
+        "200":
+          description: The decisions, reviewed or not
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Decision"
+
+  /api/decisions/seen:
+    post:
+      operationId: markDecisionsSeen
+      summary: Acknowledge decisions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                ids:
+                  description: The decisions to acknowledge; empty or absent acknowledges them all.
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        "204":
+          description: Acknowledged
+        "400":
+          $ref: "#/components/responses/Error"
+
   /internal/agents/{address}/hook:
     post:
       operationId: handleHookEvent
@@ -4170,6 +4246,50 @@ components:
         created_at:
           type: string
           format: date-time
+
+    Automation:
+      type: object
+      required: [level]
+      additionalProperties: false
+      properties:
+        level:
+          type: string
+          enum: [off, auto, nobody]
+          description: |
+            `auto`: the daemon allows every permission request. `nobody`: as
+            `auto`, and the director also answers the agents' questions to the
+            human (`query` messages) in their place, reporting each decision
+            (`GET /api/decisions`).
+
+    Decision:
+      type: object
+      required: [id, asked_by, message, question, decision, rationale, impact, decided_at, seen]
+      properties:
+        id:
+          type: integer
+        asked_by:
+          description: The agent whose question the director answered.
+          type: string
+        message:
+          description: ID of the question's message.
+          type: string
+        question:
+          description: The question's subject.
+          type: string
+        decision:
+          type: string
+        rationale:
+          type: string
+        impact:
+          description: High is what is hard to undo, costly, widening the scope or touching security.
+          type: string
+          enum: [low, medium, high]
+        decided_at:
+          type: string
+          format: date-time
+        seen:
+          description: True once the human acknowledged it.
+          type: boolean
 
     ApprovalDecision:
       type: object

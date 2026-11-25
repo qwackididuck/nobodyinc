@@ -14,6 +14,10 @@ export type DaemonEvent =
   | { type: "message.delivered"; data: { recipient: string; ids: string[] } }
   | { type: "messages.deleted"; data: { ids: string[] } }
   | { type: "approvals.changed" }
+  // The automatic mode was switched; the director reported or the human
+  // acknowledged decisions taken in their place (docs/automation.md).
+  | { type: "automation.changed" }
+  | { type: "decisions.changed" }
   | { type: "tickets.changed"; data: { id: string } }
   | { type: "features.changed"; data: { id: string } }
   | { type: "org.changed" }
@@ -39,6 +43,8 @@ const EVENT_TYPES: EventType[] = [
   "message.delivered",
   "messages.deleted",
   "approvals.changed",
+  "automation.changed",
+  "decisions.changed",
   "tickets.changed",
   "features.changed",
   "org.changed",
