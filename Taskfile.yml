@@ -134,7 +134,8 @@ tasks:
       - mkdir -p "{{.STAGE}}"
       - go build -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o "{{.STAGE}}/nobodyd" ./cmd/nobodyd
       - go build -trimpath -ldflags "-s -w" -o "{{.STAGE}}/nobody-hook" ./cmd/nobody-hook
-      - cd desktop && go build -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o "../{{.STAGE}}/nobody-desktop" .
+      # Wails v3 targets GTK 4 and WebKitGTK 6.0 by default; the gtk3 tag selects GTK 3 and WebKitGTK 4.1.
+      - cd desktop && go build -tags gtk3 -trimpath -ldflags "-s -w -X main.version={{.VERSION}}" -o "../{{.STAGE}}/nobody-desktop" .
       - cp desktop/build/linux/nobody-inc.desktop "{{.STAGE}}/"
       - cp desktop/build/appicon.png "{{.STAGE}}/nobody-inc.png"
       - tar -C desktop/build/bin/linux -czf desktop/build/bin/NobodyInc_linux_{{.ARCH_NAME}}.tar.gz NobodyInc
