@@ -1,11 +1,14 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
+	"github.com/qwackididuck/nobodyinc/internal/approval"
 	"github.com/qwackididuck/nobodyinc/internal/hook"
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 	"github.com/qwackididuck/nobodyinc/internal/skills"
@@ -49,6 +52,7 @@ func (s *server) handleHookEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.toolUsed(address, ev)
+	s.withdrawAnswered(address, ev)
 
 	if ev.Name == hook.EventStop && s.holdAtStop(w, r, address, ev) {
 		return
@@ -80,6 +84,39 @@ func (s *server) toolUsed(address string, ev hook.Event) {
 	if (ev.Name == hook.EventPreToolUse || ev.Name == hook.EventPostToolUse) && s.ToolUsed != nil {
 		s.ToolUsed(address, ev)
 	}
+}
+
+// withdrawAnswered drops the permission requests the human answered in the
+// agent's terminal instead of the control room: the agent's next events show
+// it. The tool that ran (PostToolUse) answers the request for that same tool
+// call; the start of a new prompt, or the end of the turn, answers them all
+// (a refusal in the terminal leaves no other trace). A request still waiting
+// then is not lost: it is only the card that goes.
+func (s *server) withdrawAnswered(address string, ev hook.Event) {
+	var answered func(approval.Request) bool
+
+	switch ev.Name {
+	case hook.EventPostToolUse:
+		answered = func(r approval.Request) bool { return r.ToolName == ev.ToolName && sameJSON(r.ToolInput, ev.ToolInput) }
+	case hook.EventStop, hook.EventUserPromptSubmit:
+		answered = func(approval.Request) bool { return true }
+	default:
+		return
+	}
+
+	if n := s.Approvals.Withdraw(address, answered); n > 0 {
+		s.Logger.Info("permission answered in the terminal", "agent", address, "event", ev.Name, "requests", n)
+	}
+}
+
+// sameJSON reports whether two JSON documents hold the same value.
+func sameJSON(a, b json.RawMessage) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return len(a) == 0 && len(b) == 0
+	}
+
+	return reflect.DeepEqual(x, y)
 }
 
 // holdAtStop handles the Stop of an agent a budget holds (ADR-0013): it is

@@ -325,6 +325,53 @@ func TestPermissionRequestSuggestions(t *testing.T) {
 	}
 }
 
+// A permission the human answers in the agent's terminal leaves the queue as
+// soon as the agent's next events show it.
+func TestPermissionAnsweredInTheTerminalLeavesTheQueue(t *testing.T) {
+	t.Parallel()
+
+	const request = `{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls"}}`
+
+	tests := []struct {
+		name      string
+		event     string
+		withdrawn bool
+	}{
+		{"the same tool ran", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}`, true},
+		{"another tool ran", `{"hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"pwd"}}`, false},
+		{"the turn ended", `{"hook_event_name":"Stop"}`, true},
+		{"a new prompt", `{"hook_event_name":"UserPromptSubmit"}`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := newTestEnv(t)
+
+			answer := make(chan *httptest.ResponseRecorder, 1)
+			go func() { answer <- env.do(t, http.MethodPost, "/internal/agents/dev1@dev/hook", request) }()
+
+			pending := waitForApproval(t, env)
+			env.do(t, http.MethodPost, "/internal/agents/dev1@dev/hook", tt.event)
+
+			if !tt.withdrawn {
+				if len(env.approvals.Pending()) != 1 {
+					t.Fatal("the request must still be pending")
+				}
+
+				env.do(t, http.MethodPost, "/api/approvals/"+pending.ID, `{"decision":"deny"}`)
+			}
+
+			var decision hookDecision
+			decode(t, <-answer, &decision)
+
+			if tt.withdrawn && (decision.Response != nil || len(env.approvals.Pending()) != 0) {
+				t.Fatalf("the request must be withdrawn without an answer, got %+v", decision.Response)
+			}
+		})
+	}
+}
+
 func TestPermissionRequestWithoutDecisionFallsBackToTerminal(t *testing.T) {
 	t.Parallel()
 

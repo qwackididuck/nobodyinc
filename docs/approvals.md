@@ -28,6 +28,10 @@ Claude Code's own prompt often offers more than yes/no: always allow this comman
 
 Picking one sends `POST /api/approvals/{id}` with `{"decision":"allow","suggestion":<index>}`; the hook then answers `allow` with that same update as `updatedPermissions`, echoed as received. A suggestion with a deny, or an index out of range, is a 400.
 
+## Answered in the terminal
+
+The human can also answer Claude Code's prompt in the agent's own terminal. The daemon learns it from the agent's next events (`Queue.Withdraw`, `withdrawAnswered` in `internal/server/hooks.go`): a `PostToolUse` of the same tool with the same input withdraws that request; a `Stop` or a `UserPromptSubmit` withdraws all the agent's requests (a refusal in the terminal leaves no other trace, so its card leaves when the turn ends). The card then goes from the chat.
+
 ## Pieces
 
 | Piece | Role |

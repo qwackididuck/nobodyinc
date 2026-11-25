@@ -62,6 +62,8 @@ type Queue struct {
 type waiting struct {
 	req      Request
 	decision chan Decision
+	// withdrawn is closed when the request was answered elsewhere (Withdraw).
+	withdrawn chan struct{}
 }
 
 // NewQueue returns an empty queue.
@@ -96,7 +98,7 @@ func (q *Queue) Ask(ctx context.Context, req Request) (Decision, error) {
 	default:
 	}
 
-	w := &waiting{req: req, decision: make(chan Decision, 1)}
+	w := &waiting{req: req, decision: make(chan Decision, 1), withdrawn: make(chan struct{})}
 
 	q.mu.Lock()
 	q.pending[req.ID] = w
@@ -115,9 +117,33 @@ func (q *Queue) Ask(ctx context.Context, req Request) (Decision, error) {
 		return d, nil
 	case <-ctx.Done():
 		return Decision{}, ErrNoDecision
+	case <-w.withdrawn:
+		return Decision{}, ErrNoDecision
 	case <-q.closed:
 		return Decision{}, ErrNoDecision
 	}
+}
+
+// Withdraw removes the agent's pending requests for which answered returns
+// true, and reports how many. It is for requests the human answered in the
+// agent's own terminal, which the daemon only learns from the agent's next
+// events: each withdrawn Ask returns ErrNoDecision, like an abandoned one.
+func (q *Queue) Withdraw(agent string, answered func(Request) bool) int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	n := 0
+
+	for id, w := range q.pending {
+		if w.req.Agent == agent && answered(w.req) {
+			delete(q.pending, id)
+			close(w.withdrawn)
+
+			n++
+		}
+	}
+
+	return n
 }
 
 // Decide answers a pending request.
