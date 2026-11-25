@@ -270,6 +270,57 @@ export async function decideApproval(id: string, allow: boolean, message = "", s
   }
 }
 
+// --- Automatic mode (docs/automation.md) ---
+
+// off: every permission request waits for the human. auto: the daemon allows
+// them all. nobody: auto, and the director also answers the agents' questions
+// in the human's place, reporting each decision.
+export type AutomationLevel = "off" | "auto" | "nobody";
+
+export interface Automation {
+  level: AutomationLevel;
+}
+
+export function getAutomation(): Promise<Automation> {
+  return getJSON<Automation>("/api/automation");
+}
+
+export function setAutomation(level: AutomationLevel): Promise<Automation> {
+  return sendJSON<Automation>("PUT", "/api/automation", { level });
+}
+
+export type DecisionImpact = "low" | "medium" | "high";
+
+// A decision the director took in the human's place (Nobody mode).
+export interface Decision {
+  id: number;
+  asked_by: string;
+  question: string;
+  decision: string;
+  rationale: string;
+  impact: DecisionImpact;
+  decided_at: string;
+  // True once the human acknowledged it.
+  seen: boolean;
+}
+
+// Newest first.
+export function listDecisions(): Promise<Decision[]> {
+  return getJSON<Decision[]>("/api/decisions");
+}
+
+// markDecisionsSeen acknowledges the given decisions, or all of them without ids.
+export async function markDecisionsSeen(ids: number[] = []): Promise<void> {
+  const res = await daemonFetch("/api/decisions/seen", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+}
+
 // A request the organization works on, with its own git branch (see docs/workspaces.md).
 export type FeatureStatus = "proposed" | "started" | "refused" | "finished";
 

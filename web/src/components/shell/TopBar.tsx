@@ -1,6 +1,7 @@
 "use client";
 
 import { useLive } from "@/lib/live";
+import { AutomationBanner, AutomationButton } from "../automation/AutomationControls";
 import { ProjectMenu } from "../projects/ProjectMenu";
 import { attention } from "../schedules/scheduling";
 import { pendingSubagents } from "../staff/SubagentImport";
@@ -37,44 +38,48 @@ export function TopBar({ tab, onTab, terminalOpen, onToggleTerminal }: Props) {
   };
 
   return (
-    <header className={styles.topbar}>
-      <div className={styles.brand}>
-        <BrandMark />
-        Nobody Inc
-      </div>
-      <ProjectMenu path={settings?.project_dir} />
-      <nav className={styles.tabs} role="tablist" aria-label="Views">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === t.id}
-            className={styles.tab}
-            onClick={() => onTab(t.id)}
-          >
-            {t.label}
-            {badges[t.id] ? (
-              <span className={styles.tabBadge} title="Waiting for you">
-                {badges[t.id]}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </nav>
-      <span className={styles.daemon} data-connected={connected} title={connected ? "Live updates on" : "Reconnecting to the daemon…"}>
-        {connected ? "Live" : "Reconnecting…"}
-      </span>
-      <button
-        type="button"
-        className={styles.terminalToggle}
-        aria-pressed={terminalOpen}
-        onClick={onToggleTerminal}
-        title="A terminal in the project's folder (Ctrl+`)"
-      >
-        &gt;_ Terminal
-      </button>
-    </header>
+    <div className={styles.topArea}>
+      <header className={styles.topbar}>
+        <div className={styles.brand}>
+          <BrandMark />
+          Nobody Inc
+        </div>
+        <ProjectMenu path={settings?.project_dir} />
+        <nav className={styles.tabs} role="tablist" aria-label="Views">
+          {TABS.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              className={styles.tab}
+              onClick={() => onTab(t.id)}
+            >
+              {t.label}
+              {badges[t.id] ? (
+                <span className={styles.tabBadge} title="Waiting for you">
+                  {badges[t.id]}
+                </span>
+              ) : null}
+            </button>
+          ))}
+        </nav>
+        <span className={styles.daemon} data-connected={connected} title={connected ? "Live updates on" : "Reconnecting to the daemon…"}>
+          {connected ? "Live" : "Reconnecting…"}
+        </span>
+        <AutomationButton />
+        <button
+          type="button"
+          className={styles.terminalToggle}
+          aria-pressed={terminalOpen}
+          onClick={onToggleTerminal}
+          title="A terminal in the project's folder (Ctrl+`)"
+        >
+          &gt;_ Terminal
+        </button>
+      </header>
+      <AutomationBanner />
+    </div>
   );
 }
 

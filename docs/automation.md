@@ -34,3 +34,12 @@ Claude Code evaluates its **deny rules before it ever asks for a permission**, s
 ## Lifetime
 
 The level lives in the daemon's memory (`internal/automation`). Closing the project's window or restarting the daemon puts it back to `off`, so a dangerous mode is never left on by forgetting about it.
+
+## In the control room
+
+`web/src/components/automation/`:
+
+- **Switch** in the top bar (`AutomationButton`). Switching on opens a warning (`AutomationWarning`) that says what is no longer asked, what is still refused (the deny rules) and that the mode ends with the project's daemon; its checkbox **Nobody mode** picks the Nobody level. Switching off is immediate.
+- **Banner** (`AutomationBanner`) under the top bar, on every tab, while the mode is on, with a "Switch off" button and the number of decisions to review.
+- **Report** (`DecisionsModal`), from the top bar's "Decisions" button or the banner: the decisions not yet seen first, high impact on top, framed and tinted in red; "Seen" per decision or "Mark all as seen". The button shows as long as there is a decision, even with the mode off, so that the human back from an absence finds it.
+- The state comes from `GET /api/automation` and `GET /api/decisions` (`useLive`), kept fresh by the `automation.changed` and `decisions.changed` events.
