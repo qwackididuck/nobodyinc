@@ -8,18 +8,23 @@ import { Bin } from "./Bin";
 import styles from "./chat.module.css";
 import type { ReadMarks } from "./readMarks";
 import { Thread } from "./Thread";
+import { ResizeHandle } from "./ResizeHandle";
+import { useHistoryCutoff } from "./useHistoryCutoff";
+import type { useChatWidth } from "./useChatWidth";
 
 interface Props {
   target: ChatTarget | null;
   onTarget: (t: ChatTarget) => void;
   marks: ReadMarks;
   markSeen: (chat: string, at: string) => void;
+  width: ReturnType<typeof useChatWidth>;
 }
 
 // ChatPanel is the left side of the control room: the avatar rail and the
 // selected chat (the director's by default) or the wastebasket.
-export function ChatPanel({ target, onTarget, marks, markSeen }: Props) {
+export function ChatPanel({ target, onTarget, marks, markSeen, width }: Props) {
   const { agents, teams } = useLive();
+  const cutoff = useHistoryCutoff();
   const sorted = sortAgents(agents, teams);
 
   // Until the human picks a chat, show the first one (the director's).
@@ -32,9 +37,10 @@ export function ChatPanel({ target, onTarget, marks, markSeen }: Props) {
       <AvatarRail agents={sorted} target={shown} marks={marks} onTarget={onTarget} />
       <aside className={styles.panel} aria-label="Conversation">
         {shown?.kind === "bin" && <Bin onSeen={(at) => markSeen(BIN_KEY, at)} />}
-        {agent && <Thread key={agent.address} agent={agent} onSeen={(at) => markSeen(agent.address, at)} />}
+        {agent && <Thread key={agent.address} agent={agent} cutoff={cutoff} onSeen={(at) => markSeen(agent.address, at)} />}
         {!shown && <p className={styles.empty}>No agent yet.</p>}
         {shown?.kind === "agent" && !agent && <p className={styles.empty}>This agent left the organization.</p>}
+        <ResizeHandle width={width.width} onResize={width.setWidth} onDone={width.remember} />
       </aside>
     </>
   );

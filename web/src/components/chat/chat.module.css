@@ -176,6 +176,7 @@
 /* ---- Panel and thread ----------------------------------------------------- */
 
 .panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -722,4 +723,24 @@
   border-top: 1px solid var(--line);
   font-size: 12px;
   color: var(--muted);
+}
+
+/* ---- Resizing and hidden history ---------------------------------------- */
+
+.resize {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  width: 6px;
+  z-index: 5;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.resize:hover,
+.resize:focus-visible,
+.resize:active {
+  background: var(--line);
+  outline: none;
 }

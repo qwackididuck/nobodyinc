@@ -3,7 +3,7 @@
 .app {
   height: 100%;
   display: grid;
-  grid-template-columns: 76px minmax(320px, 380px) 1fr;
+  grid-template-columns: 76px var(--chat-w, 380px) minmax(0, 1fr);
   grid-template-rows: auto 1fr auto; /* top bar, panels, terminal drawer */
 }
 

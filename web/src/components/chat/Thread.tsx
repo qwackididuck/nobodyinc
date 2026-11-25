@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { type Agent, type Approval, HUMAN, type Message, listConversation, startAgent, terminalURL } from "@/lib/api";
 import { useLive } from "@/lib/live";
@@ -13,16 +13,21 @@ import { Composer } from "./Composer";
 
 interface Props {
   agent: Agent;
+  // cutoff: messages sent before this time are hidden until asked for.
+  cutoff: string;
   // onSeen records the time of the latest message shown, as read.
   onSeen: (at: string) => void;
 }
+
+// PAGE is how many hidden messages "show earlier" reveals at a time.
+const PAGE = 25;
 
 type Item = { at: string; message: Message } | { at: string; approval: Approval };
 
 // Thread is the human's chat with one agent: the messages both ways, with
 // cards for what waits for the human (a permission request, an urgent
 // question, a feature or schedule proposal), and a switch to the agent's live terminal.
-export function Thread({ agent, onSeen }: Props) {
+export function Thread({ agent, cutoff, onSeen }: Props) {
   const live = useLive();
   const [view, setView] = useState<"chat" | "terminal">("chat");
   // The terminal fills the whole window while expanded; Escape brings it back.
@@ -30,6 +35,12 @@ export function Thread({ agent, onSeen }: Props) {
   const [history, setHistory] = useState<Message[]>([]);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // How many of the hidden (older than the cutoff) messages are shown, newest first.
+  // Tied to its cutoff: a new cutoff (a feature was finished) hides the history again.
+  const [reveal, setReveal] = useState({ cutoff, count: 0 });
+  const revealed = reveal.cutoff === cutoff ? reveal.count : 0;
+  const listRef = useRef<HTMLOListElement>(null);
+  const stuck = useRef(true); // the list follows its end until the human scrolls up
 
   // The full history comes from the API once; new messages come with the
   // event stream (live.messages).
@@ -44,8 +55,12 @@ export function Thread({ agent, onSeen }: Props) {
   }, [agent.address]);
 
   const messages = mergeById(history, live.messages.filter((m) => withHuman(m, agent.address)));
+  const firstShown = messages.findIndex((m) => m.sent_at >= cutoff);
+  const afterCount = firstShown === -1 ? 0 : messages.length - firstShown;
+  const visible = messages.slice(Math.max(0, messages.length - afterCount - revealed));
+  const stillHidden = messages.length - visible.length;
   const items: Item[] = [
-    ...messages.map((m) => ({ at: m.sent_at, message: m })),
+    ...visible.map((m) => ({ at: m.sent_at, message: m })),
     ...live.approvals.filter((a) => a.agent === agent.address).map((a) => ({ at: a.created_at, approval: a })),
   ].sort((a, b) => a.at.localeCompare(b.at));
 
@@ -53,6 +68,13 @@ export function Thread({ agent, onSeen }: Props) {
   useEffect(() => {
     if (latest && view === "chat") onSeen(latest);
   }, [latest, view, onSeen]);
+
+  // Open on the last message, and follow new ones unless the human scrolled up.
+  const lastItem = items.at(-1)?.at;
+  useLayoutEffect(() => {
+    const el = listRef.current;
+    if (el && stuck.current) el.scrollTop = el.scrollHeight;
+  }, [lastItem, items.length, view, history.length]);
 
   useEffect(() => {
     if (!expanded) return;
@@ -117,7 +139,28 @@ export function Thread({ agent, onSeen }: Props) {
         </div>
       ) : (
         <>
-          <ol className={styles.body} aria-label={`Chat with ${agent.name}`}>
+          <ol
+            ref={listRef}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              stuck.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+            }}
+            className={styles.body}
+            aria-label={`Chat with ${agent.name}`}>
+            {stillHidden > 0 && (
+              <li className={styles.system}>
+                <button
+                  type="button"
+                  className={styles.btn}
+                  onClick={() => {
+                    stuck.current = false;
+                    setReveal({ cutoff, count: revealed + PAGE });
+                  }}
+                >
+                  Show {Math.min(PAGE, stillHidden)} earlier ({stillHidden} hidden)
+                </button>
+              </li>
+            )}
             {items.length === 0 && <li className={styles.system}>No message with {agent.name} yet.</li>}
             {items.map((item) =>
               "approval" in item ? (

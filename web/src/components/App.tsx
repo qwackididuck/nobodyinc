@@ -9,6 +9,7 @@ import { unreadInBin } from "./chat/agents";
 import { BIN_KEY } from "./chat/AvatarRail";
 import { ChatPanel } from "./chat/ChatPanel";
 import { useReadMarks } from "./chat/readMarks";
+import { useChatWidth } from "./chat/useChatWidth";
 import { Kanban } from "./kanban/Kanban";
 import { Office } from "./office/Office";
 import { ScheduleNav, type ScheduleFocus } from "./schedules/nav";
@@ -91,6 +92,7 @@ function ControlRoom({ setup }: { setup: boolean }) {
   // is keyed by it, so each new focus starts over.
   const [focus, setFocus] = useState<{ seq: number; value?: ScheduleFocus }>({ seq: 0 });
   const { marks, markSeen } = useReadMarks(settings?.project_id);
+  const chatWidth = useChatWidth();
   const openChat = (address: string) => setTarget({ kind: "agent", address });
   const openSchedules = (value?: ScheduleFocus) => {
     setFocus((f) => ({ seq: f.seq + 1, value }));
@@ -99,10 +101,10 @@ function ControlRoom({ setup }: { setup: boolean }) {
 
   return (
     <ScheduleNav value={openSchedules}>
-    <div className={styles.app}>
+    <div className={styles.app} style={{ "--chat-w": `${chatWidth.width}px` } as React.CSSProperties}>
       <LeaveGuard />
       <TopBar tab={tab} onTab={setTab} terminalOpen={terminalOpen} onToggleTerminal={() => setTerminalOpen((open) => !open)} />
-      <ChatPanel target={target} onTarget={setTarget} marks={marks} markSeen={markSeen} />
+      <ChatPanel target={target} onTarget={setTarget} marks={marks} markSeen={markSeen} width={chatWidth} />
       <main className={styles.main}>
         {tab === "office" && (
           <Office
