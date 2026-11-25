@@ -196,7 +196,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Requeue:       st.Requeue,
 	}
 
-	messages.OnSent = onSent(ctx, bus, staff, forker, supervisor)
+	nobody := newNobodyOffice(ctx, onSent(ctx, bus, staff, forker, supervisor), autoMode, opts.Org, st, messages, bus, opts.Logger)
 
 	budgets, err := wireBudgets(ctx, opts, st, statuses, bus)
 	if err != nil {
@@ -296,7 +296,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		},
 		Extra: withHandlers(runtime.ShellsHandlers(shells, opts.Origins, opts.Logger), map[string]http.Handler{
 			"/mcp/{address}": officemcp.Handler(officemcp.Office{
-				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules, Budgets: budgetOffice,
+				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules, Decisions: nobody, Budgets: budgetOffice,
 				Knowledge: knowledge.Service, OnKnowledgeRead: announceKnowledgeRead(bus),
 				Version: opts.Version,
 			}),

@@ -47,6 +47,8 @@
 //   - a request whose body is "SPEND <usd>" costs that much;
 //   - a ticket whose title has "SPEND <usd>" costs that much, and stays in
 //     progress (the work is not over);
+//   - a notice from nobody asking the director to decide in the human's place
+//     (Nobody mode) makes it call decision_log: "Use SQLite.", impact high;
 //   - a Stop refused for a budget makes it call budget_request (the request
 //     named in the refusal, $1, a fixed justification);
 //   - a notice from nobody about a budget request (the director's) makes it
@@ -566,6 +568,12 @@ func spendIn(text string) (float64, bool) {
 // reactToNotice handles the system's notices: a budget request for the
 // director, and tickets.
 func (a *agent) reactToNotice(m mail) {
+	if strings.HasPrefix(m.Subject, "Decide in the human's place:") {
+		a.decide(m)
+
+		return
+	}
+
 	if strings.HasPrefix(m.Subject, "Budget request BR-") {
 		a.submit(m)
 
@@ -581,6 +589,19 @@ func (a *agent) reactToNotice(m mail) {
 		}
 	case strings.Contains(m.Body, "is assigned to you"):
 		a.work(m)
+	}
+}
+
+// questionPattern finds the question's message ID in the notice asking the
+// director to decide (Nobody mode).
+var questionPattern = regexp.MustCompile(`message_id "([^"]+)"`)
+
+// decide takes the decision the director is asked for, always the same.
+func (a *agent) decide(m mail) {
+	if match := questionPattern.FindStringSubmatch(m.Body); match != nil {
+		a.call("decision_log", map[string]any{
+			"message_id": match[1], "decision": "Use SQLite.", "rationale": "Simplest option.", "impact": "high",
+		})
 	}
 }
 

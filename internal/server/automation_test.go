@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/qwackididuck/nobodyinc/internal/automation"
 )
 
 const permissionEvent = `{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"go test ./..."}}`
@@ -18,6 +21,7 @@ func TestAutomationLevelAPI(t *testing.T) {
 		wantLevel  string
 	}{
 		{"on", `{"level":"auto"}`, http.StatusOK, "auto"},
+		{"nobody", `{"level":"nobody"}`, http.StatusOK, "nobody"},
 		{"off", `{"level":"off"}`, http.StatusOK, "off"},
 		{"unknown level", `{"level":"yolo"}`, http.StatusBadRequest, "off"},
 		{"unknown field", `{"level":"auto","x":1}`, http.StatusBadRequest, "off"},
@@ -84,5 +88,61 @@ func TestAutomaticModeAnswersWaitingRequests(t *testing.T) {
 
 	if got := decision.Response.HookSpecificOutput.Decision.Behavior; got != "allow" {
 		t.Fatalf("behavior = %q, want allow", got)
+	}
+}
+
+// Nobody mode allows permission requests like Auto does.
+func TestNobodyModeAllowsPermissionRequests(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+	env.do(t, http.MethodPut, "/api/automation", `{"level":"nobody"}`)
+
+	var decision hookDecision
+	decode(t, env.do(t, http.MethodPost, "/internal/agents/dev1@dev/hook", permissionEvent), &decision)
+
+	if got := decision.Response.HookSpecificOutput.Decision.Behavior; got != "allow" {
+		t.Fatalf("behavior = %q, want allow", got)
+	}
+}
+
+func TestDecisionsAPI(t *testing.T) {
+	t.Parallel()
+
+	env := newTestEnv(t)
+
+	for _, id := range []string{"m1", "m2"} {
+		_, err := env.store.InsertDecision(t.Context(), automation.Decision{
+			AskedBy: "dev1@dev", Message: id, Question: "Q", Decision: "D", Rationale: "R",
+			Impact: automation.ImpactHigh, DecidedAt: time.Now(),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var list []automation.Decision
+
+	decode(t, env.do(t, http.MethodGet, "/api/decisions", ""), &list)
+
+	if len(list) != 2 || list[0].Seen {
+		t.Fatalf("decisions = %+v", list)
+	}
+
+	if rec := env.do(t, http.MethodPost, "/api/decisions/seen", `{"ids":[1]}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("seen status = %d (%s)", rec.Code, rec.Body)
+	}
+
+	decode(t, env.do(t, http.MethodGet, "/api/decisions", ""), &list)
+
+	if list[0].Seen || !list[1].Seen {
+		t.Fatalf("only decision 1 should be seen: %+v", list)
+	}
+
+	env.do(t, http.MethodPost, "/api/decisions/seen", `{}`)
+	decode(t, env.do(t, http.MethodGet, "/api/decisions", ""), &list)
+
+	if !list[0].Seen {
+		t.Fatal("an empty list of IDs acknowledges every decision")
 	}
 }

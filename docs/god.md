@@ -62,6 +62,7 @@ Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `tick
 | `budget_list` | The budgets: settings, this month's spend, every gauge, the open extension requests (`docs/budgets.md`). |
 | `budget_submit` | Passes an extension request on to you, with its opinion and the amount it recommends; for the staff's or a feature's budget, or a request no agent justified, with its own justification. Its card in the chat: Extend +$X / Refuse…. |
 | `budget_propose` | Proposes an agent, team or staff cap; you accept it, possibly with another limit, or refuse it. |
+| `decision_log` | In Nobody mode only (`automation.md`): records a decision taken in your place on an agent's question, with its rationale and impact, and sends it to the agent. |
 
 It is not a source of knowledge about the project: it knows what you want, the teams know how the project works. The agents' routing rule treats a question to it like a question to you (`docs/agents.md`, "Whom to ask"), and its own prompt asks it to send questions about the project to the agent whose expertise covers them.
 
@@ -75,6 +76,7 @@ Changes to agents are written by the daemon (`internal/staffing`), as when you m
 | `internal/messaging/policy.go` | It writes to anyone, anyone writes to it. |
 | `internal/work/service.go`, `feature.go` | Its ticket privileges; feature proposals (`ProposeFeature`, `StartProposedFeature`, `RefuseFeature`). |
 | `internal/officemcp/director.go`, `schedules.go` | Its office tools, exposed at its address only. |
+| `internal/officemcp/decisions.go`, `internal/daemon/nobody.go` | `decision_log`: its decisions in the human's place in Nobody mode (`automation.md`). |
 | `internal/daemon/scheduleoffice.go` | Its schedule proposals and the human's decisions, as messages (ADR-0012). |
 | `internal/officemcp/budgets.go`, `internal/daemon/budgetoffice.go`, `budgetproposals.go` | Its budget tools; extension requests and cap proposals, as messages (ADR-0013). |
 | `internal/daemon/director.go`, `proposals.go` | The tools' backing (staffing, overview); proposals and decisions as messages. |

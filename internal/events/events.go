@@ -31,6 +31,9 @@ const (
 	// AutomationChanged: the project's automatic mode was switched on or off
 	// (docs/automation.md).
 	AutomationChanged = "automation.changed"
+	// DecisionsChanged: the director took a decision in the human's place, or
+	// the human acknowledged some (docs/automation.md).
+	DecisionsChanged = "decisions.changed"
 	// TicketsChanged carries a ChangedData with the ticket ID.
 	TicketsChanged = "tickets.changed"
 	// FeaturesChanged carries a ChangedData with the feature ID.

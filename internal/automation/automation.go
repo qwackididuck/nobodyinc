@@ -22,6 +22,9 @@ const (
 	// Auto allows every permission request. Claude Code's deny rules still
 	// win: they are evaluated before a request is ever made (ADR-0004).
 	Auto Level = "auto"
+	// Nobody is Auto, and the director also answers, in the human's place,
+	// the questions the agents ask them (docs/automation.md).
+	Nobody Level = "nobody"
 )
 
 // ErrUnknownLevel is returned by Set for a level that does not exist.
@@ -49,9 +52,13 @@ func (m *Mode) Level() Level {
 // AutoApprove tells whether permission requests are allowed without the human.
 func (m *Mode) AutoApprove() bool { return m.Level() != Off }
 
+// DirectorDecides tells whether the director answers the agents' questions
+// instead of the human.
+func (m *Mode) DirectorDecides() bool { return m.Level() == Nobody }
+
 // Set changes the level and reports whether it differed from the previous one.
 func (m *Mode) Set(l Level) (bool, error) {
-	if l != Off && l != Auto {
+	if l != Off && l != Auto && l != Nobody {
 		return false, fmt.Errorf("%w: %q", ErrUnknownLevel, l)
 	}
 

@@ -1,9 +1,13 @@
 package e2e
 
 import (
+	"context"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/qwackididuck/nobodyinc/internal/automation"
 )
 
 // In automatic mode (docs/automation.md) an agent's permission request is
@@ -56,5 +60,52 @@ func TestAutomaticModeAllowsPermissionRequests(t *testing.T) {
 
 	if got := string(tl.do(t, http.MethodGet, "/p/"+p.ID+"/api/approvals", "", http.StatusOK)); strings.Contains(got, `"agent"`) {
 		t.Fatalf("a request was queued in automatic mode: %s", got)
+	}
+}
+
+// In Nobody mode a question to the human is answered by the director: dev1
+// asks the human on behalf of a request, the director decides, dev1 gets the
+// answer and reports to whoever asked, and the decision waits in the report for
+// the human, who acknowledges it. Without the mode, the question stays open.
+func TestNobodyModeDirectorAnswersQuestionsToTheHuman(t *testing.T) {
+	t.Parallel()
+
+	d := startDaemon(t, budgetOrg(t))
+
+	if _, err := d.Automation.Set(automation.Nobody); err != nil {
+		t.Fatal(err)
+	}
+
+	sendAsHuman(t, d, "dev1@dev", "Pick a database", "ASK human: Which database for orders?")
+
+	eventually(t, "the decision is reported", func() bool {
+		decisions, err := d.Store.ListDecisions(context.Background())
+
+		return err == nil && len(decisions) == 1
+	})
+
+	decisions, _ := d.Store.ListDecisions(context.Background())
+	if got := decisions[0]; got.AskedBy != "dev1@dev" || got.Decision != "Use SQLite." || got.Impact != automation.ImpactHigh || got.Seen {
+		t.Fatalf("decision = %+v", got)
+	}
+
+	// dev1 got the answer and told the requester (here, the human).
+	want := []string{
+		"human -> dev1@dev [request]",
+		"dev1@dev -> human [query]",
+		"nobody -> god [inform]",
+		"god -> dev1@dev [inform]",
+		"nobody -> human [inform]",
+		"dev1@dev -> human [done]",
+	}
+
+	eventually(t, "the full exchange", func() bool { return len(exchange(t, d)) >= len(want) })
+
+	got := exchange(t, d)
+	slices.Sort(got)
+	slices.Sort(want)
+
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("exchange:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }
