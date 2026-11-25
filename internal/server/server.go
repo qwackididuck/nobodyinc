@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/automation"
 	"github.com/qwackididuck/nobodyinc/internal/budget"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
@@ -55,6 +56,9 @@ type Deps struct {
 	Statuses *runtime.Statuses
 	// Approvals queues the agents' permission requests for the human.
 	Approvals *approval.Queue
+	// Automation is the automatic mode (automation.go); nil means it is
+	// always off and cannot be switched on.
+	Automation *automation.Mode
 	// ApprovalWait overrides how long a permission request waits for the
 	// human before falling back to the agent's terminal (tests only).
 	ApprovalWait time.Duration
@@ -183,6 +187,7 @@ func New(d Deps) http.Handler {
 	s.routeKnowledge(mux)
 	mux.HandleFunc("GET /api/approvals", s.listApprovals)
 	mux.HandleFunc("POST /api/approvals/{id}", s.decideApproval)
+	s.routeAutomation(mux)
 
 	mux.HandleFunc("POST /internal/agents/{address}/hook", s.handleHookEvent)
 	mux.HandleFunc("POST /internal/agents/{address}/hook/ack", s.acknowledgeHookDelivery)

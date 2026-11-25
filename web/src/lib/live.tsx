@@ -15,6 +15,8 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import {
   type Agent,
   type Approval,
+  type Automation,
+  type Decision,
   type BudgetProposal,
   type BudgetRequest,
   type BudgetSettings,
@@ -30,6 +32,7 @@ import {
   type Team,
   type Template,
   type Ticket,
+  getAutomation,
   getBudgets,
   getKnowledge,
   getSettings,
@@ -37,6 +40,7 @@ import {
   listAgents,
   listApprovals,
   listBudgetProposals,
+  listDecisions,
   listBudgetRequests,
   listFeatures,
   listMessages,
@@ -61,6 +65,10 @@ interface Resources {
   agents: Agent[];
   teams: Team[];
   approvals: Approval[];
+  // The automatic mode and the decisions the director took in the human's
+  // place, newest first (docs/automation.md).
+  automation: Automation | null;
+  decisions: Decision[];
   features: Feature[];
   tickets: Ticket[];
   templates: Template[];
@@ -87,6 +95,8 @@ const EMPTY: Resources = {
   agents: [],
   teams: [],
   approvals: [],
+  automation: null,
+  decisions: [],
   features: [],
   tickets: [],
   templates: [],
@@ -107,6 +117,8 @@ const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
   agents: listAgents,
   teams: listTeams,
   approvals: listApprovals,
+  automation: getAutomation,
+  decisions: listDecisions,
   features: listFeatures,
   tickets: listTickets,
   templates: listTemplates,
@@ -126,6 +138,8 @@ const LOADERS: { [K in Resource]: () => Promise<Resources[K]> } = {
 // What each invalidation event makes stale.
 const STALE: Partial<Record<DaemonEvent["type"], Resource[]>> = {
   "approvals.changed": ["approvals"],
+  "automation.changed": ["automation", "approvals"],
+  "decisions.changed": ["decisions"],
   "tickets.changed": ["tickets"],
   "features.changed": ["features"],
   "catalog.changed": ["templates"],

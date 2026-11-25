@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/automation"
 	"github.com/qwackididuck/nobodyinc/internal/budget"
 	"github.com/qwackididuck/nobodyinc/internal/messaging"
 	"github.com/qwackididuck/nobodyinc/internal/org"
@@ -68,6 +69,7 @@ func newTestEnvWithWait(t *testing.T, approvalWait time.Duration) testEnv {
 		Messages:     &messaging.Service{Store: st, Policy: messaging.Policy{Org: o}},
 		Statuses:     statuses,
 		Approvals:    approvals,
+		Automation:   automation.New(),
 		Tickets:      tickets,
 		ApprovalWait: approvalWait,
 		Spend:        &budget.Meter{Store: st, Attribute: ticketInProgress(st)},

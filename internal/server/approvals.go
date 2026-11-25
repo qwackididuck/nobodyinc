@@ -24,6 +24,19 @@ const defaultApprovalWait = runtime.PermissionHookTimeout - time.Minute
 func (s *server) askHuman(w http.ResponseWriter, r *http.Request, address string, ev hook.Event) {
 	s.Statuses.ObserveHook(address, ev, 0)
 
+	// Automatic mode: allowed here, with no card for the human. Claude Code's
+	// deny rules were applied before this request was made, so they still win.
+	if s.Automation != nil && s.Automation.AutoApprove() {
+		s.Logger.Warn("permission allowed by the automatic mode", "agent", address, "tool", ev.ToolName,
+			"input", string(ev.ToolInput))
+		s.writeJSON(w, http.StatusOK, hookDecision{
+			Response:   hook.PermissionResponse(true, "", nil),
+			MessageIDs: []string{},
+		})
+
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), s.approvalWait())
 	defer cancel()
 

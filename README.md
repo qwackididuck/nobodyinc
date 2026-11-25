@@ -27,7 +27,7 @@ The three binaries in the archive (`nobody-desktop`, `nobodyd`, `nobody-hook`) m
 
 ### Launcher alone (macOS, Linux)
 
-`nobodyinc_<version>_<os>_<arch>.tar.gz` holds `nobodyd` and `nobody-hook`, with the control room embedded. Extract it, keep both side by side, and run `nobodyd`: the control room is at http://127.0.0.1:7420.
+`nobodyd_<version>_<os>_<arch>.tar.gz` holds `nobodyd` and `nobody-hook`, with the control room embedded. Extract it, keep both side by side, and run `nobodyd`: the control room is at http://127.0.0.1:7420.
 
 ### Verify a download
 

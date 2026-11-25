@@ -111,7 +111,7 @@ jobs:
         goarch: [amd64, arm64]
     env:
       TAG: ${{ needs.version.outputs.tag }}
-      ARCHIVE: nobodyinc_${{ needs.version.outputs.tag }}_${{ matrix.goos }}_${{ matrix.goarch }}
+      ARCHIVE: nobodyd_${{ needs.version.outputs.tag }}_${{ matrix.goos }}_${{ matrix.goarch }}
     steps:
       - uses: actions/checkout@v4
 
