@@ -25,6 +25,15 @@ export function FeatureReview({ feature, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Feature | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Expanded, the review fills the whole window, for reading the diff; Escape reduces it.
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setExpanded(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,7 +68,7 @@ export function FeatureReview({ feature, onClose }: Props) {
   const blocked = unfinished.length > 0 && !force;
 
   return (
-    <aside className={styles.panel} role="dialog" aria-label={`Review ${feature.id}`}>
+    <aside className={expanded ? `${styles.panel} ${styles.expanded}` : styles.panel} role="dialog" aria-label={`Review ${feature.id}`}>
       <div className={styles.head}>
         <div>
           <span className={styles.kicker}>Review · {feature.id}</span>
@@ -68,9 +77,14 @@ export function FeatureReview({ feature, onClose }: Props) {
             <code>{feature.branch}</code> into <code>{feature.base_branch}</code>
           </p>
         </div>
-        <button type="button" className={ui.link} onClick={onClose}>
-          Close
-        </button>
+        <div className={styles.headActions}>
+          <button type="button" className={ui.link} onClick={() => setExpanded((e) => !e)} aria-pressed={expanded}>
+            {expanded ? "Reduce (Esc)" : "Expand"}
+          </button>
+          <button type="button" className={ui.link} onClick={onClose}>
+            Close
+          </button>
+        </div>
       </div>
 
       {done ? (

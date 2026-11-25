@@ -12,6 +12,23 @@
   box-shadow: -6px 0 0 rgba(0, 0, 0, 0.35);
 }
 
+/* Expanded: over the whole window, top bar included. */
+.expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  width: auto;
+  border-left: 0;
+  box-shadow: none;
+}
+
+.headActions {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  white-space: nowrap;
+}
+
 .head {
   display: flex;
   justify-content: space-between;
