@@ -11,6 +11,7 @@ import {
   type BudgetProposal,
   type BudgetRequest,
   decideApproval,
+  type PermissionUpdate,
   extendBudget,
   type Feature,
   type Message,
@@ -94,6 +95,21 @@ export function ApprovalCard({ approval, onDecided }: { approval: Approval; onDe
           Deny
         </button>
       </div>
+      {(approval.suggestions ?? []).length > 0 && (
+        <div className={styles.actions}>
+          {(approval.suggestions ?? []).map((s, i) => (
+            <button
+              key={i}
+              type="button"
+              className={styles.btn}
+              disabled={busy}
+              onClick={() => void run(() => decideApproval(approval.id, true, "", i), onDecided)}
+            >
+              {describeSuggestion(s)}
+            </button>
+          ))}
+        </div>
+      )}
       {error && <p className={styles.error}>{error}</p>}
     </article>
   );
@@ -476,4 +492,28 @@ export function ScheduleProposalCard({ proposal: p, onDecided }: { proposal: Sch
       {error && <p className={styles.error}>{error}</p>}
     </article>
   );
+}
+
+const DESTINATIONS: Record<string, string> = {
+  session: "this session",
+  localSettings: "this project, locally",
+  projectSettings: "this project, shared",
+  userSettings: "all your projects",
+};
+
+// describeSuggestion is the label of an "allow and…" button: what Claude Code
+// offers with its prompt, and where the change would be kept.
+export function describeSuggestion(s: PermissionUpdate): string {
+  const where = s.destination ? ` (${DESTINATIONS[s.destination] ?? s.destination})` : "";
+  const rules = (s.rules ?? []).map((r) => (r.ruleContent ? `${r.toolName}(${r.ruleContent})` : r.toolName)).join(", ");
+  switch (s.type) {
+    case "setMode":
+      return `Allow and switch to ${s.mode} mode${where}`;
+    case "addRules":
+      return `Allow and always ${s.behavior === "deny" ? "deny" : s.behavior === "ask" ? "ask for" : "allow"} ${rules}${where}`;
+    case "addDirectories":
+      return `Allow and add ${(s.directories ?? []).join(", ")}${where}`;
+    default:
+      return `Allow and apply ${s.type}${where}`;
+  }
 }

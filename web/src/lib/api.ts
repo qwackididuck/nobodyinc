@@ -238,18 +238,32 @@ export interface Approval {
   agent: string;
   tool_name: string;
   tool_input?: Record<string, unknown>;
+  // What Claude Code offers with the prompt: always allow, switch mode…
+  suggestions?: PermissionUpdate[];
   created_at: string;
+}
+
+// A permission update, as Claude Code suggests it (docs/approvals.md).
+export interface PermissionUpdate {
+  type: string; // addRules, replaceRules, removeRules, setMode, addDirectories…
+  behavior?: string;
+  rules?: { toolName: string; ruleContent?: string }[];
+  mode?: string;
+  directories?: string[];
+  destination?: string; // session, localSettings, projectSettings, userSettings
 }
 
 export function listApprovals(): Promise<Approval[]> {
   return getJSON<Approval[]>("/api/approvals");
 }
 
-export async function decideApproval(id: string, allow: boolean, message = ""): Promise<void> {
+// decideApproval allows or denies a request; with an allow, suggestion is the
+// index of the update to apply with it (always allow, switch mode…).
+export async function decideApproval(id: string, allow: boolean, message = "", suggestion?: number): Promise<void> {
   const res = await daemonFetch(`/api/approvals/${encodeURIComponent(id)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ decision: allow ? "allow" : "deny", message }),
+    body: JSON.stringify({ decision: allow ? "allow" : "deny", message, suggestion }),
   });
   if (!res.ok) {
     throw new Error(await errorText(res));

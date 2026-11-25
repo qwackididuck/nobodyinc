@@ -72,6 +72,10 @@ type Event struct {
 	// PermissionRequest.
 	ToolName  string          `json:"tool_name,omitempty"`
 	ToolInput json.RawMessage `json:"tool_input,omitempty"`
+	// PermissionSuggestions is set for PermissionRequest: the permission
+	// updates Claude Code offers with the prompt ("always allow this command",
+	// "switch to auto mode"…). Each one can be echoed back as an update.
+	PermissionSuggestions []json.RawMessage `json:"permission_suggestions,omitempty"`
 	// StopHookActive is true when the agent is already continuing because a
 	// Stop hook blocked it. We still deliver new mail in that case: messages
 	// leave the tray once delivered, so this cannot loop forever.
@@ -121,10 +125,14 @@ type SpecificOutput struct {
 type PermissionDecision struct {
 	Behavior string `json:"behavior"` // "allow" or "deny"
 	Message  string `json:"message,omitempty"`
+	// UpdatedPermissions are permission updates to apply with an allow: one
+	// of the request's PermissionSuggestions, echoed as received.
+	UpdatedPermissions []json.RawMessage `json:"updatedPermissions,omitempty"` //nolint:tagliatelle // field name imposed by Claude Code
 }
 
-// PermissionResponse builds the answer to a PermissionRequest event.
-func PermissionResponse(allow bool, message string) *Response {
+// PermissionResponse builds the answer to a PermissionRequest event. With an
+// allow, updates (if any) are applied by Claude Code, e.g. a new allow rule.
+func PermissionResponse(allow bool, message string, updates []json.RawMessage) *Response {
 	behavior := "deny"
 	if allow {
 		behavior = "allow"
@@ -132,7 +140,7 @@ func PermissionResponse(allow bool, message string) *Response {
 
 	return &Response{HookSpecificOutput: &SpecificOutput{
 		HookEventName: EventPermissionRequest,
-		Decision:      &PermissionDecision{Behavior: behavior, Message: message},
+		Decision:      &PermissionDecision{Behavior: behavior, Message: message, UpdatedPermissions: updates},
 	}}
 }
 

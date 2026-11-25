@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -27,11 +28,12 @@ func (s *server) askHuman(w http.ResponseWriter, r *http.Request, address string
 	defer cancel()
 
 	decision, err := s.Approvals.Ask(ctx, approval.Request{
-		ID:        messaging.RandomID(),
-		Agent:     address,
-		ToolName:  ev.ToolName,
-		ToolInput: ev.ToolInput,
-		CreatedAt: time.Now().UTC(),
+		ID:          messaging.RandomID(),
+		Agent:       address,
+		ToolName:    ev.ToolName,
+		ToolInput:   ev.ToolInput,
+		Suggestions: ev.PermissionSuggestions,
+		CreatedAt:   time.Now().UTC(),
 	})
 	if err != nil {
 		s.Logger.Info("permission request left to the terminal", "agent", address, "tool", ev.ToolName)
@@ -40,10 +42,17 @@ func (s *server) askHuman(w http.ResponseWriter, r *http.Request, address string
 		return
 	}
 
+	// Queue.Decide checked the index against these same suggestions.
+	var updates []json.RawMessage
+	if decision.Suggestion != nil {
+		updates = []json.RawMessage{ev.PermissionSuggestions[*decision.Suggestion]}
+	}
+
 	s.Statuses.Set(address, runtime.StatusWorking)
-	s.Logger.Info("permission decided", "agent", address, "tool", ev.ToolName, "allow", decision.Allow)
+	s.Logger.Info("permission decided", "agent", address, "tool", ev.ToolName, "allow", decision.Allow,
+		"suggestion", decision.Suggestion != nil)
 	s.writeJSON(w, http.StatusOK, hookDecision{
-		Response:   hook.PermissionResponse(decision.Allow, decision.Message),
+		Response:   hook.PermissionResponse(decision.Allow, decision.Message, updates),
 		MessageIDs: []string{},
 	})
 }
@@ -64,6 +73,9 @@ func (s *server) listApprovals(w http.ResponseWriter, _ *http.Request) {
 type approvalDecision struct {
 	Decision string `json:"decision"` // "allow" or "deny"
 	Message  string `json:"message"`
+	// Suggestion applies one of the request's suggestions (by index) with an
+	// allow, e.g. "always allow this command" or "switch to auto mode".
+	Suggestion *int `json:"suggestion,omitempty"`
 }
 
 func (s *server) decideApproval(w http.ResponseWriter, r *http.Request) {
@@ -80,9 +92,15 @@ func (s *server) decideApproval(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := s.Approvals.Decide(r.PathValue("id"), approval.Decision{Allow: d.Decision == "allow", Message: d.Message})
+	err := s.Approvals.Decide(r.PathValue("id"), approval.Decision{Allow: d.Decision == "allow", Message: d.Message, Suggestion: d.Suggestion})
 	if errors.Is(err, approval.ErrNotFound) {
 		s.writeError(w, http.StatusNotFound, err)
+
+		return
+	}
+
+	if errors.Is(err, approval.ErrBadSuggestion) {
+		s.writeError(w, http.StatusBadRequest, errors.New("suggestion must be the index of one of the request's suggestions, with an allow"))
 
 		return
 	}

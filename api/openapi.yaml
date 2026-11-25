@@ -4092,6 +4092,15 @@ components:
         tool_input:
           description: The tool's arguments, as sent by Claude Code.
           type: object
+        suggestions:
+          description: |
+            The permission updates Claude Code offers with this prompt, as it
+            sent them (`permission_suggestions`): `addRules` (always allow
+            this command or tool), `setMode` (e.g. switch to `auto`),
+            `addDirectories`… The human can allow the request together with one.
+          type: array
+          items:
+            type: object
         created_at:
           type: string
           format: date-time
@@ -4107,6 +4116,13 @@ components:
         message:
           description: Shown to the agent, typically to explain a refusal.
           type: string
+        suggestion:
+          description: |
+            With an `allow`: the index, in the approval's `suggestions`, of the
+            update to apply with it (always allow, switch mode…). Absent for
+            a plain allow. An index out of range, or with a `deny`, is a 400.
+          type: integer
+          minimum: 0
 
     Threshold:
       type: integer
@@ -4390,6 +4406,11 @@ components:
           type: string
         tool_input:
           type: object
+        permission_suggestions:
+          description: PermissionRequest only. Kept on the approval as `suggestions`.
+          type: array
+          items:
+            type: object
         stop_hook_active:
           type: boolean
         source:

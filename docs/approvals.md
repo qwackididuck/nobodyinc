@@ -22,6 +22,12 @@ Agent (claude)                nobody-hook              nobodyd daemon           
 - **Daemon restart**: the queue lives in memory (`internal/approval`). A pending request then fails over to the terminal prompt in the same way.
 - **Daemon stopping** (closing the project's window, quitting the app): the daemon abandons every pending request the moment it is told to stop (`Queue.Close`), so that the agents fall back to their terminal at once. Their open hook requests would otherwise keep the daemon's graceful shutdown waiting, up to 10 seconds, with the control room frozen.
 
+## Suggestions: "allow and…"
+
+Claude Code's own prompt often offers more than yes/no: always allow this command, switch to auto mode, add a directory. The PermissionRequest event carries these as `permission_suggestions` (permission updates: `addRules`, `setMode`, `addDirectories`…, each with a `destination`: this session, the project's local or shared settings, or the user's). The queue keeps them on the request (`suggestions`) and the card shows one extra button per suggestion ("Allow and switch to auto mode (this session)"), saying where the change would be kept.
+
+Picking one sends `POST /api/approvals/{id}` with `{"decision":"allow","suggestion":<index>}`; the hook then answers `allow` with that same update as `updatedPermissions`, echoed as received. A suggestion with a deny, or an index out of range, is a 400.
+
 ## Pieces
 
 | Piece | Role |

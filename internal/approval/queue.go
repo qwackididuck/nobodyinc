@@ -21,8 +21,9 @@ import (
 
 // Errors returned by the queue.
 var (
-	ErrNotFound   = errors.New("no pending approval with this id")
-	ErrNoDecision = errors.New("no decision was taken in time")
+	ErrNotFound      = errors.New("no pending approval with this id")
+	ErrNoDecision    = errors.New("no decision was taken in time")
+	ErrBadSuggestion = errors.New("this request has no such suggestion")
 )
 
 // Request is a permission an agent is waiting for.
@@ -31,7 +32,11 @@ type Request struct {
 	Agent     string          `json:"agent"`
 	ToolName  string          `json:"tool_name"`
 	ToolInput json.RawMessage `json:"tool_input,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
+	// Suggestions are the permission updates Claude Code offers with the
+	// prompt, as it sent them (an allow rule, a new permission mode…). The
+	// human can allow the request together with one of them.
+	Suggestions []json.RawMessage `json:"suggestions,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
 }
 
 // Decision is the human's answer.
@@ -39,6 +44,9 @@ type Decision struct {
 	Allow bool
 	// Message is shown to the agent, typically to explain a refusal.
 	Message string
+	// Suggestion is the index in the request's Suggestions to apply with an
+	// allow; nil for none.
+	Suggestion *int
 }
 
 // Queue holds the pending requests. It is safe for concurrent use.
@@ -117,14 +125,20 @@ func (q *Queue) Decide(id string, d Decision) error {
 	q.mu.Lock()
 
 	w, ok := q.pending[id]
-	if ok {
-		delete(q.pending, id) // a request is decided once
-	}
-	q.mu.Unlock()
-
 	if !ok {
+		q.mu.Unlock()
+
 		return ErrNotFound
 	}
+
+	if s := d.Suggestion; s != nil && (!d.Allow || *s < 0 || *s >= len(w.req.Suggestions)) {
+		q.mu.Unlock()
+
+		return ErrBadSuggestion
+	}
+
+	delete(q.pending, id) // a request is decided once
+	q.mu.Unlock()
 
 	w.decision <- d
 

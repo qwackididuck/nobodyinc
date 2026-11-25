@@ -265,6 +265,66 @@ func TestPermissionRequestWaitsForTheHuman(t *testing.T) {
 	}
 }
 
+// A prompt's suggestions (switch to auto mode…) reach the queue, and the one
+// the human picks goes back to Claude Code as an update with the allow.
+func TestPermissionRequestSuggestions(t *testing.T) {
+	t.Parallel()
+
+	const event = `{"hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls"},` +
+		`"permission_suggestions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"ls"}],"behavior":"allow","destination":"localSettings"},` +
+		`{"type":"setMode","mode":"auto","destination":"session"}]}`
+
+	tests := []struct {
+		name        string
+		decision    string
+		wantUpdates int
+		wantMode    string
+		wantStatus  int
+	}{
+		{"plain allow", `{"decision":"allow"}`, 0, "", http.StatusNoContent},
+		{"allow and switch to auto", `{"decision":"allow","suggestion":1}`, 1, "auto", http.StatusNoContent},
+		{"index out of range", `{"decision":"allow","suggestion":2}`, 0, "", http.StatusBadRequest},
+		{"suggestion with a deny", `{"decision":"deny","suggestion":0}`, 0, "", http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := newTestEnv(t)
+
+			answer := make(chan *httptest.ResponseRecorder, 1)
+			go func() { answer <- env.do(t, http.MethodPost, "/internal/agents/dev1@dev/hook", event) }()
+
+			pending := waitForApproval(t, env)
+			if len(pending.Suggestions) != 2 {
+				t.Fatalf("suggestions = %d, want 2", len(pending.Suggestions))
+			}
+
+			rec := env.do(t, http.MethodPost, "/api/approvals/"+pending.ID, tt.decision)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("decide status = %d, want %d (%s)", rec.Code, tt.wantStatus, rec.Body)
+			}
+
+			if tt.wantStatus != http.StatusNoContent {
+				// Still pending: settle it so the hook call returns.
+				env.do(t, http.MethodPost, "/api/approvals/"+pending.ID, `{"decision":"allow"}`)
+			}
+
+			var decision hookDecision
+			decode(t, <-answer, &decision)
+
+			got := decision.Response.HookSpecificOutput.Decision.UpdatedPermissions
+			if len(got) != tt.wantUpdates {
+				t.Fatalf("updates = %s, want %d", got, tt.wantUpdates)
+			}
+
+			if tt.wantMode != "" && !bytes.Contains(got[0], []byte(`"mode":"`+tt.wantMode+`"`)) {
+				t.Fatalf("update = %s, want mode %s", got[0], tt.wantMode)
+			}
+		})
+	}
+}
+
 func TestPermissionRequestWithoutDecisionFallsBackToTerminal(t *testing.T) {
 	t.Parallel()
 
