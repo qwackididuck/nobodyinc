@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Nobody Inc
+Comment=Orchestrate teams of Claude Code agents
+Exec=nobody-desktop
+Icon=nobody-inc
+Terminal=false
+Categories=Development;
+StartupWMClass=nobody-desktop
