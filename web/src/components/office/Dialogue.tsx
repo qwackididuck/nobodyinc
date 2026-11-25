@@ -19,7 +19,8 @@ const DENSE_FROM = 3;
 // messages, the clock moving on to the next bubble due to go away.
 export function useSpeeches(messages: Message[], agents: Agent[]): Map<string, Talking> {
   const present = useMemo(() => new Set(agents.map((a) => a.address)), [agents]);
-  const speeches = useMemo(() => speechesOf(messages, present), [messages, present]);
+  const done = useMemo(() => new Set(agents.filter((a) => a.status === "idle").map((a) => a.address)), [agents]);
+  const speeches = useMemo(() => speechesOf(messages, present, done), [messages, present, done]);
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {

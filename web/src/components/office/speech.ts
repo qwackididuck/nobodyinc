@@ -12,6 +12,10 @@
 //   - an answered message lasts LINGER_MS more after its first answer: the
 //     answer is seen next to the question, and when the answer expects none,
 //     both go away together, the conversation being over;
+//   - ... unless its recipient read it and has since finished its turn
+//     (delivered, and idle): the agent acted on it, or dropped it, without
+//     answering, and nothing more will come, so the bubble goes away
+//     instead of lingering for ever;
 //   - a message to or from an agent no longer in the organization leaves no
 //     bubble, and a message deleted (the wastebasket) takes its bubble away.
 //
@@ -63,7 +67,9 @@ export interface Speech {
 // speechesOf turns messages (oldest first) into the speeches of the agents
 // that are in the organization, whatever the time: visibleSpeeches tells
 // which are still up.
-export function speechesOf(messages: Message[], present: ReadonlySet<string>): Speech[] {
+//
+// done holds the addresses of the agents that finished their turn (idle).
+export function speechesOf(messages: Message[], present: ReadonlySet<string>, done: ReadonlySet<string>): Speech[] {
   const firstReply = new Map<string, number>();
   for (const m of messages) {
     if (!m.in_reply_to) continue;
@@ -78,7 +84,9 @@ export function speechesOf(messages: Message[], present: ReadonlySet<string>): S
 
     // What its end waits for: its answer if it expects one, else itself.
     const expects = EXPECTS_ANSWER.has(m.act);
-    const closedAt = expects ? firstReply.get(m.id) : Date.parse(m.sent_at);
+    let closedAt = expects ? firstReply.get(m.id) : Date.parse(m.sent_at);
+    // Read, then the recipient's turn ended with no answer: nothing more is coming.
+    if (closedAt === undefined && m.delivered_at && done.has(m.to)) closedAt = Date.parse(m.delivered_at);
 
     speeches.push({
       id: m.id,
