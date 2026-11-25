@@ -2,6 +2,9 @@ openapi: 3.1.0
 info:
   title: Nobody Inc daemon API
   version: 0.1.0
+  license:
+    name: MIT
+    url: https://github.com/qwackididuck/nobodyinc/blob/main/LICENSE
   description: |
     HTTP API of nobodyd (ADR-0014, docs/projects.md). `nobodyd` is a
     **launcher**: it listens on 127.0.0.1:7420, serves the routes tagged
@@ -28,6 +31,10 @@ info:
 servers:
   - url: http://127.0.0.1:7420
     description: The launcher; a project daemon's routes are under /p/{project}
+
+# No authentication: the daemon listens on loopback only by default, and
+# refuses cross-site browser requests (docs/architecture.md).
+security: []
 
 tags:
   - name: launcher
@@ -531,7 +538,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Project"
+                $ref: "#/components/schemas/ProjectPrompt"
     put:
       operationId: updateProject
       summary: Change the project's shared prompt
@@ -541,14 +548,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Project"
+              $ref: "#/components/schemas/ProjectPrompt"
       responses:
         "200":
           description: The project after the change
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Project"
+                $ref: "#/components/schemas/ProjectPrompt"
         "400":
           $ref: "#/components/responses/Error"
 
@@ -2913,7 +2920,7 @@ components:
         nobody or the director. Each entry is another existing team. Changing
         it does not restart anyone: the members of both teams get a notice.
 
-    Project:
+    ProjectPrompt:
       type: object
       required: [prompt]
       additionalProperties: false

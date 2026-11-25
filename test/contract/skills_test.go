@@ -17,8 +17,7 @@ import (
 
 // How skills reach an agent, and how Nobody Inc can shape what it gets,
 // with the flags agents are started with (agentSources, --strict-mcp-config).
-// Checked on 2026-11-18 with Claude Code 2.1.327 (roadmap, "Skills des
-// agents"):
+// Checked on 2026-11-18 with Claude Code 2.1.327:
 //   - the user's personal skills are not loaded without the "user" settings
 //     source, but a directory given with --add-dir brings its own
 //     .claude/skills, symbolic links included;

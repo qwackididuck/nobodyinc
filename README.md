@@ -41,3 +41,7 @@ Features (branches and worktrees) need the project to be a git repository. Agent
 task check      # lint + tests, before every commit
 task contract   # Claude Code behaviours we rely on, against the real CLI (a few cents)
 ```
+
+## License
+
+[MIT](LICENSE).

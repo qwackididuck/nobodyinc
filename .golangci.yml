@@ -1,4 +1,4 @@
-# Adapted from the ring-go-dev configuration: every linter is enabled except
+# Every linter is enabled except
 # the ones listed under "disable". Differences, each explained where it is set:
 #   - gocritic hugeParam and rangeValCopy are off (values passed by value for
 #     readability);

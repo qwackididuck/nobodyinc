@@ -138,7 +138,7 @@ The director gets `budget_list` (the caps, the spend per level and per month) an
 
 ### 10. What the human sees
 
-Spend reaches the control room through the REST API (`/api/spend`, `/api/budgets`, `/api/budget-requests`, `/api/budget-proposals`) and SSE events (`spend.changed`, sent at most once a second; `budgets.changed`). The interface design was decided with the human (roadmap, "Costs and budgets"): gauges on the agents' desks and in the team rooms, a new spending board in the office opening the spending popup (with the month's total, and each schedule's cost for the month), spent/budget on tickets and the feature banner, each occurrence's cost in a schedule's history, cap fields in Staff, the team dialog and Settings.
+Spend reaches the control room through the REST API (`/api/spend`, `/api/budgets`, `/api/budget-requests`, `/api/budget-proposals`) and SSE events (`spend.changed`, sent at most once a second; `budgets.changed`). The interface design was decided with the human: gauges on the agents' desks and in the team rooms, a new spending board in the office opening the spending popup (with the month's total, and each schedule's cost for the month), spent/budget on tickets and the feature banner, each occurrence's cost in a schedule's history, cap fields in Staff, the team dialog and Settings.
 
 ## Not decided here
 

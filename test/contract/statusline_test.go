@@ -20,7 +20,7 @@ import (
 	"github.com/qwackididuck/nobodyinc/internal/runtime"
 )
 
-// Costs and budgets (roadmap, ADR-0013) read what an agent spends from Claude
+// Costs and budgets (ADR-0013) read what an agent spends from Claude
 // Code's statusLine: a command Claude Code runs with a JSON description of
 // the session on stdin, cost included. These tests pin what Nobody Inc relies
 // on, in the conditions of a real agent: an interactive session in a PTY

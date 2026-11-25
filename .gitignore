@@ -18,3 +18,6 @@ internal/webui/dist/*
 
 # The desktop app (task desktop:build).
 desktop/build/bin/
+
+# A stray build of test/fakeclaude at the root (it was committed once).
+/fakeclaude

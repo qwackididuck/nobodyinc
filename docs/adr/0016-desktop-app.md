@@ -5,7 +5,7 @@
 
 ## Context
 
-Since ADR-0014, Nobody Inc is a launcher (`nobodyd`) and a control room that opens one project per browser window. Using it means two terminals (`task dev:daemon`, `task dev:web`) and a browser: fine for development, not for daily use. The target has always been a desktop application (roadmap, "Distribution"): started like any app, it shows the projects page; it can open several windows, one project each; closing a window stops that project; closing the last window stops everything.
+Since ADR-0014, Nobody Inc is a launcher (`nobodyd`) and a control room that opens one project per browser window. Using it means two terminals (`task dev:daemon`, `task dev:web`) and a browser: fine for development, not for daily use. The target has always been a desktop application: started like any app, it shows the projects page; it can open several windows, one project each; closing a window stops that project; closing the last window stops everything.
 
 The human chose **Wails v3** (stable since 2026-10-26, Go 1.26+): a Go library driving the system's web view (WebKit on macOS, WebView2 on Windows, WebKitGTK on Linux), with several windows, single-instance support and native menus. The launcher being Go, it can run inside the app's process. The alternatives were Electron (Node, a bundled Chromium, a child `nobodyd`) and Tauri (Rust).
 

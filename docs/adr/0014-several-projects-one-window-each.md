@@ -45,7 +45,7 @@ A daemon is built around one project: its organization, database, event bus, age
 
 ### 4. What stops with a project
 
-Stopping a project stops its daemon and every agent session; mail, tickets, the active feature, schedules and budgets are kept (SQLite and `.nobody/`). At the next opening the agents start again, on new Claude Code sessions until sessions are resumed after a daemon restart (roadmap, Runtime). Schedules run only while the project is open: ADR-0012 already loses the occurrences that fall while the daemon is stopped.
+Stopping a project stops its daemon and every agent session; mail, tickets, the active feature, schedules and budgets are kept (SQLite and `.nobody/`). At the next opening the agents start again, on new Claude Code sessions until sessions are resumed after a daemon restart (ADR-0015). Schedules run only while the project is open: ADR-0012 already loses the occurrences that fall while the daemon is stopped.
 
 ### 5. Creating, opening and deleting projects
 
@@ -67,7 +67,7 @@ Described in `api/openapi.yaml` with the project daemon's, under its own tag: `G
 ## Not decided here
 
 - The desktop application itself (Electron, Wails, Tauri): a separate feature. This ADR only needs it to bring an existing window to the front and to ask before closing a window whose agents work.
-- Resuming agents' sessions after a daemon restart (roadmap, Runtime), made more useful by this ADR.
+- Resuming agents' sessions after a daemon restart (ADR-0015), made more useful by this ADR.
 - Stopping an idle project while its window stays open.
 - Running projects with no window (background projects, schedules that must always run).
 

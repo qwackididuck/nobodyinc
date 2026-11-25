@@ -22,7 +22,7 @@ Overview and the journey of a message: `docs/architecture.md`.
 - `task web:export`: the control room's static export, embedded in `nobodyd` and the app (`internal/webui/dist`, not versioned).
 - `task desktop:build` (macOS app bundle in `desktop/build/bin/`), `task desktop:run ARGS="-claude <built test/fakeclaude>"` (with `NOBODY_HOME` for a throwaway home), `task desktop:check`.
 - `task web:install`
-- CI (`.github/workflows/ci.yml`): every branch runs golangci-lint (v2.15.0, `.golangci.yml`, adapted from ring-go-dev), `go vet` and `go test -race`; main also builds the binaries and publishes a GitHub release tagged from the conventional commits. Contract tests are not run in CI.
+- CI (`.github/workflows/ci.yml`): every branch runs golangci-lint (v2.15.0, `.golangci.yml`), `go vet` and `go test -race`; main also builds the binaries and publishes a GitHub release tagged from the conventional commits. Contract tests are not run in CI.
 
 ## Conventions
 - **Readability first**: package docs that explain how things work, small well-named functions, doc comments on exported identifiers, and a `docs/` page for every cross-cutting mechanism.

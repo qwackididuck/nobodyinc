@@ -43,7 +43,7 @@ The silent resume depends on behaviours of the real CLI, checked by `test/contra
 
 ## Not decided here
 
-- Resuming after a crash of an agent alone (automatic restart, "Runtime" in the roadmap).
+- Resuming after a crash of an agent alone (automatic restart).
 - Compacting long sessions.
 
 ## Consequences
