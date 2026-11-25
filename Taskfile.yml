@@ -124,7 +124,7 @@ tasks:
   desktop:build:linux:
     desc: Export the control room and package desktop/build/bin/NobodyInc_linux_<arch>.tar.gz (Linux only, native arch; needs libgtk-3-dev and libwebkit2gtk-4.1-dev)
     vars:
-      ARCH_NAME: '{{.ARCH}}'
+      ARCH_NAME: '{{ARCH}}'
       STAGE: desktop/build/bin/linux/NobodyInc
     env:
       CGO_ENABLED: "1"
