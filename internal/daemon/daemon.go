@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/qwackididuck/nobodyinc/internal/approval"
+	"github.com/qwackididuck/nobodyinc/internal/automation"
 	"github.com/qwackididuck/nobodyinc/internal/catalog"
 	"github.com/qwackididuck/nobodyinc/internal/events"
 	"github.com/qwackididuck/nobodyinc/internal/kb"
@@ -109,6 +110,7 @@ type Daemon struct {
 	Tickets    *work.Service
 	Statuses   *runtime.Statuses
 	Approvals  *approval.Queue
+	Automation *automation.Mode
 	Supervisor *runtime.Supervisor
 	// Shells are the plain terminals the human opens in the control room.
 	Shells *runtime.Shells
@@ -153,13 +155,13 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	liveSettings := settings.NewLive(opts.SettingsHome, userSettingsOf(opts))
 
 	statuses := runtime.NewStatuses()
-	approvals := approval.NewQueue()
+	approvals, autoMode := approval.NewQueue(), automation.New()
 	// When the daemon is told to stop, the agents waiting for the human fall
 	// back to their terminal at once: their open requests would otherwise
 	// hold the HTTP server's shutdown up to its timeout, the agents being
 	// stopped only after it.
 	context.AfterFunc(ctx, approvals.Close)
-	announce(bus, st, statuses, approvals)
+	announce(bus, st, statuses, approvals, autoMode)
 
 	git := &gitWorkspace{
 		repo:             workspace.Repo{Dir: opts.Org.Current().ProjectDir, WorktreesDir: opts.WorktreesDir},
@@ -257,21 +259,22 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 	knowledge := startKnowledge(ctx, opts, st, bus)
 
 	handler := server.New(server.Deps{
-		Version:   opts.Version,
-		Logger:    opts.Logger,
-		Org:       opts.Org,
-		Store:     st,
-		Messages:  messages,
-		Tickets:   tickets,
-		Statuses:  statuses,
-		Approvals: approvals,
-		Agents:    supervisor,
-		Staff:     staffService,
-		Catalog:   cat,
-		Origins:   opts.Origins,
-		Events:    bus,
-		Settings:  liveSettings,
-		Env:       env,
+		Version:    opts.Version,
+		Logger:     opts.Logger,
+		Org:        opts.Org,
+		Store:      st,
+		Messages:   messages,
+		Tickets:    tickets,
+		Statuses:   statuses,
+		Approvals:  approvals,
+		Automation: autoMode,
+		Agents:     supervisor,
+		Staff:      staffService,
+		Catalog:    cat,
+		Origins:    opts.Origins,
+		Events:     bus,
+		Settings:   liveSettings,
+		Env:        env,
 		// Claude Code's built-in skills, discovered in the background.
 		BuiltinSkills: builtinSkills,
 		Schedules:     schedules,
@@ -310,6 +313,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Tickets:    tickets,
 		Statuses:   statuses,
 		Approvals:  approvals,
+		Automation: autoMode,
 		Supervisor: supervisor,
 		Shells:     shells,
 		Events:     bus,
@@ -463,7 +467,7 @@ func onSent(
 // their hooks: agent statuses, deliveries and permission requests. Sent
 // messages, tickets, features and the organization are announced where those
 // services are built (see New).
-func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, approvals *approval.Queue) {
+func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, approvals *approval.Queue, autoMode *automation.Mode) {
 	statuses.OnChange = func(address string, s runtime.Status) {
 		bus.Publish(events.Event{Type: events.AgentStatus, Data: events.AgentStatusData{Address: address, Status: string(s)}})
 	}
@@ -472,6 +476,9 @@ func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, appr
 	}
 	approvals.OnChange = func() {
 		bus.Publish(events.Event{Type: events.ApprovalsChanged, Data: events.Empty{}})
+	}
+	autoMode.OnChange = func() {
+		bus.Publish(events.Event{Type: events.AutomationChanged, Data: events.Empty{}})
 	}
 }
 

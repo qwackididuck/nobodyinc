@@ -843,6 +843,7 @@ paths:
         - `message.delivered`: MessagesDeliveredEvent
         - `messages.deleted`: MessagesDeleted (the wastebasket was emptied)
         - `approvals.changed`: `{}`
+        - `automation.changed`: `{}` (the automatic mode was switched; read `GET /api/automation`)
         - `tickets.changed`: ChangedEvent (ticket ID)
         - `features.changed`: ChangedEvent (feature ID)
         - `org.changed`: `{}` (an agent was recruited, edited, put on leave, brought back or dismissed)
@@ -2519,6 +2520,43 @@ paths:
         "404":
           $ref: "#/components/responses/Error"
 
+  /api/automation:
+    get:
+      operationId: getAutomation
+      summary: The project's automatic mode
+      responses:
+        "200":
+          description: Current level
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+    put:
+      operationId: setAutomation
+      summary: Switch the automatic mode
+      description: |
+        With `auto`, the daemon allows every permission request itself, the
+        ones already waiting included; no agent restarts. Claude Code's deny
+        rules still win, because it evaluates them before asking. The level is
+        kept in the daemon's memory only: it is `off` after a restart.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Automation"
+      responses:
+        "200":
+          description: The new level
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+
   /internal/agents/{address}/hook:
     post:
       operationId: handleHookEvent
@@ -4170,6 +4208,15 @@ components:
         created_at:
           type: string
           format: date-time
+
+    Automation:
+      type: object
+      required: [level]
+      additionalProperties: false
+      properties:
+        level:
+          type: string
+          enum: [off, auto]
 
     ApprovalDecision:
       type: object

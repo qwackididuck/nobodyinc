@@ -18,6 +18,7 @@ Agent (claude)                nobody-hook              nobodyd daemon           
 ```
 
 - The hook answers Claude Code with `{"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow" | "deny", "message": "…"}}}`. A refusal's message is shown to the agent, so a short reason helps it change course.
+- **Automatic mode**: the daemon allows the request itself (`automation.md`).
 - **No decision in time**: the daemon gives up after 9 minutes (Claude Code's hook timeout is set to 10) and answers nothing. Claude Code then shows its usual prompt in the agent's terminal, which the human can still answer from the UI.
 - **Daemon restart**: the queue lives in memory (`internal/approval`). A pending request then fails over to the terminal prompt in the same way.
 - **Daemon stopping** (closing the project's window, quitting the app): the daemon abandons every pending request the moment it is told to stop (`Queue.Close`), so that the agents fall back to their terminal at once. Their open hook requests would otherwise keep the daemon's graceful shutdown waiting, up to 10 seconds, with the control room frozen.

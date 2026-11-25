@@ -28,6 +28,9 @@ const (
 	MessagesDeleted = "messages.deleted"
 	// ApprovalsChanged: a permission request was added or answered.
 	ApprovalsChanged = "approvals.changed"
+	// AutomationChanged: the project's automatic mode was switched on or off
+	// (docs/automation.md).
+	AutomationChanged = "automation.changed"
 	// TicketsChanged carries a ChangedData with the ticket ID.
 	TicketsChanged = "tickets.changed"
 	// FeaturesChanged carries a ChangedData with the feature ID.
