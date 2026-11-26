@@ -499,6 +499,11 @@
   justify-content: center;
 }
 
+/* Why the project did not start: often a long path without spaces. */
+.stateCard code {
+  overflow-wrap: anywhere;
+}
+
 /* The elevator, while the project's daemon starts. */
 .elevator {
   display: grid;
