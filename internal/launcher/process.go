@@ -2,6 +2,7 @@ package launcher
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,8 +21,11 @@ import (
 // How the launcher waits on a project daemon.
 const (
 	healthPollInterval = 100 * time.Millisecond
-	stopTimeout        = 30 * time.Second
-	logTailBytes       = 2048
+	// healthRequestTimeout bounds one /healthz request: a daemon that does
+	// not answer is asked again, so that the wait also watches its exit.
+	healthRequestTimeout = time.Second
+	stopTimeout          = 30 * time.Second
+	logTailBytes         = 2048
 )
 
 // process is one running project daemon: a child `nobodyd project` process
@@ -69,7 +73,10 @@ func startProcess(ctx context.Context, cfg processConfig) (*process, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer socket.Close() // the child holds its own copy
+	// Closed as soon as the child holds its own copy: a socket still open on
+	// our side would keep accepting connections once the child is gone, and
+	// its /healthz would hang instead of failing.
+	defer socket.Close()
 
 	p := &process{
 		url:    target,
@@ -88,6 +95,8 @@ func startProcess(ctx context.Context, cfg processConfig) (*process, error) {
 	if err := p.cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start the project daemon: %w", err)
 	}
+
+	_ = socket.Close() // the child has its copy; closing ours cannot fail in a way that matters
 
 	go func() {
 		p.err = p.cmd.Wait()
@@ -167,13 +176,20 @@ func (p *process) waitHealthy(ctx context.Context, timeout time.Duration) error 
 		case <-p.exited:
 			return p.exitError()
 		case <-ctx.Done():
-			return fmt.Errorf("the project daemon did not answer within %s", timeout)
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("the project daemon did not answer within %s", timeout)
+			}
+
+			return errors.New("the project daemon was stopped before it answered")
 		case <-ticker.C:
 		}
 	}
 }
 
 func (p *process) healthy(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, healthRequestTimeout)
+	defer cancel()
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url.JoinPath("/healthz").String(), http.NoBody)
 	if err != nil {
 		return false
@@ -197,11 +213,34 @@ func (p *process) exitError() error {
 		reason += " (" + p.err.Error() + ")"
 	}
 
-	if last := p.tail.lastLine(); last != "" {
+	if last := logReason(p.tail.lastLine()); last != "" {
 		reason += ": " + last
 	}
 
 	return errors.New(reason)
+}
+
+// logReason turns a log line of the daemon into what a human reads: the
+// error of a JSON (slog) line, else its message; any other line as it is.
+func logReason(line string) string {
+	var entry struct {
+		Msg string `json:"msg"`
+		Err string `json:"err"`
+	}
+
+	if json.Unmarshal([]byte(line), &entry) != nil {
+		return line
+	}
+
+	if entry.Err != "" {
+		return entry.Err
+	}
+
+	if entry.Msg != "" {
+		return entry.Msg
+	}
+
+	return line
 }
 
 // stop asks the daemon to stop (SIGTERM: it stops its agents and waits for

@@ -446,6 +446,42 @@ func TestLauncherDeletesAProject(t *testing.T) {
 	}
 }
 
+// A project daemon that stops at once (here: an empty director file) is
+// reported to the window right away, with the reason, rather than after the
+// start timeout; the project can then be deleted.
+func TestLauncherReportsADaemonThatDoesNotStart(t *testing.T) {
+	t.Parallel()
+
+	tl := startLauncherWith(t, func(o *launcher.Options) { o.StartTimeout = time.Minute })
+	shop := tl.open(t, t.TempDir(), false)
+
+	if err := os.WriteFile(filepath.Join(shop.Path, ".nobody", "director", "god.md"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	window := tl.attach(t, shop.ID, "w1", false)
+	started := time.Now()
+
+	for {
+		msg := window.next(t)
+		if msg.Type != "state" || msg.Error == "" {
+			continue
+		}
+
+		if took := time.Since(started); took > 10*time.Second {
+			t.Errorf("the failure was reported after %s, want at once", took)
+		}
+
+		if !strings.Contains(msg.Error, "god.md") || strings.Contains(msg.Error, `"level"`) {
+			t.Errorf("error = %q, want the daemon's reason, naming the file, not a raw log line", msg.Error)
+		}
+
+		break
+	}
+
+	tl.do(t, http.MethodDelete, "/api/projects/"+shop.ID+"?window=w1", "", http.StatusNoContent)
+}
+
 // Merging as it is finishes the feature through a daemon started without
 // its agents, then deletes the project.
 func TestLauncherDeletesAProjectMergingItsFeature(t *testing.T) {

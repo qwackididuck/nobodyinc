@@ -244,7 +244,8 @@ function MessageItem({ message: m, agent, messages, onReply }: MessageItemProps)
     );
   }
 
-  const showSubject = m.subject && !m.body.startsWith(m.subject) && !m.subject.startsWith("Re: ");
+  // The human's own messages are plain chat: the subject is only a backend detail.
+  const showSubject = !out && m.subject && !m.body.startsWith(m.subject) && !m.subject.startsWith("Re: ");
 
   return (
     <li className={out ? styles.out : styles.in}>
