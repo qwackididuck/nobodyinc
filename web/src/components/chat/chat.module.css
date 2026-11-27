@@ -744,3 +744,18 @@
   background: var(--line);
   outline: none;
 }
+
+/* ---- Restart confirmation ------------------------------------------------- */
+
+.restartWarning {
+  margin: 0;
+  padding: 8px 10px;
+  border: 2px solid var(--warn);
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.restartActions {
+  display: flex;
+  gap: 10px;
+}

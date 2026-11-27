@@ -482,6 +482,21 @@ export async function deleteTicket(id: string, cascade: boolean): Promise<string
   return ((await res.json()) as { ids: string[] }).ids;
 }
 
+// cleanBoard deletes the tickets of the Kanban in bulk: the done and canceled
+// ones ("closed") or every one ("all"). Archived tickets stay. It returns the
+// IDs of the deleted tickets.
+export async function cleanBoard(scope: "closed" | "all"): Promise<string[]> {
+  const res = await daemonFetch("/api/tickets/clean", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope }),
+  });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+  return ((await res.json()) as { ids: string[] }).ids;
+}
+
 export function getTicket(id: string): Promise<TicketDetails> {
   return getJSON<TicketDetails>(`/api/tickets/${encodeURIComponent(id)}`);
 }
@@ -1008,6 +1023,15 @@ export async function sendMessage(draft: HumanDraft): Promise<Message> {
 
 export async function startAgent(address: string): Promise<void> {
   const res = await daemonFetch(`/api/agents/${encodeURIComponent(address)}/start`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+}
+
+// restartAgent stops an agent and starts it again with a fresh session: its
+// conversation is forgotten, it gets the whole Nobody Inc prompt again.
+export async function restartAgent(address: string): Promise<void> {
+  const res = await daemonFetch(`/api/agents/${encodeURIComponent(address)}/restart`, { method: "POST" });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }

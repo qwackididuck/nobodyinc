@@ -277,6 +277,35 @@ func TestRestartAll(t *testing.T) {
 	}
 }
 
+func TestRestart(t *testing.T) {
+	t.Parallel()
+
+	s := newCatSupervisor(t)
+	if err := s.StartAll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	other, _ := s.Output("dev1@dev")
+	before, _ := s.Output("archi@specs")
+
+	if err := s.Restart(context.Background(), "archi@specs"); err != nil {
+		t.Fatal(err)
+	}
+
+	after, ok := s.Output("archi@specs")
+	if !ok || after == before {
+		t.Fatal("Restart should run a new process for the agent")
+	}
+
+	if still, _ := s.Output("dev1@dev"); still != other {
+		t.Fatal("Restart must leave the other agents alone")
+	}
+
+	if err := s.Restart(context.Background(), "ghost@dev"); !errors.Is(err, ErrUnknownAgent) {
+		t.Fatalf("restarting an unknown agent: %v, want ErrUnknownAgent", err)
+	}
+}
+
 func TestIdleAgentWithMailIsWokenUp(t *testing.T) {
 	t.Parallel()
 

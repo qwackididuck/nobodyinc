@@ -319,6 +319,30 @@ paths:
         "409":
           $ref: "#/components/responses/Error"
 
+  /api/agents/{address}/restart:
+    post:
+      operationId: restartAgent
+      summary: Stop an agent and start it again with a fresh session
+      description: |
+        The "/clear" of the control room: the agent's process is killed and
+        started again without resuming its session, with the full Nobody Inc
+        prompt as at a normal start. The conversation is forgotten, the
+        agent's tickets and mail stay as they are. Works for the director
+        too. A change waiting for the end of the agent's turn is taken over:
+        the restart already uses the current definition. 409 when the agent
+        is on leave or the daemon is shutting down.
+      parameters:
+        - $ref: "#/components/parameters/Address"
+      responses:
+        "202":
+          description: Agent restarted
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "500":
+          $ref: "#/components/responses/Error"
+
   /api/agents/{address}:
     delete:
       operationId: dismissAgent
@@ -2335,6 +2359,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Ticket"
+        "400":
+          $ref: "#/components/responses/Error"
+
+  /api/tickets/clean:
+    post:
+      operationId: cleanBoard
+      summary: Delete the tickets of the Kanban in bulk
+      description: |
+        Deletes, for good, the tickets of the Kanban: with `scope: closed`
+        the done and canceled ones, with `scope: all` every one. Archived
+        tickets (those of finished features) stay. Like the shredder, it
+        deletes the comments and deliverables, lets the tickets that waited
+        for a deleted one go on, and tells each agent working on a deleted
+        ticket to stop with an urgent notice. The director does the same
+        through its `board_clean` tool.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope]
+              properties:
+                scope:
+                  type: string
+                  enum: [closed, all]
+      responses:
+        "200":
+          description: IDs of the deleted tickets (empty when the board had nothing to clean)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ids]
+                properties:
+                  ids:
+                    type: array
+                    items:
+                      type: string
         "400":
           $ref: "#/components/responses/Error"
 

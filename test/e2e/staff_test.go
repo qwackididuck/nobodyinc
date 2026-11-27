@@ -568,3 +568,51 @@ func messageFrom(t *testing.T, d *daemon.Daemon, from, to string, act messaging.
 
 	return found
 }
+
+// Restarting an agent gives it a fresh session and the Nobody Inc prompt
+// again; the board's bulk cleaning deletes the closed tickets, or all.
+func TestRestartAnAgentAndCleanTheBoard(t *testing.T) {
+	t.Parallel()
+
+	d := startDaemon(t, staffProject(t))
+	eventually(t, "dev1 idle", func() bool { return d.Statuses.Get("dev1@dev") == runtime.StatusIdle })
+
+	// Restart: a new process, the other agent untouched.
+	before, _ := d.Supervisor.Output("dev1@dev")
+	other, _ := d.Supervisor.Output("dev2@dev")
+
+	call(t, d, http.MethodPost, "/api/agents/ghost@dev/restart", "", http.StatusNotFound)
+	call(t, d, http.MethodPost, "/api/agents/dev1@dev/restart", "", http.StatusAccepted)
+	eventually(t, "dev1 restarted", func() bool {
+		after, running := d.Supervisor.Output("dev1@dev")
+
+		return running && after != before && d.Statuses.Get("dev1@dev") == runtime.StatusIdle
+	})
+
+	if still, _ := d.Supervisor.Output("dev2@dev"); still != other {
+		t.Fatal("restarting dev1 touched dev2")
+	}
+
+	// Clean the board: T-1 done, T-2 open.
+	call(t, d, http.MethodPost, "/api/tickets", `{"title":"Finished","team":"dev"}`, http.StatusCreated)
+	call(t, d, http.MethodPost, "/api/tickets", `{"title":"Still to do","team":"dev"}`, http.StatusCreated)
+	call(t, d, http.MethodPost, "/api/tickets/T-1/status", `{"status":"done"}`, http.StatusOK)
+
+	call(t, d, http.MethodPost, "/api/tickets/clean", `{"scope":"some"}`, http.StatusBadRequest)
+
+	var cleaned struct {
+		IDs []string `json:"ids"`
+	}
+
+	decodeBody(t, call(t, d, http.MethodPost, "/api/tickets/clean", `{"scope":"closed"}`, http.StatusOK), &cleaned)
+
+	if len(cleaned.IDs) != 1 || cleaned.IDs[0] != "T-1" {
+		t.Fatalf("closed cleaning deleted %v, want [T-1]", cleaned.IDs)
+	}
+
+	decodeBody(t, call(t, d, http.MethodPost, "/api/tickets/clean", `{"scope":"all"}`, http.StatusOK), &cleaned)
+
+	if len(cleaned.IDs) != 1 || cleaned.IDs[0] != "T-2" {
+		t.Fatalf("full cleaning deleted %v, want [T-2]", cleaned.IDs)
+	}
+}

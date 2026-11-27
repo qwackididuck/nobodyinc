@@ -102,6 +102,29 @@ func (s *server) startAgent(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// restartAgent stops an agent and starts it again with a fresh session.
+func (s *server) restartAgent(w http.ResponseWriter, r *http.Request) {
+	if s.Agents == nil {
+		s.writeError(w, http.StatusNotImplemented, errors.New("agents are not managed by this daemon"))
+
+		return
+	}
+
+	// Detached from the request: the agent outlives it.
+	err := s.Agents.Restart(context.WithoutCancel(r.Context()), r.PathValue("address"))
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusAccepted)
+	case errors.Is(err, runtime.ErrUnknownAgent):
+		s.writeError(w, http.StatusNotFound, err)
+	case errors.Is(err, runtime.ErrOnLeave), errors.Is(err, runtime.ErrStopping):
+		s.writeError(w, http.StatusConflict, err)
+	default:
+		s.Logger.Error("restart agent", "err", err)
+		s.writeError(w, http.StatusInternalServerError, err)
+	}
+}
+
 const (
 	defaultMessageLimit = 100
 	maxMessageLimit     = 500

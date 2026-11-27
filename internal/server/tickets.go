@@ -62,6 +62,29 @@ func (s *server) deleteTicket(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, http.StatusOK, deletedTickets{IDs: ids})
 }
 
+// cleanBoard deletes the done and canceled tickets of the Kanban, or all of
+// them, as the human.
+func (s *server) cleanBoard(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Scope work.CleanScope `json:"scope"`
+	}
+
+	if err := decodeJSON(w, r, &body, true); err != nil {
+		s.writeError(w, http.StatusBadRequest, err)
+
+		return
+	}
+
+	ids, err := s.Tickets.CleanBoard(r.Context(), org.HumanAddress, body.Scope)
+	if err != nil {
+		s.ticketError(w, err)
+
+		return
+	}
+
+	s.writeJSON(w, http.StatusOK, deletedTickets{IDs: ids})
+}
+
 // ticketDraft is the body of POST /api/tickets.
 type ticketDraft struct {
 	work.Budget

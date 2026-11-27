@@ -10,6 +10,7 @@ import { isDirector } from "../chat/agents";
 import { Sprite } from "../office/sprite";
 import ui from "../ui/ui.module.css";
 import styles from "./kanban.module.css";
+import { CleanBoard } from "./CleanBoard";
 import { NewTicket } from "./NewTicket";
 import { Shredder } from "./Shredder";
 import { TicketDrawer } from "./TicketDrawer";
@@ -121,6 +122,7 @@ export function Kanban({ onOpenChat }: Props) {
             </button>
           ))}
           <span className={styles.spacer} />
+          <CleanBoard tickets={tickets} onCleaned={(ids) => ids.includes(open ?? "") && setOpen(null)} />
           <button type="button" className={ui.btnPrimary} onClick={() => setCreating(true)}>
             + New ticket
           </button>

@@ -2,8 +2,10 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { type Agent, type Approval, HUMAN, type Message, listConversation, startAgent, terminalURL } from "@/lib/api";
+import { type Agent, type Approval, HUMAN, type Message, listConversation, restartAgent, startAgent, terminalURL } from "@/lib/api";
 import { useLive } from "@/lib/live";
+import { Modal } from "../ui/Modal";
+import ui from "../ui/ui.module.css";
 import { TerminalView } from "./TerminalView";
 import { isAnswered, isDirector, statusKey, statusLabel, teamLabel, timeOf, withHuman } from "./agents";
 import { Avatar } from "./Avatar";
@@ -35,6 +37,8 @@ export function Thread({ agent, cutoff, onSeen }: Props) {
   const [history, setHistory] = useState<Message[]>([]);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmRestart, setConfirmRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
   // How many of the hidden (older than the cutoff) messages are shown, newest first.
   // Tied to its cutoff: a new cutoff (a feature was finished) hides the history again.
   const [reveal, setReveal] = useState({ cutoff, count: 0 });
@@ -94,6 +98,21 @@ export function Thread({ agent, cutoff, onSeen }: Props) {
     }
   }
 
+  // restart is the "/clear" of the agent: its process is killed and started
+  // again with a fresh session and the whole Nobody Inc prompt.
+  async function restart() {
+    setRestarting(true);
+    try {
+      await restartAgent(agent.address);
+      setError(null);
+      setConfirmRestart(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRestarting(false);
+    }
+  }
+
   return (
     <>
       <header className={styles.head}>
@@ -122,12 +141,37 @@ export function Thread({ agent, cutoff, onSeen }: Props) {
             {v === "chat" ? "Chat" : "Terminal"}
           </button>
         ))}
+        {!agent.on_leave && (
+          <button type="button" className={styles.toggleBtn} title="Clear the conversation and start again with the Nobody Inc prompt" onClick={() => setConfirmRestart(true)}>
+            Restart
+          </button>
+        )}
         {view === "terminal" && (
           <button type="button" className={styles.toggleBtn} onClick={() => setExpanded((e) => !e)} aria-pressed={expanded}>
             {expanded ? "Reduce (Esc)" : "Expand"}
           </button>
         )}
       </div>
+      {confirmRestart && (
+        <Modal label={`Restart ${agent.name}`} tone="danger" onClose={() => setConfirmRestart(false)}>
+          <h3 className={ui.title}>Restart {agent.name}?</h3>
+          <p className={ui.sub}>
+            Its process is stopped and started again with a fresh session, like a /clear: it forgets the conversation and gets the Nobody Inc prompt again. Its
+            tickets and mail stay.
+          </p>
+          {isDirector(agent) && <p className={styles.restartWarning}>The director forgets what it has agreed with you so far.</p>}
+          {agent.status === "working" && <p className={styles.restartWarning}>{agent.name} is working: its turn is interrupted.</p>}
+          {error && <p className={ui.error}>{error}</p>}
+          <div className={styles.restartActions}>
+            <button type="button" className={ui.btnDanger} disabled={restarting} onClick={() => void restart()}>
+              Restart {agent.name}
+            </button>
+            <button type="button" className={ui.link} onClick={() => setConfirmRestart(false)}>
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
       {view === "terminal" ? (
         <div className={expanded ? `${styles.terminal} ${styles.terminalExpanded}` : styles.terminal}>
           {expanded && (
