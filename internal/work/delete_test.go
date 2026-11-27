@@ -134,3 +134,77 @@ func TestFinishingArchivesTheFeatureTickets(t *testing.T) {
 		t.Fatalf("an archived ticket cannot be shredded: error = %v", err)
 	}
 }
+
+func TestCleanBoard(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		by        string
+		scope     work.CleanScope
+		wantErr   error
+		wantGone  []string
+		wantStops []string
+	}{
+		{name: "the human cleans the closed tickets", by: org.HumanAddress, scope: work.CleanClosed, wantGone: []string{"T-1", "T-2"}},
+		{name: "the director cleans everything", by: "god", scope: work.CleanAll,
+			wantGone: []string{"T-1", "T-2", "T-3", "T-4"}, wantStops: []string{"T-3 dev1@dev"}},
+		{name: "a team agent may not", by: "dev1@dev", scope: work.CleanAll, wantErr: work.ErrForbidden},
+		{name: "an unknown scope is refused", by: org.HumanAddress, scope: "some", wantErr: work.ErrInvalid},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := newService(t)
+			ctx := context.Background()
+
+			// T-1 done, T-2 canceled, T-3 in progress, T-4 open.
+			done := create(t, s, "dev")
+			canceled := create(t, s, "dev")
+			working := create(t, s, "dev")
+			create(t, s, "qa")
+
+			for id, status := range map[string]work.Status{done.ID: work.StatusDone, canceled.ID: work.StatusCanceled} {
+				if _, err := s.SetStatus(ctx, org.HumanAddress, id, status); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if _, err := s.Claim(ctx, "dev1@dev", working.ID); err != nil {
+				t.Fatal(err)
+			}
+
+			var stopped []string
+
+			s.OnTicketDeleted = func(tk work.Ticket) { stopped = append(stopped, tk.ID+" "+tk.Assignee) }
+
+			got, err := s.CleanBoard(ctx, tt.by, tt.scope)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+
+			if tt.wantErr != nil {
+				return
+			}
+
+			if !slices.Equal(got, tt.wantGone) {
+				t.Fatalf("deleted %v, want %v", got, tt.wantGone)
+			}
+
+			if !slices.Equal(stopped, tt.wantStops) {
+				t.Fatalf("agents told to stop: %v, want %v", stopped, tt.wantStops)
+			}
+
+			left, err := s.Store.ListTickets(ctx, work.Filter{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if want := 4 - len(tt.wantGone); len(left) != want {
+				t.Fatalf("%d tickets left, want %d", len(left), want)
+			}
+		})
+	}
+}

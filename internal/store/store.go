@@ -195,6 +195,61 @@ func (s *Store) DeleteFinishedConversations(ctx context.Context, excluded []stri
 	return ids, nil
 }
 
+// OpenAgentConversations returns the last message of each open conversation
+// exchanged only among addresses outside excluded (what agents said to each
+// other): a conversation whose last message has one of the openActs, so that
+// an answer is still expected. With tickets, only the conversations that
+// have a message about one of them. Delivery does not matter: a request
+// nobody read is as open as one nobody answered.
+func (s *Store) OpenAgentConversations(
+	ctx context.Context, excluded []string, openActs []messaging.Act, tickets []string,
+) ([]messaging.Message, error) {
+	outside, outsideArgs := inClause(excluded)
+
+	acts := make([]string, len(openActs))
+	for i, a := range openActs {
+		acts[i] = string(a)
+	}
+
+	open, openArgs := inClause(acts)
+
+	query := selectMessages + ` AS m
+		WHERE m.id = (SELECT l.id FROM messages l WHERE l.conversation = m.conversation
+			ORDER BY l.sent_at DESC, l.id DESC LIMIT 1)
+		AND m.act IN ` + open + `
+		AND NOT EXISTS (SELECT 1 FROM messages x WHERE x.conversation = m.conversation
+			AND (x.sender IN ` + outside + ` OR x.recipient IN ` + outside + `))`
+
+	args := append(append(append([]any{}, openArgs...), outsideArgs...), outsideArgs...)
+
+	if tickets != nil {
+		in, ticketArgs := inClause(tickets)
+
+		query += ` AND EXISTS (SELECT 1 FROM messages t WHERE t.conversation = m.conversation AND t.ticket IN ` + in + `)`
+
+		args = append(args, ticketArgs...)
+	}
+
+	return s.queryMessages(ctx, query+` ORDER BY m.sent_at, m.id`, args...)
+}
+
+// DeleteConversations deletes for good every message of the conversations,
+// and returns the IDs of the deleted messages.
+func (s *Store) DeleteConversations(ctx context.Context, conversations []string) ([]string, error) {
+	if len(conversations) == 0 {
+		return nil, nil
+	}
+
+	in, args := inClause(conversations)
+
+	ids, err := s.queryIDs(ctx, `DELETE FROM messages WHERE conversation IN `+in+` RETURNING id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("delete conversations: %w", err)
+	}
+
+	return ids, nil
+}
+
 // MarkDelivered records that messages have been handed to their recipient.
 // IDs addressed to someone else are ignored, and already delivered messages
 // keep their original delivery time.

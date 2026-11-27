@@ -20,6 +20,8 @@ type Tickets interface {
 	Mine(ctx context.Context, agent string) ([]work.Ticket, []work.Ticket, error)
 	// ProposeFeature records a feature the director proposes to the human.
 	ProposeFeature(ctx context.Context, by string, d work.FeatureDraft) (work.Feature, error)
+	// CleanBoard deletes the tickets of the Kanban in bulk (the director's).
+	CleanBoard(ctx context.Context, by string, scope work.CleanScope) ([]string, error)
 }
 
 // addTicketTools registers the ticket tools of an agent's office.

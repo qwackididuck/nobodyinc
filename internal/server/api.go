@@ -102,6 +102,29 @@ func (s *server) startAgent(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// restartAgent stops an agent and starts it again with a fresh session.
+func (s *server) restartAgent(w http.ResponseWriter, r *http.Request) {
+	if s.Agents == nil {
+		s.writeError(w, http.StatusNotImplemented, errors.New("agents are not managed by this daemon"))
+
+		return
+	}
+
+	// Detached from the request: the agent outlives it.
+	err := s.Agents.Restart(context.WithoutCancel(r.Context()), r.PathValue("address"))
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusAccepted)
+	case errors.Is(err, runtime.ErrUnknownAgent):
+		s.writeError(w, http.StatusNotFound, err)
+	case errors.Is(err, runtime.ErrOnLeave), errors.Is(err, runtime.ErrStopping):
+		s.writeError(w, http.StatusConflict, err)
+	default:
+		s.Logger.Error("restart agent", "err", err)
+		s.writeError(w, http.StatusInternalServerError, err)
+	}
+}
+
 const (
 	defaultMessageLimit = 100
 	maxMessageLimit     = 500
@@ -173,7 +196,8 @@ type deletedMessages struct {
 
 // deleteFinishedAgentConversations empties the control room's wastebasket:
 // the finished conversations between agents are deleted for good; open ones
-// stay. Conversations involving the human or nobody are never touched.
+// stay, unless include_open=true closes them too (messaging.Closer).
+// Conversations involving the human or nobody are never touched.
 func (s *server) deleteFinishedAgentConversations(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("scope") != "agents" {
 		s.writeError(w, http.StatusBadRequest, fmt.Errorf("%w: scope must be agents", errBadFilter))
@@ -196,6 +220,20 @@ func (s *server) deleteFinishedAgentConversations(w http.ResponseWriter, r *http
 
 	if len(ids) > 0 {
 		s.Events.Publish(events.Event{Type: events.MessagesDeleted, Data: events.DeletedData{IDs: ids}})
+	}
+
+	// The open ones too, on request: their senders are told (the Closer
+	// announces what it deletes).
+	if r.URL.Query().Get("include_open") == "true" && s.Closer != nil {
+		closed, err := s.Closer.Close(r.Context(), messaging.CloseScope{Reason: "the human closed it from the wastebasket"})
+		if err != nil {
+			s.Logger.Error("close the open conversations", "err", err)
+			s.writeError(w, http.StatusInternalServerError, errors.New("cannot close the open conversations"))
+
+			return
+		}
+
+		ids = append(ids, closed...)
 	}
 
 	s.writeJSON(w, http.StatusOK, deletedMessages{IDs: ids})

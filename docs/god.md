@@ -39,6 +39,8 @@ you ──── request ──────────────────�
 | Create tickets for | any team | any team, with an assignee |
 | Change a ticket's status | its own tickets | any ticket |
 | Propose a feature | no | yes (`feature_propose`); you start or refuse it |
+| Clean the Kanban | no | yes (`board_clean`, only with your agreement) |
+| Close the open conversations between agents | no | yes (`conversations_close`, only with your agreement) |
 | Create and delete teams, restrict their flows | no | yes (`team_create`; `team_delete` and `team_block` only with your agreement) |
 | Recruit, create, edit, put on leave, dismiss agents | no | yes, freely; never itself |
 | Scheduled tasks | no | reads them and proposes new ones (`schedule_propose`); you accept, edited or not, or refuse |
@@ -56,6 +58,8 @@ Its own tools, on top of the shared ones (`send_message`, `list_contacts`, `tick
 | `template_list`, `agent_get` | The catalog; an agent's definition. |
 | `agent_recruit`, `agent_create` | Recruit from a template, or create from a definition written from scratch, into a team. |
 | `agent_edit` | Replace an agent's definition (a new role or new instructions restart it with a fresh session). |
+| `board_clean` | Deletes the Kanban's tickets for good: `closed` (done and canceled) or `all`. Only with your agreement (`docs/tickets.md`, "Cleaning the board"). |
+| `conversations_close` | Closes for good every open conversation between agents (a request, query or proposal nobody answered); the agents that waited are told. Never touches conversations with you. Only with your agreement (`docs/architecture.md`, "Closing open conversations"). |
 | `agent_leave`, `agent_return`, `agent_dismiss` | As in the Staff tab (`docs/agents.md`, "Lifecycle"). |
 | `schedule_list` | The scheduled tasks, with their next and last occurrence (`docs/schedules.md`). |
 | `schedule_propose` | Proposes a scheduled task. Nothing runs until you accept it, as it is or edited (its card in the chat: Accept, Edit…, Refuse…); it gets `agree` or `refuse`. It has no tool to create, edit, pause or delete one itself. |

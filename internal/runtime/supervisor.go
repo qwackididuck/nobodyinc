@@ -171,6 +171,30 @@ func (s *Supervisor) Stop(address string) error {
 	}
 }
 
+// Restart stops an agent and starts it again with a fresh session: the
+// "/clear" of the control room, the agent getting its whole Nobody Inc prompt
+// as at a normal start. Unlike RestartAll it works for the director too.
+// An agent that is not running is simply started. A change waiting for the
+// agent is taken over: the restart already uses its current definition.
+func (s *Supervisor) Restart(ctx context.Context, address string) error {
+	member, ok := s.Org.Current().Member(address)
+	if !ok {
+		return fmt.Errorf("%w: %q", ErrUnknownAgent, address)
+	}
+
+	if member.Agent.OnLeave {
+		return fmt.Errorf("%w: %s", ErrOnLeave, address)
+	}
+
+	s.takePending(address)
+
+	if err := s.Stop(address); err != nil {
+		return err
+	}
+
+	return s.Start(ctx, address)
+}
+
 // RestartAll stops every team agent and starts it again with a fresh session,
 // e.g. so that it works in the worktree of a newly activated feature. Agents
 // on leave stay stopped. The director is left alone: it always works in the

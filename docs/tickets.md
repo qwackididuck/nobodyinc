@@ -68,6 +68,8 @@ Agents on leave are never chosen, neither for a queued ticket nor for `@<team>`;
 
 **Budgets** (`docs/budgets.md`, ADR-0013): a ticket may have a budget, in list-price USD; inside a feature with a budget every ticket needs one, at most what the feature has left to allocate. Cards and the drawer show what a ticket spent against its budget; the drawer changes the budget. At the budget's threshold, its agent stops at the end of its turn and asks for an extension.
 
+**Cleaning the board** (`POST /api/tickets/clean`): the Kanban's "Clean board" button opens a dialog with two choices, the done and canceled tickets only, or the whole board. It is the shredder in bulk: same deletion, same urgent notice to the agents working on a deleted ticket, dependants stop waiting. Archived tickets stay. The director does it with `board_clean` (`scope`: `closed` or `all`), only with your agreement; a team agent cannot. Single deletions stay the human's (`DeleteTicket`).
+
 **Archived tickets**: finishing a feature archives its tickets (ADR-0007). They leave the Kanban and every queue, and stay readable: `GET /api/tickets?archived=true`, and the archives room of the office. They cannot be deleted.
 
 ## Not yet

@@ -19,7 +19,7 @@ import (
 
 // directorToolNames are the tools only the director gets.
 var directorToolNames = []string{
-	"feature_propose", "org_overview", "template_list", "team_create", "team_delete", "team_block",
+	"feature_propose", "board_clean", "org_overview", "template_list", "team_create", "team_delete", "team_block",
 	"agent_get", "agent_recruit", "agent_create", "agent_edit", "agent_leave", "agent_return", "agent_dismiss",
 }
 
@@ -197,6 +197,13 @@ func (t tools) addDirectorTools(server *mcp.Server) {
 			"answer with their reason.",
 	}, t.featurePropose)
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "board_clean",
+		Description: "Delete tickets of the Kanban for good, with their comments and deliverables: scope \"closed\" " +
+			"deletes the done and canceled ones, \"all\" every ticket (open and in progress too: the agents working on " +
+			"them are told to stop). Archived tickets stay. Only with the human's explicit agreement: ask them first, " +
+			"saying which scope and how many tickets it concerns.",
+	}, t.boardClean)
+	mcp.AddTool(server, &mcp.Tool{
 		Name: "org_overview",
 		Description: "The state of the organization: the active feature, and for each team its agents (status, on leave) " +
 			"and its tickets (open, in progress, and how many are done or canceled).",
@@ -269,6 +276,28 @@ func (t tools) featurePropose(ctx context.Context, _ *mcp.CallToolRequest, in Fe
 	}
 
 	return nil, FeatureProposeOutput{ID: f.ID, Note: "proposed to the human; wait for their answer"}, nil
+}
+
+// BoardCleanInput says which tickets to delete.
+type BoardCleanInput struct {
+	Scope string `json:"scope" jsonschema:"closed (done and canceled tickets) or all (every ticket of the board)"`
+}
+
+// BoardCleanOutput lists the deleted tickets.
+type BoardCleanOutput struct {
+	Deleted []string `json:"deleted"`
+	Note    string   `json:"note"`
+}
+
+func (t tools) boardClean(ctx context.Context, _ *mcp.CallToolRequest, in BoardCleanInput) (
+	*mcp.CallToolResult, BoardCleanOutput, error,
+) {
+	ids, err := t.tickets.CleanBoard(ctx, t.self, work.CleanScope(in.Scope))
+	if err != nil {
+		return nil, BoardCleanOutput{}, err
+	}
+
+	return nil, BoardCleanOutput{Deleted: ids, Note: fmt.Sprintf("%d ticket(s) deleted", len(ids))}, nil
 }
 
 func (t tools) orgOverview(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, Overview, error) {

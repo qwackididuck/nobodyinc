@@ -14,12 +14,15 @@ import styles from "./chat.module.css";
 // human and one agent, and an agent's full story is in its terminal.
 //
 // "Empty" deletes the finished conversations for good (every message
-// delivered, the last one expecting no answer); open ones stay.
+// delivered, the last one expecting no answer); open ones stay, unless the
+// human ticks "Also close the open conversations": those are deleted too
+// and the agents that waited for an answer are told.
 export function Bin({ onSeen }: { onSeen: (at: string) => void }) {
   const live = useLive();
   const [history, setHistory] = useState<Message[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [includeOpen, setIncludeOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<string | null>(null);
 
@@ -33,16 +36,23 @@ export function Bin({ onSeen }: { onSeen: (at: string) => void }) {
   async function empty() {
     setBusy(true);
     try {
-      const ids = await emptyWastebasket();
+      const ids = await emptyWastebasket(includeOpen);
       const gone = new Set(ids);
       setHistory((h) => h.filter((m) => !gone.has(m.id)));
-      setReport(ids.length ? `${ids.length} messages deleted.` : "Nothing finished to delete: every conversation is still open.");
+      setReport(
+        ids.length
+          ? `${ids.length} messages deleted.`
+          : includeOpen
+            ? "Nothing to delete."
+            : "Nothing finished to delete: every conversation is still open.",
+      );
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
       setConfirming(false);
+      setIncludeOpen(false);
     }
   }
 
@@ -80,11 +90,26 @@ export function Bin({ onSeen }: { onSeen: (at: string) => void }) {
       <div className={styles.notice}>
         {confirming ? (
           <>
-            <span>Delete the finished conversations for good? Open ones stay.</span>
+            <span>
+              {includeOpen
+                ? "Delete every conversation for good? The agents waiting for an answer are told."
+                : "Delete the finished conversations for good? Open ones stay."}
+            </span>
+            <label className={styles.checkLine}>
+              <input type="checkbox" checked={includeOpen} onChange={(e) => setIncludeOpen(e.target.checked)} />
+              Also close the open conversations
+            </label>
             <button type="button" className={styles.btnPrimary} disabled={busy} onClick={() => void empty()}>
               Delete
             </button>
-            <button type="button" className={styles.link} onClick={() => setConfirming(false)}>
+            <button
+              type="button"
+              className={styles.link}
+              onClick={() => {
+                setConfirming(false);
+                setIncludeOpen(false);
+              }}
+            >
               Cancel
             </button>
           </>

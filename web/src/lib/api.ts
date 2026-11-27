@@ -482,6 +482,21 @@ export async function deleteTicket(id: string, cascade: boolean): Promise<string
   return ((await res.json()) as { ids: string[] }).ids;
 }
 
+// cleanBoard deletes the tickets of the Kanban in bulk: the done and canceled
+// ones ("closed") or every one ("all"). Archived tickets stay. It returns the
+// IDs of the deleted tickets.
+export async function cleanBoard(scope: "closed" | "all"): Promise<string[]> {
+  const res = await daemonFetch("/api/tickets/clean", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope }),
+  });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+  return ((await res.json()) as { ids: string[] }).ids;
+}
+
 export function getTicket(id: string): Promise<TicketDetails> {
   return getJSON<TicketDetails>(`/api/tickets/${encodeURIComponent(id)}`);
 }
@@ -579,9 +594,11 @@ export function listAgentExchanges(limit = 200): Promise<Message[]> {
 
 // emptyWastebasket deletes for good the finished conversations between
 // agents (every message delivered, the last one expecting no answer); open
-// ones stay. It returns the IDs of the deleted messages.
-export async function emptyWastebasket(): Promise<string[]> {
-  const res = await daemonFetch("/api/messages?scope=agents", { method: "DELETE" });
+// ones stay, unless includeOpen closes them too: they are deleted and the
+// agents that waited for an answer are told. It returns the IDs of the
+// deleted messages.
+export async function emptyWastebasket(includeOpen = false): Promise<string[]> {
+  const res = await daemonFetch(`/api/messages?scope=agents${includeOpen ? "&include_open=true" : ""}`, { method: "DELETE" });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }
@@ -1008,6 +1025,15 @@ export async function sendMessage(draft: HumanDraft): Promise<Message> {
 
 export async function startAgent(address: string): Promise<void> {
   const res = await daemonFetch(`/api/agents/${encodeURIComponent(address)}/start`, { method: "POST" });
+  if (!res.ok) {
+    throw new Error(await errorText(res));
+  }
+}
+
+// restartAgent stops an agent and starts it again with a fresh session: its
+// conversation is forgotten, it gets the whole Nobody Inc prompt again.
+export async function restartAgent(address: string): Promise<void> {
+  const res = await daemonFetch(`/api/agents/${encodeURIComponent(address)}/restart`, { method: "POST" });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }

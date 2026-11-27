@@ -20,6 +20,13 @@ type proposals struct {
 	logger   *slog.Logger
 }
 
+// attach makes the work service report the director's proposals and the
+// human's decisions to p.
+func (p *proposals) attach(tickets *work.Service) {
+	tickets.OnFeatureProposed = p.onProposed
+	tickets.OnFeatureDecided = p.onDecided
+}
+
 // onProposed sends the proposal to the human and returns the message's ID.
 func (p *proposals) onProposed(f work.Feature) string {
 	body := fmt.Sprintf("I propose the feature %s: %s.\n\nNeed:\n%s\n\nAcceptance criteria:\n%s\n\n"+

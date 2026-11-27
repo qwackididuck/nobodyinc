@@ -52,6 +52,9 @@ type Deps struct {
 	Org      org.Source
 	Store    *store.Store
 	Messages *messaging.Service
+	// Closer closes open conversations between agents (DELETE /api/messages
+	// with include_open); nil means open ones cannot be closed.
+	Closer   *messaging.Closer
 	Tickets  *work.Service
 	Statuses *runtime.Statuses
 	// Approvals queues the agents' permission requests for the human.
@@ -126,6 +129,7 @@ type Deps struct {
 // for it to end its turn (implemented by runtime.Supervisor).
 type AgentStarter interface {
 	Start(ctx context.Context, address string) error
+	Restart(ctx context.Context, address string) error
 	Pending(address string) bool
 }
 
@@ -148,6 +152,7 @@ func New(d Deps) http.Handler {
 
 	mux.HandleFunc("GET /api/agents", s.listAgents)
 	mux.HandleFunc("POST /api/agents/{address}/start", s.startAgent)
+	mux.HandleFunc("POST /api/agents/{address}/restart", s.restartAgent)
 	mux.HandleFunc("DELETE /api/agents/{address}", s.dismissAgent)
 	mux.HandleFunc("GET /api/agents/{address}/definition", s.getAgentDefinition)
 	mux.HandleFunc("PUT /api/agents/{address}/definition", s.editAgentDefinition)
@@ -173,12 +178,7 @@ func New(d Deps) http.Handler {
 	mux.HandleFunc("POST /api/features/{id}/refuse", s.refuseProposedFeature)
 	mux.HandleFunc("GET /api/features/{id}/review", s.reviewFeature)
 	mux.HandleFunc("POST /api/features/{id}/finish", s.finishFeature)
-	mux.HandleFunc("GET /api/tickets", s.listTickets)
-	mux.HandleFunc("POST /api/tickets", s.createTicketAsHuman)
-	mux.HandleFunc("GET /api/tickets/{id}", s.getTicket)
-	mux.HandleFunc("DELETE /api/tickets/{id}", s.deleteTicket)
-	mux.HandleFunc("POST /api/tickets/{id}/comments", s.commentTicketAsHuman)
-	mux.HandleFunc("POST /api/tickets/{id}/status", s.setTicketStatusAsHuman)
+	s.routeTickets(mux)
 	mux.HandleFunc("GET /api/events", s.streamEvents)
 	s.routeSettings(mux)
 	s.routeClaudeConfig(mux)
@@ -197,6 +197,17 @@ func New(d Deps) http.Handler {
 	}
 
 	return GuardCrossSite(d.Origins, mux)
+}
+
+// routeTickets registers the Kanban's endpoints.
+func (s *server) routeTickets(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/tickets", s.listTickets)
+	mux.HandleFunc("POST /api/tickets", s.createTicketAsHuman)
+	mux.HandleFunc("GET /api/tickets/{id}", s.getTicket)
+	mux.HandleFunc("DELETE /api/tickets/{id}", s.deleteTicket)
+	mux.HandleFunc("POST /api/tickets/clean", s.cleanBoard)
+	mux.HandleFunc("POST /api/tickets/{id}/comments", s.commentTicketAsHuman)
+	mux.HandleFunc("POST /api/tickets/{id}/status", s.setTicketStatusAsHuman)
 }
 
 // lookupEnv tells whether a variable is set for the project's processes: the

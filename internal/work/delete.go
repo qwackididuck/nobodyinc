@@ -1,9 +1,10 @@
 package work
 
-// Deleting tickets for good: the Kanban's shredder. Only the human deletes,
-// and archived tickets (those of finished features) stay. A deleted ticket an
-// agent was working on is reported through OnTicketDeleted, so that the
-// agent is told to stop.
+// Deleting tickets for good: the Kanban's shredder and its bulk cleaning.
+// Only the human deletes one ticket; the human and the director clean the
+// board in bulk (CleanBoard). Archived tickets (those of finished features)
+// stay. A deleted ticket an agent was working on is reported through
+// OnTicketDeleted, so that the agent is told to stop.
 
 import (
 	"context"
@@ -39,6 +40,53 @@ func (s *Service) DeleteTicket(ctx context.Context, by, id string, cascade bool)
 	ids := []string{target.ID}
 	if cascade {
 		ids = append(ids, Dependents(all, target.ID)...)
+	}
+
+	if err := s.Store.DeleteTickets(ctx, ids); err != nil {
+		return nil, err
+	}
+
+	s.tellAgentsToStop(all, ids)
+
+	return ids, nil
+}
+
+// CleanScope tells which tickets of the Kanban CleanBoard deletes.
+type CleanScope string
+
+// The scopes of CleanBoard.
+const (
+	// CleanClosed deletes the done and canceled tickets.
+	CleanClosed CleanScope = "closed"
+	// CleanAll deletes every ticket of the board, open and in progress too.
+	CleanAll CleanScope = "all"
+)
+
+// CleanBoard deletes, for good, the tickets of the Kanban that scope covers,
+// and returns their IDs (none when there was nothing to clean). Archived
+// tickets stay. The human and the director may clean the board: a team agent
+// may not. Like DeleteTicket, it tells the agents working on a deleted
+// ticket to stop.
+func (s *Service) CleanBoard(ctx context.Context, by string, scope CleanScope) ([]string, error) {
+	if by != org.HumanAddress && !s.Org.Current().IsGod(by) {
+		return nil, fmt.Errorf("%w: only the human and the director clean the board", ErrForbidden)
+	}
+
+	if scope != CleanClosed && scope != CleanAll {
+		return nil, fmt.Errorf("%w: scope must be %q or %q, got %q", ErrInvalid, CleanClosed, CleanAll, scope)
+	}
+
+	all, err := s.Store.ListTickets(ctx, Filter{})
+	if err != nil {
+		return nil, err
+	}
+
+	ids := []string{}
+
+	for _, t := range all {
+		if scope == CleanAll || t.Status.Closed() {
+			ids = append(ids, t.ID)
+		}
 	}
 
 	if err := s.Store.DeleteTickets(ctx, ids); err != nil {

@@ -37,7 +37,7 @@ data: {"recipient":"archi@specs","ids":["m-4f2…"]}
 | `agent.status` | `{address, status}` | an agent's status actually changes (a repeat is not sent) | `runtime.Statuses.OnChange` |
 | `message.sent` | the message | any message is sent (human, agents, director, `nobody`) | `messaging.Service.OnSent` |
 | `message.delivered` | `{recipient, ids}` | messages are handed to their recipient (hook, fork, hand-over) | `store.Store.OnDelivered` |
-| `messages.deleted` | `{ids}` | the wastebasket was emptied: finished conversations between agents deleted (`DELETE /api/messages?scope=agents`) | `server/api.go` |
+| `messages.deleted` | `{ids}` | messages deleted: the wastebasket was emptied (`DELETE /api/messages?scope=agents`), or open conversations were closed by force (see "Closing open conversations" in `architecture.md`) | `server/api.go`, `messaging/close.go` |
 | `approvals.changed` | `{}` | a permission request is added or answered | `approval.Queue.OnChange` |
 | `automation.changed` | `{}` | the automatic mode was switched on or off | `automation.Mode.OnChange` |
 | `decisions.changed` | `{}` | the director reported a decision taken in the human's place, or the human acknowledged some | `daemon/nobody.go`, `server/automation.go` |
