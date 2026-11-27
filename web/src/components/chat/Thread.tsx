@@ -126,6 +126,11 @@ export function Thread({ agent, cutoff, onSeen }: Props) {
         <span className={styles.pill} data-status={statusKey(agent)}>
           {statusLabel(agent)}
         </span>
+        {!agent.on_leave && (
+          <button type="button" className={styles.btn} title="Clear the conversation and start again with the Nobody Inc prompt" onClick={() => setConfirmRestart(true)}>
+            Restart
+          </button>
+        )}
       </header>
       {canStart && (
         <div className={styles.notice}>
@@ -141,11 +146,6 @@ export function Thread({ agent, cutoff, onSeen }: Props) {
             {v === "chat" ? "Chat" : "Terminal"}
           </button>
         ))}
-        {!agent.on_leave && (
-          <button type="button" className={styles.toggleBtn} title="Clear the conversation and start again with the Nobody Inc prompt" onClick={() => setConfirmRestart(true)}>
-            Restart
-          </button>
-        )}
         {view === "terminal" && (
           <button type="button" className={styles.toggleBtn} onClick={() => setExpanded((e) => !e)} aria-pressed={expanded}>
             {expanded ? "Reduce (Esc)" : "Expand"}
