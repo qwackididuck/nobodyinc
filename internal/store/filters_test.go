@@ -177,3 +177,90 @@ func TestDeleteFinishedConversations(t *testing.T) {
 		t.Fatalf("left %v", ids)
 	}
 }
+
+func TestOpenAgentConversations(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	// in builds a message of a conversation, about a ticket ("" for none).
+	in := func(conversation, id, from, to string, act messaging.Act, minute int, ticket string) messaging.Message {
+		m := between(id, from, to, minute)
+		m.Conversation, m.Act, m.Ticket = conversation, act, ticket
+
+		return m
+	}
+
+	messages := []messaging.Message{
+		in("open", "o1", "dev1@dev", "archi@specs", messaging.ActQuery, 1, "T-1"),
+		in("answered", "a1", "dev1@dev", "archi@specs", messaging.ActQuery, 2, "T-2"),
+		in("answered", "a2", "archi@specs", "dev1@dev", messaging.ActInform, 3, "T-2"),
+		// Open again: the last message asks something.
+		in("reopened", "r1", "dev1@dev", "archi@specs", messaging.ActInform, 4, "T-3"),
+		in("reopened", "r2", "archi@specs", "dev1@dev", messaging.ActRequest, 5, "T-3"),
+		in("with-human", "h1", "dev1@dev", "human", messaging.ActQuery, 6, "T-1"),
+		in("with-nobody", "n1", "nobody", "dev1@dev", messaging.ActRequest, 7, ""),
+	}
+	for _, m := range messages {
+		if err := s.InsertMessage(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	excluded, open := []string{"human", "nobody"}, messaging.ActsRequiringReply()
+
+	tests := []struct {
+		name    string
+		tickets []string
+		want    []string // the last messages
+	}{
+		{name: "every open conversation between agents", want: []string{"o1", "r2"}},
+		{name: "about a ticket", tickets: []string{"T-1"}, want: []string{"o1"}},
+		{name: "about a ticket of an answered conversation", tickets: []string{"T-2"}, want: nil},
+		{name: "a ticket mentioned by an earlier message", tickets: []string{"T-3"}, want: []string{"r2"}},
+		{name: "no ticket at all", tickets: []string{}, want: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := s.OpenAgentConversations(ctx, excluded, open, tt.tickets)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if ids := messageIDs(got); !slices.Equal(ids, tt.want) && (len(ids) > 0 || len(tt.want) > 0) {
+				t.Fatalf("open conversations = %v, want %v", ids, tt.want)
+			}
+		})
+	}
+}
+
+func TestDeleteConversations(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := openTestStore(t)
+
+	for i, id := range []string{"r1", "r2", "other"} {
+		m := between(id, "dev1@dev", "archi@specs", i)
+		m.Conversation = map[string]string{"r1": "reopened", "r2": "reopened", "other": "other"}[id]
+
+		if err := s.InsertMessage(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deleted, err := s.DeleteConversations(ctx, []string{"reopened"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	slices.Sort(deleted)
+
+	if want := []string{"r1", "r2"}; !slices.Equal(deleted, want) {
+		t.Fatalf("deleted %v, want the whole conversation %v", deleted, want)
+	}
+}

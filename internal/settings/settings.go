@@ -44,11 +44,19 @@ type Settings struct {
 	// (default true, docs/updates.md). The control room's "Check for
 	// updates" works either way.
 	CheckUpdates bool `yaml:"check_updates"`
+	// CloseOpenAfterDays closes, by force, the conversations between agents
+	// still waiting for an answer after that many days (default 7; 0 never
+	// does). The agents that waited are told (docs/events.md).
+	CloseOpenAfterDays int `yaml:"close_open_after_days"`
 }
+
+// DefaultCloseOpenAfterDays is how long an unanswered conversation between
+// agents stays open.
+const DefaultCloseOpenAfterDays = 7
 
 // Defaults are the settings without a settings file.
 func Defaults() Settings {
-	return Settings{ConfigProtection: ProtectBlock, CheckUpdates: true}
+	return Settings{ConfigProtection: ProtectBlock, CheckUpdates: true, CloseOpenAfterDays: DefaultCloseOpenAfterDays}
 }
 
 // fileTemplate is the settings file: written with the defaults when the
@@ -68,11 +76,16 @@ config_protection: %s
 #   true:  check at every start;
 #   false: only when you ask ("Check for updates").
 check_updates: %t
+
+# Close the conversations between agents (a request, query or proposal) that
+# nobody answered after this many days, so that they do not stay open from one
+# feature to the next. The agents that waited are told. 0 never closes them.
+close_open_after_days: %d
 `
 
 // render returns the content of the settings file for s.
 func render(s Settings) []byte {
-	return fmt.Appendf(nil, fileTemplate, s.ConfigProtection, s.CheckUpdates)
+	return fmt.Appendf(nil, fileTemplate, s.ConfigProtection, s.CheckUpdates, s.CloseOpenAfterDays)
 }
 
 // Load reads home/settings.yaml. Unset values keep their default; unknown
@@ -100,6 +113,10 @@ func Load(home string) (Settings, error) {
 
 	if s.ConfigProtection != ProtectBlock && s.ConfigProtection != ProtectWarn {
 		return Settings{}, fmt.Errorf("%s: config_protection %q: use %s or %s", path, s.ConfigProtection, ProtectBlock, ProtectWarn)
+	}
+
+	if s.CloseOpenAfterDays < 0 {
+		return Settings{}, fmt.Errorf("%s: close_open_after_days %d: use 0 or more", path, s.CloseOpenAfterDays)
 	}
 
 	return s, nil

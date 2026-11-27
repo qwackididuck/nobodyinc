@@ -52,6 +52,9 @@ type Deps struct {
 	Org      org.Source
 	Store    *store.Store
 	Messages *messaging.Service
+	// Closer closes open conversations between agents (DELETE /api/messages
+	// with include_open); nil means open ones cannot be closed.
+	Closer   *messaging.Closer
 	Tickets  *work.Service
 	Statuses *runtime.Statuses
 	// Approvals queues the agents' permission requests for the human.

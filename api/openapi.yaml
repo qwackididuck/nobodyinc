@@ -826,9 +826,12 @@ paths:
         Deletes for good the conversations exchanged only between agents (the
         director included; never one involving the human or `nobody`) that
         are finished: every message is delivered and the last one expects no
-        answer (inform, agree, refuse, done). Open conversations stay. The
-        deleted messages also disappear from the tickets they were attached
-        to. `scope=agents` is required.
+        answer (inform, agree, refuse, done). Open conversations stay,
+        unless `include_open=true` closes them too: they are deleted for
+        good, and the agent that was waiting for an answer is told by
+        `nobody` that the conversation is closed. The deleted messages also
+        disappear from the tickets they were attached to. `scope=agents` is
+        required.
       parameters:
         - name: scope
           in: query
@@ -836,6 +839,14 @@ paths:
           schema:
             type: string
             enum: [agents]
+        - name: include_open
+          in: query
+          description: |
+            Also close the open conversations between agents (the last
+            message is a request, query or propose nobody answered).
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: IDs of the deleted messages
@@ -865,7 +876,7 @@ paths:
         - `agent.status`: AgentStatusEvent
         - `message.sent`: Message
         - `message.delivered`: MessagesDeliveredEvent
-        - `messages.deleted`: MessagesDeleted (the wastebasket was emptied)
+        - `messages.deleted`: MessagesDeleted (the wastebasket was emptied, or open conversations were closed by force)
         - `approvals.changed`: `{}`
         - `automation.changed`: `{}` (the automatic mode was switched; read `GET /api/automation`)
         - `decisions.changed`: `{}` (a decision was reported or acknowledged; read `GET /api/decisions`)

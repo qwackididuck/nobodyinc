@@ -28,7 +28,10 @@ type ticketNotifier struct {
 	statuses *runtime.Statuses
 	messages *messaging.Service
 	tickets  *work.Service
-	logger   *slog.Logger
+	// closer closes the open conversations about a ticket once it is done
+	// or canceled (conversations.go).
+	closer *messaging.Closer
+	logger *slog.Logger
 }
 
 func (n *ticketNotifier) onEvent(e work.Event) {
@@ -51,8 +54,12 @@ func (n *ticketNotifier) onEvent(e work.Event) {
 		}
 
 		n.notifyUnblocked(ctx, t)
-	case work.EventClaimed, work.EventCanceled:
-		// The claimer knows; a canceled ticket is nobody's work any more.
+		closeForTicket(ctx, n.closer, t, n.logger)
+	case work.EventCanceled:
+		// A canceled ticket is nobody's work any more.
+		closeForTicket(ctx, n.closer, t, n.logger)
+	case work.EventClaimed:
+		// The claimer knows.
 	}
 }
 

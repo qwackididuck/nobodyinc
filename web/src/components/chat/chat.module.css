@@ -253,6 +253,14 @@
   flex: none;
 }
 
+.checkLine {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  cursor: pointer;
+}
+
 .toggle {
   display: flex;
   gap: 2px;

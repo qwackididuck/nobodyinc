@@ -18,10 +18,14 @@ func TestLoad(t *testing.T) {
 	}{
 		{name: "no file: defaults", want: Defaults()},
 		{name: "comments only: defaults", file: new("# nothing yet\n"), want: Defaults()},
-		{name: "warn", file: new("config_protection: warn\n"), want: Settings{ConfigProtection: ProtectWarn, CheckUpdates: true}},
-		{name: "updates check off", file: new("check_updates: false\n"), want: Settings{ConfigProtection: ProtectBlock}},
+		{name: "warn", file: new("config_protection: warn\n"), want: Settings{ConfigProtection: ProtectWarn, CheckUpdates: true, CloseOpenAfterDays: DefaultCloseOpenAfterDays}},
+		{name: "updates check off", file: new("check_updates: false\n"), want: Settings{ConfigProtection: ProtectBlock, CloseOpenAfterDays: DefaultCloseOpenAfterDays}},
 		{name: "updates check on", file: new("check_updates: true\n"), want: Defaults()},
 		{name: "updates check not a boolean", file: new("check_updates: sometimes\n"), wantErr: "cannot unmarshal"},
+		{name: "close after 3 days", file: new("close_open_after_days: 3\n"),
+			want: Settings{ConfigProtection: ProtectBlock, CheckUpdates: true, CloseOpenAfterDays: 3}},
+		{name: "never close", file: new("close_open_after_days: 0\n"), want: Settings{ConfigProtection: ProtectBlock, CheckUpdates: true}},
+		{name: "negative days", file: new("close_open_after_days: -1\n"), wantErr: "close_open_after_days"},
 		{name: "invalid value", file: new("config_protection: maybe\n"), wantErr: "config_protection"},
 		{name: "unknown key", file: new("config_protecton: warn\n"), wantErr: "config_protecton"},
 	}

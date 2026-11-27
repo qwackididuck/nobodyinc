@@ -130,6 +130,9 @@ type Daemon struct {
 	// (schedulerDone) before closing the database.
 	stopScheduler context.CancelFunc
 	schedulerDone chan struct{}
+	// stopSweep stops the sweep that closes old open conversations
+	// (conversations.go); Close waits for it.
+	sweep sweeping
 	// budgets' guard reconciles in the background until Close stops it.
 	budgets *budgets
 	// Knowledge is the project's knowledge base (ADR-0019), scanned in the
@@ -182,6 +185,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 			return pickMember(opts.Org.Current(), statuses, team, "")
 		},
 	}
+	closer := newCloser(st, messages, bus, opts.Logger)
 	staff := &staff{org: opts.Org, store: st, messages: messages, logger: opts.Logger}
 	git.onConfigDelivered = staff.onConfigDelivered
 	forker := &runtime.Forker{
@@ -227,13 +231,12 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 	// The director's feature proposals travel as messages (proposals.go).
 	featureProposals := &proposals{messages: messages, logger: opts.Logger}
-	tickets.OnFeatureProposed = featureProposals.onProposed
-	tickets.OnFeatureDecided = featureProposals.onDecided
+	featureProposals.attach(tickets)
 
-	tickets.OnFeatureFinished = onFeatureFinished(ctx, opts, git, supervisor, featureProposals, background)
+	tickets.OnFeatureFinished = onFeatureFinished(ctx, opts, git, supervisor, featureProposals, closer, tickets, background)
 	tickets.OnTicketDeleted = onTicketDeleted(ctx, messages, opts.Logger)
 
-	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, logger: opts.Logger}
+	notifier := &ticketNotifier{org: opts.Org, statuses: statuses, messages: messages, tickets: tickets, closer: closer, logger: opts.Logger}
 
 	schedules, err := wireSchedules(ctx, opts, scheduleDeps{
 		statuses: statuses, tickets: tickets, messages: messages, store: st, bus: bus,
@@ -264,6 +267,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		Org:        opts.Org,
 		Store:      st,
 		Messages:   messages,
+		Closer:     closer,
 		Tickets:    tickets,
 		Statuses:   statuses,
 		Approvals:  approvals,
@@ -296,7 +300,8 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 		},
 		Extra: withHandlers(runtime.ShellsHandlers(shells, opts.Origins, opts.Logger), map[string]http.Handler{
 			"/mcp/{address}": officemcp.Handler(officemcp.Office{
-				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules, Decisions: nobody, Budgets: budgetOffice,
+				Org: opts.Org, Sender: messages, Tickets: tickets, Director: director, Schedules: schedules, Decisions: nobody,
+				Conversations: conversationsOffice{closer}, Budgets: budgetOffice,
 				Knowledge: knowledge.Service, OnKnowledgeRead: announceKnowledgeRead(bus),
 				Version: opts.Version,
 			}),
@@ -323,6 +328,7 @@ func New(ctx context.Context, opts Options) (*Daemon, error) {
 
 		stopScheduler: stopScheduler,
 		schedulerDone: schedulerDone,
+		sweep:         sweepOldConversations(ctx, closer, clockOf(opts), liveSettings.Current, opts.Logger),
 		budgets:       budgets,
 		Knowledge:     knowledge.Service,
 		knowledge:     knowledge,
@@ -395,7 +401,8 @@ func startScheduler(ctx context.Context, scheduler *schedule.Scheduler) (context
 // is finished, then removes its worktrees when nobody works in them any more,
 // and tells the director (ADR-0007).
 func onFeatureFinished(
-	ctx context.Context, opts Options, git *gitWorkspace, supervisor *runtime.Supervisor, p *proposals, background *sync.WaitGroup,
+	ctx context.Context, opts Options, git *gitWorkspace, supervisor *runtime.Supervisor, p *proposals,
+	closer *messaging.Closer, tickets *work.Service, background *sync.WaitGroup,
 ) func(work.Feature) {
 	return func(f work.Feature) {
 		git.deactivate()
@@ -407,6 +414,7 @@ func onFeatureFinished(
 
 		ctx := context.WithoutCancel(ctx)
 		p.onFinished(ctx, director, f)
+		closeForFeature(ctx, closer, tickets, f, opts.Logger)
 
 		background.Go(func() {
 			if opts.StartAgents {
@@ -487,6 +495,8 @@ func announce(bus *events.Bus, st *store.Store, statuses *runtime.Statuses, appr
 func (d *Daemon) Close() error {
 	d.stopScheduler()
 	<-d.schedulerDone
+	d.sweep.stop()
+	<-d.sweep.done
 	d.knowledge.stop()
 	<-d.knowledge.done
 	d.budgets.stop()

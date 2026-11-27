@@ -594,9 +594,11 @@ export function listAgentExchanges(limit = 200): Promise<Message[]> {
 
 // emptyWastebasket deletes for good the finished conversations between
 // agents (every message delivered, the last one expecting no answer); open
-// ones stay. It returns the IDs of the deleted messages.
-export async function emptyWastebasket(): Promise<string[]> {
-  const res = await daemonFetch("/api/messages?scope=agents", { method: "DELETE" });
+// ones stay, unless includeOpen closes them too: they are deleted and the
+// agents that waited for an answer are told. It returns the IDs of the
+// deleted messages.
+export async function emptyWastebasket(includeOpen = false): Promise<string[]> {
+  const res = await daemonFetch(`/api/messages?scope=agents${includeOpen ? "&include_open=true" : ""}`, { method: "DELETE" });
   if (!res.ok) {
     throw new Error(await errorText(res));
   }

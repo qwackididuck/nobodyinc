@@ -75,6 +75,17 @@ Example observed during the first real test: the human asks `dev1@dev` to consul
 
 Hook details, and how urgent questions to busy agents are answered by a fork of their session, are in `hooks.md`.
 
+## Closing open conversations
+
+A conversation is open while its last message is a `request`, `query` or `propose`: an answer is expected. Between agents nobody may ever answer, and it would stay open from one feature or one session to the next, so `messaging.Closer` (`internal/messaging/close.go`) closes it by force: the whole conversation is deleted for good (`messages.deleted`), and the agent that was waiting is told by `nobody` ("Conversation closed…, do not wait for an answer"). Conversations involving the human or `nobody` are never touched: they wait for a person (cards, proposals).
+
+It happens:
+- from the wastebasket: the "Also close the open conversations" box of "Empty" (`DELETE /api/messages?scope=agents&include_open=true`);
+- by the director, with `conversations_close` (only with the human's agreement, `god.md`);
+- when a ticket is done or canceled: the open conversations about it (messages carrying its ID, `internal/daemon/notify.go`);
+- when a feature is finished: the open conversations about its tickets (`internal/daemon/daemon.go`);
+- when they are old: still open after `close_open_after_days` (`~/.nobody/settings.yaml`, default 7, `0` never), looked at when the project opens and every hour (`internal/daemon/conversations.go`).
+
 ## Agent status
 
 `stopped → starting → working ⇄ idle → exited`, plus `awaiting_approval` while a permission request waits for the human, and `budget_hold` instead of `idle` while a budget at its threshold holds the agent (`budgets.md`), derived from the hooks: a `Stop` with nothing to deliver means the agent really finished its turn (`idle`); any other event means it is working. At launch, a short onboarding turn brings the agent to `idle`, the state in which mail wakes it up; a session resumed silently when the project opens again becomes `idle` at its `SessionStart` (ADR-0015, `agents.md` "Sessions across openings").
